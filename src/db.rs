@@ -113,6 +113,7 @@ impl Db {
         let r = self.query(query!("SELECT session.date, place.name AS place, exercise.name AS exercise, MAX(load) AS load, MAX(rep) AS rep FROM session INNER JOIN place ON place.id = session.place INNER JOIN session2set ON session2set.session = session.id INNER JOIN _set ON session2set._set = _set.id INNER JOIN exercise ON _set.exercise = exercise.id GROUP BY date, place, exercise ORDER BY exercise;")).await?;
         for r in r {
             println!("{r:?}");
+            println!("{:.3}", to_one_rep_max(r.load, r.rep)?);
         }
         todo!()
     }
