@@ -13,7 +13,7 @@ pub mod com {
 
 use com::*;
 use db::Place;
-use inquire::{list_option::ListOption, CustomType, Select};
+use inquire::{list_option::ListOption, CustomType, Select, Text};
 
 #[derive(Args)]
 #[args(desc = "Add JSON data.")]
@@ -89,7 +89,7 @@ impl Run<C> for Prog {
     }
 }
 #[tokio::main]
-async fn prog(c: &C, a: Prog) -> Res<()> {
+async fn prog(c: &C, _a: Prog) -> Res<()> {
     let mut db = c.db().await?;
     db.get_prog().await?;
     Ok(())
@@ -108,8 +108,10 @@ impl Run<C> for Weight {
 async fn weight(c: &C, _a: Weight) -> Res<()> {
     let date = input_date("When did you measure?")?;
     let weight = CustomType::<f64>::new("Weight (kg)").prompt()?;
+    let bodyfat = CustomType::<f64>::new("Bodyfat (%)").prompt()?;
+    let desc = Text::new("Note").prompt()?;
     let mut db = c.db().await?;
-    db.add_weight(date, weight).await?;
+    db.add_weight(date, weight, bodyfat, desc).await?;
     Ok(())
 }
 
@@ -118,7 +120,7 @@ async fn weight(c: &C, _a: Weight) -> Res<()> {
 pub struct GetWeight {}
 impl Run<C> for GetWeight {
     type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+    fn run(_c: &C, _a: Self) -> Result<Self::R, String> {
         todo!()
     }
 }

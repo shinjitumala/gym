@@ -35,5 +35,6 @@ CREATE TABLE weight (
     id INTEGER PRIMARY KEY NOT NULL,
     date BIGINT NOT NULL,
     kg REAL NOT NULL,
+    bodyfat REAL NOT NULL,
     desc TEXT NOT NULL
 );

@@ -1,4 +1,4 @@
-use std::{fmt::Display, str::FromStr};
+use std::str::FromStr;
 
 use crate::com::*;
 
@@ -98,12 +98,14 @@ impl Db {
         Ok(())
     }
 
-    pub async fn add_weight(&mut self, date: Date, kg: f64) -> Res<()> {
+    pub async fn add_weight(&mut self, date: Date, kg: f64, bodyfat: f64, note: String) -> Res<()> {
         let date = date.as_timestamp();
         self.exec(query!(
-            "INSERT INTO weight (date, kg, desc) VALUES (?, ?, '')",
+            "INSERT INTO weight (date, kg, bodyfat, desc) VALUES (?, ?, ?, ?)",
             date,
-            kg
+            kg,
+            bodyfat,
+            note
         ))
         .await?;
         Ok(())
