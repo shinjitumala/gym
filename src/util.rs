@@ -5,6 +5,7 @@ use inquire::{
     validator::{CustomTypeValidator, ErrorMessage},
     CustomType,
 };
+use serde::Serialize;
 
 use crate::com::*;
 
@@ -38,7 +39,7 @@ impl From<InquireError> for Err {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Date {
     v: DateTime<Local>,
 }
@@ -61,6 +62,11 @@ impl Date {
     pub fn as_datetime<'a>(&'a self) -> &'a DateTime<Local> {
         &self.v
     }
+    pub fn from_timestamp(t: i64) -> Self {
+        Self {
+            v: DateTime::from_timestamp(t, 0).unwrap().into(),
+        }
+    }
 }
 impl FromStr for Date {
     type Err = Err;
@@ -76,6 +82,16 @@ impl FromStr for Date {
 impl Display for Date {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.v.to_rfc3339_opts(SecondsFormat::Secs, false))
+    }
+}
+
+impl Serialize for Date {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let str = &self.to_string();
+        serializer.serialize_str(str)
     }
 }
 
@@ -126,5 +142,6 @@ pub fn to_one_rep_max(load: f64, rep: f64) -> Res<f64> {
         30 => 50.0_f64,
         e => Err(format!("'{e}' is out of bounds."))?,
     };
-    Ok(load * 100.0_f64 / f)
+    let r = load * 100.0_f64 / f;
+    Ok((r * 10.0).round() / 10.0)
 }
