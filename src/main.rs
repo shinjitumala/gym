@@ -48,11 +48,13 @@ async fn add(c: &C, a: Add) -> Res<()> {
         for s in sets[1..].iter() {
             let m: Vec<_> = s.split("x").collect();
             let w: f64 = m[0]
+                .trim()
                 .parse()
                 .map_err(|e| format!("Failed to parse as f64 '{}' because '{e}'", m[0]))?;
             let reps = &m[1..];
             for r in reps {
                 let r: f64 = r
+                    .trim()
                     .parse()
                     .map_err(|e| format!("Failed to parse as f64 '{}' because '{e}'", r))?;
                 db.new_set(session, e.id, w, r, format!("")).await?;
