@@ -2,7 +2,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use crate::com::*;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::{
     query,
     query::{Map, Query},
@@ -115,9 +115,8 @@ impl Db {
     pub async fn get_prog(&mut self) -> Res<()> {
         let x = {
             let mut x = HashMap::<String, Vec<BestSet>>::new();
-            let r = self.query(query!("SELECT session.date, place.name AS place, exercise.name AS exercise, MAX(load) AS load, MAX(rep) AS rep FROM session INNER JOIN place ON place.id = session.place INNER JOIN session2set ON session2set.session = session.id INNER JOIN _set ON session2set._set = _set.id INNER JOIN exercise ON _set.exercise = exercise.id GROUP BY date, place, exercise ORDER BY exercise;")).await?;
+            let r = self.query(query!("SELECT session.date, place.name AS place, exercise.name AS exercise, MAX(load) AS load, MAX(rep) AS rep, _set.desc FROM session INNER JOIN place ON place.id = session.place INNER JOIN session2set ON session2set.session = session.id INNER JOIN _set ON session2set._set = _set.id INNER JOIN exercise ON _set.exercise = exercise.id GROUP BY date, place, exercise ORDER BY exercise;")).await?;
             for r in r {
-                println!("{r:?}");
                 let exercise = format!("{}@{}", r.exercise.unwrap(), r.place.unwrap());
                 let e = match x.get_mut(&exercise) {
                     Some(e) => e,
@@ -129,10 +128,10 @@ impl Db {
 
                 let b = BestSet {
                     date: Date::from_timestamp(r.date.unwrap()),
-                    exercise,
                     max: to_one_rep_max(r.load, r.rep)?,
                     load: r.load,
                     rep: r.rep,
+                    desc: r.desc.to_owned().unwrap(),
                 };
                 e.push(b);
             }
@@ -150,10 +149,10 @@ impl Db {
 #[derive(Clone, Debug, Serialize)]
 pub struct BestSet {
     pub date: Date,
-    pub exercise: String,
     pub load: f64,
     pub rep: f64,
     pub max: f64,
+    pub desc: String,
 }
 
 #[derive(Clone)]
