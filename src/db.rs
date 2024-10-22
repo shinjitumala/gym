@@ -116,7 +116,7 @@ impl Db {
         let x = {
             let mut x = HashMap::<String, Vec<BestSet>>::new();
             let r = self.query(query!(r"
-                SELECT session.date, place.name AS place, exercise.name AS exercise, MAX(load) AS load, MAX(rep) AS rep, _set.desc
+                SELECT session.date, place.name AS place, exercise.name AS exercise, MAX(load) AS load, rep AS rep, _set.desc
                 FROM session
                 INNER JOIN place ON place.id = session.place
                 INNER JOIN session2set ON session2set.session = session.id
@@ -137,9 +137,9 @@ impl Db {
 
                 let b = BestSet {
                     date: Date::from_timestamp(r.date.unwrap()),
-                    max: to_one_rep_max(r.load, r.rep)?,
+                    max: to_one_rep_max(r.load, r.rep.unwrap())?,
                     load: r.load,
-                    rep: r.rep,
+                    rep: r.rep.unwrap(),
                     desc: r.desc.to_owned().unwrap(),
                 };
                 e.push(b);
