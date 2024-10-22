@@ -1,4 +1,4 @@
-const to_day = (d) => `${d.getFullYear()}-${d.getMonth().toString().padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`
+const to_day = (d) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`
 const color = (i) => {
     const c = [
         "red",
@@ -28,8 +28,6 @@ const dash = (i) => {
     ][i % 3]
 }
 const data0 = async () => {
-    const c = Object.keys(exercise).length
-
     const data = [];
 
     var idx = 0;
