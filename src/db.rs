@@ -112,7 +112,7 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_prog(&mut self) -> Res<()> {
+    pub async fn get_prog(&mut self) -> Res<String> {
         let x = {
             let mut x = HashMap::<String, Vec<BestSet>>::new();
             let r = self.query(query!(r"
@@ -150,8 +150,7 @@ impl Db {
             x
         };
         let a = serde_json::to_string_pretty(&x).unwrap();
-        println!("{a}");
-        Ok(())
+        Ok(a)
     }
 
     pub async fn new_place(&mut self, name: &str, desc: &str) -> Res<()> {
@@ -162,6 +161,28 @@ impl Db {
         ))
         .await?;
         Ok(())
+    }
+
+    pub async fn get_weight(&mut self) -> Res<String> {
+        #[derive(Serialize)]
+        struct W {
+            date: Date,
+            kg: f64,
+            bodyfat: f64,
+            desc: String,
+        }
+        let w: Vec<_> = self
+            .query(query!("SELECT * FROM weight"))
+            .await?
+            .into_iter()
+            .map(|e| W {
+                date: Date::from_timestamp(e.date),
+                kg: e.kg,
+                bodyfat: e.bodyfat,
+                desc: e.desc.to_owned(),
+            })
+            .collect();
+        Ok(serde_json::to_string_pretty(&w).unwrap())
     }
 }
 

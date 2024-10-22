@@ -90,7 +90,8 @@ impl Run<C> for Prog {
 #[tokio::main]
 async fn prog(c: &C, _a: Prog) -> Res<()> {
     let mut db = c.db().await?;
-    db.get_prog().await?;
+    let r = db.get_prog().await?;
+    println!("{r}");
     Ok(())
 }
 
@@ -119,9 +120,16 @@ async fn weight(c: &C, _a: Weight) -> Res<()> {
 pub struct GetWeight {}
 impl Run<C> for GetWeight {
     type R = ();
-    fn run(_c: &C, _a: Self) -> Result<Self::R, String> {
-        todo!()
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(get_weight(c, a)?)
     }
+}
+#[tokio::main]
+async fn get_weight(c: &C, _a: GetWeight) -> Res<()> {
+    let mut db = c.db().await?;
+    let d = db.get_weight().await?;
+    println!("{d}");
+    Ok(())
 }
 
 #[derive(Args)]
