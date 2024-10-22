@@ -12,7 +12,6 @@ pub mod com {
 }
 
 use com::*;
-use db::Place;
 use inquire::{list_option::ListOption, CustomType, Select, Text};
 
 #[derive(Args)]
@@ -64,7 +63,7 @@ async fn add(c: &C, a: Add) -> Res<()> {
     Ok(())
 }
 
-async fn input_place(db: &mut Db) -> Res<Place> {
+async fn input_place(db: &mut Db) -> Res<db::Place> {
     let places = db.places().await?;
     let lines = to_lines(&places.iter().map(|e| e.to_line()).collect())
         .into_iter()
@@ -77,7 +76,7 @@ async fn input_place(db: &mut Db) -> Res<Place> {
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(Add, Prog, Weight, GetWeight);
+pub struct Main(Add, Prog, Weight, GetWeight, Place);
 
 #[derive(Args)]
 #[args(desc = "Get the progress data.")]
@@ -123,6 +122,27 @@ impl Run<C> for GetWeight {
     fn run(_c: &C, _a: Self) -> Result<Self::R, String> {
         todo!()
     }
+}
+
+#[derive(Args)]
+#[args(desc = "Add a place.")]
+pub struct Place {
+    #[arg(desc = "Name of a place you train.")]
+    name: String,
+    #[arg(desc = "Description of the place.")]
+    desc: String,
+}
+impl Run<C> for Place {
+    type R = ();
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(place(c, a)?)
+    }
+}
+#[tokio::main]
+async fn place(c: &C, a: Place) -> Res<()> {
+    let mut db = c.db().await?;
+    db.new_place(&a.name, &a.desc).await?;
+    Ok(())
 }
 
 fn main2() -> Result<(), String> {

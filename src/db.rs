@@ -153,6 +153,16 @@ impl Db {
         println!("{a}");
         Ok(())
     }
+
+    pub async fn new_place(&mut self, name: &str, desc: &str) -> Res<()> {
+        self.exec(query!(
+            "INSERT INTO place (name, desc) VALUES (?, ?)",
+            name,
+            desc
+        ))
+        .await?;
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
