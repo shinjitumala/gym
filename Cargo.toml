@@ -11,7 +11,7 @@ fpr-cli-derives = "0.1.8"
 inquire = "0.7.5"
 itertools = "0.13.0"
 regex = "1.11.0"
-serde = "1.0.210"
+serde = "1.0.211"
 serde_json = "1.0.132"
 sqlx = { version = "0.8.2", features = ["sqlite"] }
-tokio = { version = "1.40.0", features = ["full"] }
+tokio = { version = "1.41.0", features = ["full"] }

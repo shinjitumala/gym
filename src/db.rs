@@ -115,7 +115,16 @@ impl Db {
     pub async fn get_prog(&mut self) -> Res<()> {
         let x = {
             let mut x = HashMap::<String, Vec<BestSet>>::new();
-            let r = self.query(query!("SELECT session.date, place.name AS place, exercise.name AS exercise, MAX(load) AS load, MAX(rep) AS rep, _set.desc FROM session INNER JOIN place ON place.id = session.place INNER JOIN session2set ON session2set.session = session.id INNER JOIN _set ON session2set._set = _set.id INNER JOIN exercise ON _set.exercise = exercise.id GROUP BY date, place, exercise ORDER BY exercise;")).await?;
+            let r = self.query(query!(r"
+                SELECT session.date, place.name AS place, exercise.name AS exercise, MAX(load) AS load, MAX(rep) AS rep, _set.desc
+                FROM session
+                INNER JOIN place ON place.id = session.place
+                INNER JOIN session2set ON session2set.session = session.id
+                INNER JOIN _set ON session2set._set = _set.id
+                INNER JOIN exercise ON _set.exercise = exercise.id
+                GROUP BY date, place, exercise
+                ORDER BY exercise;
+            ")).await?;
             for r in r {
                 let exercise = format!("{}@{}", r.exercise.unwrap(), r.place.unwrap());
                 let e = match x.get_mut(&exercise) {
