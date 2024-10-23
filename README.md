@@ -2,6 +2,11 @@
 
 This tool can track your progressive overload and weight using local databases and lets you view them in an interactive graph in your browser.
 
+## Images
+![Progressive overload (mixed)](i/0.jpg)
+![Progressive overload (single)](i/1.jpg)
+![Weight and bodyfat](i/2.jpg)
+
 # Quickstart
 
 ```bash
