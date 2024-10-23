@@ -189,6 +189,7 @@ async fn web(_c: &C, a: Web) -> Res<()> {
     };
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("s");
     let x = path!().and(file(root.join("index.html"))).or(dir(root));
+    println!("Starting web server at '{}'...", a.addr);
     serve(x)
         .run(
             a.addr

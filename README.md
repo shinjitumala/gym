@@ -50,8 +50,18 @@ You can manually generate them using the following if necessary.
 $ gym upd
 ```
 ### Viewing the graph
+#### Local file
 Open `s/index.html` with a browser of your choise.
 
 ```bash
 vivaldi s/index.html
 ```
+#### Web server
+Alternatively, you can use the built in web server.
+
+```bash
+[shinji@fpr0 gym]$ gym web
+Starting web server at '0.0.0.0:8080'...
+```
+
+You can now access the graphs via your browser at "localhost:8080" or from any device in your local network with the appropriate ip address, etc.
