@@ -11,6 +11,8 @@ pub mod com {
     pub use inquire::InquireError;
 }
 
+use std::{net::SocketAddr, path::PathBuf, process::exit};
+
 use com::*;
 use inquire::{list_option::ListOption, CustomType, Select, Text};
 
@@ -60,6 +62,9 @@ async fn add(c: &C, a: Add) -> Res<()> {
             }
         }
     }
+
+    act::upd()?;
+
     Ok(())
 }
 
@@ -76,7 +81,7 @@ async fn input_place(db: &mut Db) -> Res<db::Place> {
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(Add, Prog, Weight, GetWeight, Place);
+pub struct Main(Add, Prog, Weight, GetWeight, Place, Upd, Web);
 
 #[derive(Args)]
 #[args(desc = "Get the progress data.")]
@@ -153,6 +158,47 @@ async fn place(c: &C, a: Place) -> Res<()> {
     Ok(())
 }
 
+#[derive(Args)]
+#[args(desc = "Updates the server data to the latest.")]
+pub struct Upd {}
+impl Run<C> for Upd {
+    type R = ();
+    fn run(_c: &C, _a: Self) -> Result<Self::R, String> {
+        act::upd()?;
+        Ok(())
+    }
+}
+
+#[derive(Args)]
+#[args(desc = "Runs a local web server.")]
+pub struct Web {
+    #[arg(desc = "Socket address.", s = ("0.0.0.0:8080"))]
+    addr: String,
+}
+impl Run<C> for Web {
+    type R = ();
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(web(c, a)?)
+    }
+}
+#[tokio::main]
+async fn web(_c: &C, a: Web) -> Res<()> {
+    use warp::{
+        fs::{dir, file},
+        path, serve, Filter,
+    };
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("s");
+    let x = path!().and(file(root.join("index.html"))).or(dir(root));
+    serve(x)
+        .run(
+            a.addr
+                .parse::<SocketAddr>()
+                .map_err(|e| format!("Failed to parse addr '{}' because '{e}'", a.addr))?,
+        )
+        .await;
+    Ok(())
+}
+
 fn main2() -> Result<(), String> {
     Ok(Main::run(&C::new()?)?)
 }
@@ -161,7 +207,7 @@ fn main() -> Result<(), ()> {
         Ok(_) => Ok(()),
         Err(e) => {
             println!("{}\nAborting.", e);
-            Err(())
+            exit(1);
         }
     }
 }

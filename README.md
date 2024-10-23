@@ -42,11 +42,14 @@ $ gym add --data 2024-10-24.csv
 
 ## Generate graphs
 
-```bash
-$ ./upd.sh
-# It should create s/data.js
-```
+### Manually generating graphs (optional)
+Usually, the data gets updated when you add new data using the `gym add` command.
+You can manually generate them using the following if necessary.
 
+```bash
+$ gym upd
+```
+### Viewing the graph
 Open `s/index.html` with a browser of your choise.
 
 ```bash
