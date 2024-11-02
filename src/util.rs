@@ -1,11 +1,6 @@
-use std::{fmt::Display, str::FromStr};
-
 use chrono::{DateTime, Local, SecondsFormat, Utc};
-use inquire::{
-    validator::{CustomTypeValidator, ErrorMessage},
-    CustomType,
-};
 use serde::Serialize;
+use std::fmt::Display;
 
 use crate::com::*;
 
@@ -43,18 +38,6 @@ impl From<InquireError> for Err {
 pub struct Date {
     v: DateTime<Local>,
 }
-impl CustomTypeValidator<String> for Date {
-    fn validate(
-        &self,
-        i: &String,
-    ) -> Result<inquire::validator::Validation, inquire::CustomUserError> {
-        use inquire::validator::Validation::*;
-        match DateTime::parse_from_rfc3339(i) {
-            Ok(_) => Ok(Valid),
-            Err(e) => Ok(Invalid(ErrorMessage::Custom(format!("{e}")))),
-        }
-    }
-}
 impl Date {
     pub fn as_timestamp(&self) -> i64 {
         self.v.timestamp()
@@ -66,17 +49,6 @@ impl Date {
         Self {
             v: DateTime::from_timestamp(t, 0).unwrap().into(),
         }
-    }
-}
-impl FromStr for Date {
-    type Err = Err;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self {
-            v: DateTime::parse_from_rfc3339(s)
-                .map_err(|e| format!("{e}"))?
-                .into(),
-        })
     }
 }
 impl Display for Date {
@@ -95,15 +67,18 @@ impl Serialize for Date {
     }
 }
 
-pub fn input_date(prompt: &str) -> Res<Date> {
-    Ok(CustomType::<Date>::new(prompt)
-        .with_starting_input(
-            &Date {
-                v: Utc::now().into(),
-            }
-            .to_string(),
-        )
-        .prompt()?)
+pub fn input_date2(prompt: &str) -> Res<Date> {
+    Ok(Date {
+        v: input_date(prompt)
+            .with_starting_input(
+                &Date {
+                    v: Utc::now().into(),
+                }
+                .to_string(),
+            )
+            .prompt()?
+            .into(),
+    })
 }
 
 pub fn to_one_rep_max(load: f64, rep: f64) -> Res<f64> {

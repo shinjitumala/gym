@@ -13,8 +13,10 @@ pub mod com {
 
 use std::{net::SocketAddr, path::PathBuf, process::exit};
 
+use act::list_new_files;
 use com::*;
 use inquire::{list_option::ListOption, CustomType, Select, Text};
+use itertools::Itertools;
 
 #[derive(Args)]
 #[args(desc = "Add JSON data.")]
@@ -33,7 +35,7 @@ async fn add(c: &C, a: Add) -> Res<()> {
     let mut db = c.db().await?;
 
     let place = input_place(&mut db).await?;
-    let date = input_date("Date")?;
+    let date = input_date2("Date")?;
 
     let session = db.new_session(place.id, date).await?;
 
@@ -63,14 +65,12 @@ async fn add(c: &C, a: Add) -> Res<()> {
         }
     }
 
-    act::upd()?;
-
     Ok(())
 }
 
 async fn input_place(db: &mut Db) -> Res<db::Place> {
     let places = db.places().await?;
-    let lines = to_lines(&places.iter().map(|e| e.to_line()).collect())
+    let lines = to_lines(&places.iter().map(|e| e.to_line()).collect_vec())
         .into_iter()
         .enumerate()
         .map(|(i, e)| ListOption::new(i, e))
@@ -81,7 +81,7 @@ async fn input_place(db: &mut Db) -> Res<db::Place> {
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(Add, Prog, Weight, GetWeight, Place, Upd, Web);
+pub struct Main(Add, Prog, Weight, GetWeight, Place, Upd, Web, Sync);
 
 #[derive(Args)]
 #[args(desc = "Get the progress data.")]
@@ -111,7 +111,7 @@ impl Run<C> for Weight {
 }
 #[tokio::main]
 async fn weight(c: &C, _a: Weight) -> Res<()> {
-    let date = input_date("When did you measure?")?;
+    let date = input_date2("When did you measure?")?;
     let weight = CustomType::<f64>::new("Weight (kg)").prompt()?;
     let bodyfat = CustomType::<f64>::new("Bodyfat (%)").prompt()?;
     let desc = Text::new("Note").prompt()?;
@@ -181,6 +181,33 @@ impl Run<C> for Web {
         Ok(web(c, a)?)
     }
 }
+
+#[derive(Args)]
+#[args(desc = "Automated update.")]
+pub struct Sync {}
+impl Run<C> for Sync {
+    type R = ();
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(sync(c, a)?)
+    }
+}
+fn sync(c: &C, _a: Sync) -> Res<()> {
+    let r = list_new_files(&c.cfg.repo)?;
+    let r: Vec<_> = r.trim().split("\n").collect();
+    for r in r.iter() {
+        Add::run(
+            c,
+            Add {
+                data: FileExist::parse(&format!("{}/{}", &c.cfg.repo, r))
+                    .map_err(|e| format!("{e}"))?,
+            },
+        )?;
+    }
+    act::upd()?;
+    act::commit(&c.cfg.repo)?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn web(_c: &C, a: Web) -> Res<()> {
     use warp::{

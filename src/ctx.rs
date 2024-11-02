@@ -6,6 +6,7 @@ use crate::com::*;
 #[derive(Deserialize)]
 pub struct Cfg {
     pub db: String,
+    pub repo: String,
 }
 
 pub struct C {
