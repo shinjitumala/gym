@@ -15,32 +15,27 @@ pub struct Db {
     c: SqliteConnection,
 }
 
-impl Db {
-    pub async fn new(c: &C) -> Res<Self> {
-        let o = SqliteConnectOptions::from_str(&c.cfg.db)?;
-        let mut c = SqliteConnection::connect_with(&o).await?;
-        query!("PRAGMA FOREIGN_KEYS = ON").execute(&mut c).await?;
-        Ok(Self { c })
+type Txx<'a> = sqlx::Transaction<'a, Sqlite>;
+
+pub struct Tx<'a> {
+    t: Txx<'a>,
+}
+
+impl<'a> Tx<'a> {
+    fn new(t: Txx<'a>) -> Self {
+        Self { t }
+    }
+    pub async fn commit(self) -> Res<()> {
+        Ok(self.t.commit().await?)
     }
 
-    async fn exec<'a>(
+    async fn exec<'b>(
         &mut self,
-        q: Query<'a, Sqlite, SqliteArguments<'a>>,
+        q: Query<'b, Sqlite, SqliteArguments<'b>>,
     ) -> Res<SqliteQueryResult> {
-        Ok(q.execute(&mut self.c).await?)
-    }
-    async fn query<'a, O: Send + Unpin>(
-        &mut self,
-        q: Map<'a, Sqlite, impl FnMut(SqliteRow) -> Result<O, Error> + Send, SqliteArguments<'a>>,
-    ) -> Res<Vec<O>> {
-        Ok(q.fetch_all(&mut self.c).await?)
+        Ok(q.execute(&mut *self.t).await?)
     }
 
-    pub async fn places(&mut self) -> Res<Vec<Place>> {
-        Ok(query_as!(Place, "SELECT * FROM place")
-            .fetch_all(&mut self.c)
-            .await?)
-    }
     pub async fn new_session(&mut self, place: i64, date: Date) -> Res<i64> {
         let b = date.as_timestamp();
         let a = self
@@ -52,26 +47,7 @@ impl Db {
             .await?;
         Ok(a.last_insert_rowid())
     }
-    pub async fn get_exercise(&mut self, name: &str) -> Res<Exercise> {
-        let a = query_as!(Exercise, "SELECT * FROM exercise WHERE name = ?", name)
-            .fetch_all(&mut self.c)
-            .await?;
-        Ok(if !a.is_empty() {
-            a[0].to_owned()
-        } else {
-            let e = self
-                .exec(query!(
-                    "INSERT INTO exercise (name,desc) VALUES (?,'')",
-                    name
-                ))
-                .await?;
-            Exercise {
-                id: e.last_insert_rowid(),
-                name: name.to_owned(),
-                desc: format!(""),
-            }
-        })
-    }
+
     pub async fn new_set(
         &mut self,
         session: i64,
@@ -97,6 +73,59 @@ impl Db {
         ))
         .await?;
         Ok(())
+    }
+
+    pub async fn get_exercise(&mut self, name: &str) -> Res<Exercise> {
+        let a = query_as!(Exercise, "SELECT * FROM exercise WHERE name = ?", name)
+            .fetch_all(&mut *self.t)
+            .await?;
+        Ok(if !a.is_empty() {
+            a[0].to_owned()
+        } else {
+            let e = self
+                .exec(query!(
+                    "INSERT INTO exercise (name,desc) VALUES (?,'')",
+                    name
+                ))
+                .await?;
+            Exercise {
+                id: e.last_insert_rowid(),
+                name: name.to_owned(),
+                desc: format!(""),
+            }
+        })
+    }
+}
+
+impl Db {
+    pub async fn new(c: &C) -> Res<Self> {
+        let o = SqliteConnectOptions::from_str(&c.cfg.db)?;
+        let mut c = SqliteConnection::connect_with(&o).await?;
+        query!("PRAGMA FOREIGN_KEYS = ON").execute(&mut c).await?;
+        Ok(Self { c })
+    }
+
+    async fn exec<'a>(
+        &mut self,
+        q: Query<'a, Sqlite, SqliteArguments<'a>>,
+    ) -> Res<SqliteQueryResult> {
+        Ok(q.execute(&mut self.c).await?)
+    }
+    async fn query<'a, O: Send + Unpin>(
+        &mut self,
+        q: Map<'a, Sqlite, impl FnMut(SqliteRow) -> Result<O, Error> + Send, SqliteArguments<'a>>,
+    ) -> Res<Vec<O>> {
+        Ok(q.fetch_all(&mut self.c).await?)
+    }
+
+    pub async fn start(&mut self) -> Res<Tx> {
+        Ok(Tx::new(self.c.begin().await?))
+    }
+
+    pub async fn places(&mut self) -> Res<Vec<Place>> {
+        Ok(query_as!(Place, "SELECT * FROM place")
+            .fetch_all(&mut self.c)
+            .await?)
     }
 
     pub async fn add_weight(&mut self, date: Date, kg: f64, bodyfat: f64, note: String) -> Res<()> {

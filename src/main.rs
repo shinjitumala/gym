@@ -37,7 +37,9 @@ async fn add(c: &C, a: Add) -> Res<()> {
     let place = input_place(&mut db).await?;
     let date = input_date2("Date")?;
 
-    let session = db.new_session(place.id, date).await?;
+    let mut t = db.start().await?;
+
+    let session = t.new_session(place.id, date).await?;
 
     for r in csv::ReaderBuilder::new()
         .has_headers(false)
@@ -47,23 +49,26 @@ async fn add(c: &C, a: Add) -> Res<()> {
         .records()
     {
         let sets: Vec<_> = r.unwrap().iter().map(|e| e.to_owned()).collect();
-        let e = db.get_exercise(&sets[0]).await?;
+        let e = t.get_exercise(&sets[0]).await?;
         for s in sets[1..].iter() {
             let m: Vec<_> = s.split("x").collect();
-            let w: f64 = m[0]
-                .trim()
-                .parse()
-                .map_err(|e| format!("Failed to parse as f64 '{}' because '{e}'", m[0]))?;
+            let w: f64 = m[0].trim().parse().map_err(|e| {
+                format!(
+                    "Failed to parse as f64 '{}' because '{e}' at '{sets:?}'",
+                    m[0]
+                )
+            })?;
             let reps = &m[1..];
             for r in reps {
-                let r: f64 = r
-                    .trim()
-                    .parse()
-                    .map_err(|e| format!("Failed to parse as f64 '{}' because '{e}'", r))?;
-                db.new_set(session, e.id, w, r, format!("")).await?;
+                let r: f64 = r.trim().parse().map_err(|e| {
+                    format!("Failed to parse as f64 '{}' because '{e}' at '{sets:?}'", r)
+                })?;
+                t.new_set(session, e.id, w, r, format!("")).await?;
             }
         }
     }
+
+    t.commit().await?;
 
     Ok(())
 }
@@ -81,7 +86,7 @@ async fn input_place(db: &mut Db) -> Res<db::Place> {
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(Add, Prog, Weight, GetWeight, Place, Upd, Web, Sync);
+pub struct Main(Add, Prog, Weight, GetWeight, Place, Upd, Web, Sync, AdHoc);
 
 #[derive(Args)]
 #[args(desc = "Get the progress data.")]
@@ -226,6 +231,19 @@ async fn web(_c: &C, a: Web) -> Res<()> {
         )
         .await;
     Ok(())
+}
+
+#[derive(Args)]
+#[args(desc = "Execute scripts as needed for altering table, etc.")]
+pub struct AdHoc {}
+impl Run<C> for AdHoc {
+    type R = ();
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(adhoc(c, a)?)
+    }
+}
+fn adhoc(_c: &C, _a: AdHoc) -> Res<()> {
+    todo!()
 }
 
 fn main2() -> Result<(), String> {
