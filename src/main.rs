@@ -242,8 +242,11 @@ impl Run<C> for AdHoc {
         Ok(adhoc(c, a)?)
     }
 }
-fn adhoc(_c: &C, _a: AdHoc) -> Res<()> {
-    todo!()
+#[tokio::main]
+async fn adhoc(c: &C, _a: AdHoc) -> Res<()> {
+    let mut db = c.db().await?;
+    db.adhoc().await?;
+    Ok(())
 }
 
 fn main2() -> Result<(), String> {

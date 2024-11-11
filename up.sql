@@ -14,8 +14,8 @@ CREATE TABLE _set (
     id INTEGER PRIMARY KEY NOT NULL,
     exercise INTEGER NOT NULL REFERENCES exercise(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     load REAL NOT NULL CHECK(0 < load),
-    rep REAL NOT NULL CHECK(0 < load),
-    theoretical_max REAL NOT NULL CHECK(0 < load),
+    rep REAL NOT NULL CHECK(0 < rep),
+    tmax REAL NOT NULL CHECK(0 < tmax),
     desc TEXT NOT NULL
 );
 

@@ -213,6 +213,10 @@ impl Db {
             .collect();
         Ok(serde_json::to_string_pretty(&w).unwrap())
     }
+
+    pub async fn adhoc(&mut self) -> Res<()> {
+        todo!()
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
