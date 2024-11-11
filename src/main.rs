@@ -15,7 +15,7 @@ use std::{net::SocketAddr, path::PathBuf, process::exit};
 
 use act::list_new_files;
 use com::*;
-use inquire::{list_option::ListOption, CustomType, Select, Text};
+use inquire::{list_option::ListOption, Confirm, CustomType, Select, Text};
 use itertools::Itertools;
 
 #[derive(Args)]
@@ -63,7 +63,8 @@ async fn add(c: &C, a: Add) -> Res<()> {
                 let r: f64 = r.trim().parse().map_err(|e| {
                     format!("Failed to parse as f64 '{}' because '{e}' at '{sets:?}'", r)
                 })?;
-                t.new_set(session, e.id, w, r, format!("")).await?;
+                t.new_set(session, e.id, w, r, to_one_rep_max(w, r)?, format!(""))
+                    .await?;
             }
         }
     }
@@ -86,7 +87,18 @@ async fn input_place(db: &mut Db) -> Res<db::Place> {
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(Add, Prog, Weight, GetWeight, Place, Upd, Web, Sync, AdHoc);
+pub struct Main(
+    Add,
+    Prog,
+    Weight,
+    GetWeight,
+    Place,
+    Upd,
+    Web,
+    Sync,
+    AdHoc,
+    New,
+);
 
 #[derive(Args)]
 #[args(desc = "Get the progress data.")]
@@ -246,6 +258,74 @@ impl Run<C> for AdHoc {
 async fn adhoc(c: &C, _a: AdHoc) -> Res<()> {
     let mut db = c.db().await?;
     db.adhoc().await?;
+    Ok(())
+}
+
+#[derive(Args)]
+#[args(desc = "New session at the gym to the buffer.")]
+pub struct New {}
+impl Run<C> for New {
+    type R = ();
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(new_session(c, a)?)
+    }
+}
+#[tokio::main]
+async fn new_session(c: &C, _a: New) -> Res<()> {
+    let mut db = c.db().await?;
+    let p = input_place(&mut db).await?;
+    let d = input_date2("Training time")?;
+    let ecomp = TextWithAutocomplete::new(db.exercises(p.id).await?, |e| {
+        [e.name.to_owned(), e.desc.to_owned()]
+    });
+
+    let mut t = db.start().await?;
+    let s = t.new_session(p.id, d).await?;
+    t.commit().await?;
+
+    loop {
+        let mut t = db.start().await?;
+        let e = Text::new("Exercise")
+            .with_autocomplete(ecomp.clone())
+            .prompt()?
+            .trim()
+            .to_owned();
+        let e = t.get_exercise(&e).await?;
+        t.commit().await?;
+
+        loop {
+            let load = CustomType::<f64>::new("load").prompt()?;
+            loop {
+                let mut t = db.start().await?;
+                let rep = CustomType::<f64>::new("rep").prompt()?;
+                let desc = Text::new("Notes").prompt()?;
+                t.new_set(s, e.id, load, rep, to_one_rep_max(load, rep)?, desc)
+                    .await?;
+                t.commit().await?;
+
+                if Confirm::new("Done with current load?")
+                    .with_default(false)
+                    .prompt()?
+                {
+                    break;
+                }
+            }
+
+            if Confirm::new("Done with exercise?")
+                .with_default(false)
+                .prompt()?
+            {
+                break;
+            }
+        }
+
+        if Confirm::new("Done with session?")
+            .with_default(false)
+            .prompt()?
+        {
+            break;
+        }
+    }
     Ok(())
 }
 

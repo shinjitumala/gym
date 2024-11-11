@@ -54,15 +54,17 @@ impl<'a> Tx<'a> {
         exercise: i64,
         load: f64,
         rep: f64,
+        tmax: f64,
         desc: String,
     ) -> Res<()> {
         let e = self
             .exec(query!(
-                "INSERT INTO _set (exercise, load, rep, desc) VALUES (?, ?, ?, ?)",
+                "INSERT INTO _set (exercise, load, rep, desc, tmax) VALUES (?, ?, ?, ?, ?)",
                 exercise,
                 load,
                 rep,
-                desc
+                desc,
+                tmax
             ))
             .await?;
         let id = e.last_insert_rowid();
@@ -105,6 +107,25 @@ impl Db {
         Ok(Self { c })
     }
 
+    pub async fn exercises(&mut self, place: i64) -> Res<Vec<Exercise>> {
+        Ok(query_as!(
+            Exercise,
+            r"
+                SELECT exercise.id, exercise.name, exercise.desc
+                FROM session
+                INNER JOIN place ON place.id = session.place
+                INNER JOIN session2set ON session2set.session = session.id
+                INNER JOIN _set ON session2set._set = _set.id
+                INNER JOIN exercise ON _set.exercise = exercise.id
+                WHERE place.id = ?
+                GROUP BY exercise.id
+        ",
+            place
+        )
+        .fetch_all(&mut self.c)
+        .await?)
+    }
+
     async fn exec<'a>(
         &mut self,
         q: Query<'a, Sqlite, SqliteArguments<'a>>,
@@ -123,7 +144,7 @@ impl Db {
     }
 
     pub async fn places(&mut self) -> Res<Vec<Place>> {
-        Ok(query_as!(Place, "SELECT * FROM place")
+        Ok(query_as!(Place, "SELECT place.id, place.name, place.desc FROM place INNER JOIN session ON place.id = session.place GROUP BY place ORDER BY COUNT(session.id) DESC")
             .fetch_all(&mut self.c)
             .await?)
     }
