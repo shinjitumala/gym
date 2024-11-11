@@ -15,6 +15,7 @@ use std::{net::SocketAddr, path::PathBuf, process::exit};
 
 use act::list_new_files;
 use com::*;
+use db::ExerciseHistoryItem;
 use inquire::{list_option::ListOption, Confirm, CustomType, Select, Text};
 use itertools::Itertools;
 
@@ -292,6 +293,55 @@ async fn new_session(c: &C, _a: New) -> Res<()> {
             .to_owned();
         let e = t.get_exercise(&e).await?;
         t.commit().await?;
+
+        let h = db.get_exercise_history(p.id, e.id).await?;
+        let mut l = 0i64;
+        let mut b = Vec::<ExerciseHistoryItem>::new();
+        for h in h {
+            if h.date != l {
+                if l != 0 {
+                    let d = Date::from_timestamp(l);
+                    println!("{d}:");
+                    println!(
+                        "{}",
+                        to_table(
+                            &b.iter()
+                                .map(|e| {
+                                    [
+                                        format!("{}", e.load),
+                                        format!("x"),
+                                        format!("{}", e.rep),
+                                        e.desc.to_owned(),
+                                    ]
+                                })
+                                .collect_vec(),
+                        )
+                    );
+                }
+                l = h.date;
+                b.clear();
+            }
+            b.push(h.to_owned());
+        }
+        if l != 0 {
+            let d = Date::from_timestamp(l);
+            println!("{d}:");
+            println!(
+                "{}",
+                to_table(
+                    &b.iter()
+                        .map(|e| {
+                            [
+                                format!("{}", e.load),
+                                format!("x"),
+                                format!("{}", e.rep),
+                                e.desc.to_owned(),
+                            ]
+                        })
+                        .collect_vec(),
+                )
+            );
+        }
 
         loop {
             let load = CustomType::<f64>::new("load").prompt()?;

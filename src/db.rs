@@ -235,11 +235,55 @@ impl Db {
         Ok(serde_json::to_string_pretty(&w).unwrap())
     }
 
+    pub async fn get_exercise_history(
+        &mut self,
+        place: i64,
+        exercise: i64,
+    ) -> Res<Vec<ExerciseHistoryItem>> {
+        let r = query_as!(
+            ExerciseHistoryItem,
+            r"
+                SELECT session.date, _set.load, _set.rep, _set.desc
+                FROM session
+                INNER JOIN place ON place.id = session.place
+                INNER JOIN session2set ON session2set.session = session.id
+                INNER JOIN _set ON session2set._set = _set.id
+                INNER JOIN exercise ON _set.exercise = exercise.id
+                WHERE session.id IN (
+                    SELECT session.id FROM session
+                    INNER JOIN place ON place.id = session.place
+                    INNER JOIN session2set ON session2set.session = session.id
+                    INNER JOIN _set ON session2set._set = _set.id
+                    INNER JOIN exercise ON _set.exercise = exercise.id
+                    WHERE place.id = ? AND exercise.id = ?
+                    GROUP BY session.id
+                    ORDER BY session.date DESC LIMIT 4
+                ) AND place.id = ? AND exercise.id = ?
+                ORDER BY session.date DESC, _set.load DESC, _set.rep DESC
+            ",
+            place,
+            exercise,
+            place,
+            exercise
+        )
+        .fetch_all(&mut self.c)
+        .await?;
+
+        Ok(r)
+    }
+
     pub async fn adhoc(&mut self) -> Res<()> {
         todo!()
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct ExerciseHistoryItem {
+    pub date: i64,
+    pub load: f64,
+    pub rep: f64,
+    pub desc: String,
+}
 #[derive(Clone, Debug, Serialize)]
 pub struct BestSet {
     pub date: Date,
