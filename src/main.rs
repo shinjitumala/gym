@@ -31,7 +31,7 @@ async fn input_place(db: &mut Db) -> Res<db::Place> {
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(Weight, Place, Web, Sync, New);
+pub struct Main(Weight, Place, Web, Sync, New, Food);
 
 async fn prog(c: &C) -> Res<db::Prog> {
     let mut db = c.db().await?;
@@ -256,6 +256,57 @@ async fn new_session(c: &C, _a: New) -> Res<()> {
             break;
         }
     }
+    Ok(())
+}
+
+#[derive(Args)]
+#[args(desc = "Add food data.")]
+pub struct Food {}
+impl Run<C> for Food {
+    type R = ();
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(food(c, a)?)
+    }
+}
+#[tokio::main]
+async fn food(c: &C, _a: Food) -> Res<()> {
+    let mut db = c.db().await?;
+
+    let foods = db.foods().await?;
+    let fcmp = TextWithAutocomplete::new(foods.clone(), |f| [f.name.to_owned()]);
+    let f = loop {
+        let f = Text::new("food")
+            .with_autocomplete(fcmp.clone())
+            .prompt()?
+            .trim()
+            .to_owned();
+        if let Some(e) = foods.iter().find(|e| e.name == f) {
+            let x = [db::Food::head(), e.to_line()];
+            println!("{}", to_table(&x));
+            break e.id;
+        }
+
+        println!("Registering new food...");
+        let calories = CustomType::<f64>::new("calories").prompt()?;
+        let protein = CustomType::<f64>::new("protein")
+            .with_help_message("You can press ESC if unknown")
+            .prompt_skippable()?;
+        let fat = CustomType::<f64>::new("fat")
+            .with_help_message("You can press ESC if unknown")
+            .prompt_skippable()?;
+        let carbohydrate = CustomType::<f64>::new("carbohydrate")
+            .with_help_message("You can press ESC if unknown")
+            .prompt_skippable()?;
+        let desc = Text::new("desc").prompt()?;
+
+        break db
+            .new_food(&f, calories, protein, fat, carbohydrate, &desc)
+            .await?;
+    };
+    let date = input_date2("When did you eat?")?;
+    let desc = Text::new("desc").prompt()?;
+
+    db.new_meal(date.as_timestamp(), f, &desc).await?;
     Ok(())
 }
 

@@ -264,8 +264,32 @@ impl Db {
         Ok(r)
     }
 
-    pub async fn adhoc(&mut self) -> Res<()> {
-        todo!()
+    pub async fn foods(&mut self) -> Res<Vec<Food>> {
+        Ok(query_as!(Food, "SELECT * FROM food")
+            .fetch_all(&mut self.c)
+            .await?)
+    }
+    pub async fn new_food(
+        &mut self,
+        name: &str,
+        calories: f64,
+        protein: Option<f64>,
+        fat: Option<f64>,
+        carbohydrate: Option<f64>,
+        desc: &str,
+    ) -> Res<i64> {
+        let e = self.exec(query!("INSERT INTO food (name, calories, protein, fat, carbohydrate, desc) VALUES (?, ?, ?, ?, ?, ?)", name, calories, protein, fat, carbohydrate,desc)).await?;
+        Ok(e.last_insert_rowid())
+    }
+    pub async fn new_meal(&mut self, date: i64, food: i64, desc: &str) -> Res<()> {
+        self.exec(query!(
+            "INSERT INTO meal (date, food, desc) VALUES (?, ?, ?)",
+            date,
+            food,
+            desc
+        ))
+        .await?;
+        Ok(())
     }
 }
 
@@ -315,5 +339,55 @@ pub struct Exercise {
 impl Exercise {
     pub fn to_line(&self) -> [&str; 2] {
         [&self.name, &self.desc]
+    }
+}
+
+#[derive(Serialize, Clone)]
+pub struct Food {
+    pub id: i64,
+    pub name: String,
+    pub calories: f64,
+    pub protein: Option<f64>,
+    pub fat: Option<f64>,
+    pub carbohydrate: Option<f64>,
+    pub desc: String,
+}
+impl Food {
+    pub fn to_line(&self) -> [String; 6] {
+        [
+            self.name.to_owned(),
+            format!("{:.1}", self.calories),
+            self.protein
+                .map(|e| format!("{:.1}", e))
+                .unwrap_or(String::new()),
+            self.fat
+                .map(|e| format!("{:.1}", e))
+                .unwrap_or(String::new()),
+            self.carbohydrate
+                .map(|e| format!("{:.1}", e))
+                .unwrap_or(String::new()),
+            format!("{:.1}", self.desc),
+        ]
+    }
+    pub fn head() -> [String; 6] {
+        [
+            format!("name"),
+            format!("calorie"),
+            format!("protein"),
+            format!("fat"),
+            format!("carbohydrate"),
+            format!("desc"),
+        ]
+    }
+
+    pub fn to_line2(&self) -> [String; 3] {
+        [
+            self.name.to_owned(),
+            format!("{:.1}", self.calories),
+            format!("{:.1}", self.desc),
+        ]
+    }
+    pub fn head2() -> [String; 3] {
+        [format!("name"), format!("calorie"), format!("desc")]
     }
 }
