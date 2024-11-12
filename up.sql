@@ -39,3 +39,20 @@ CREATE TABLE weight (
     bodyfat REAL NOT NULL,
     desc TEXT NOT NULL
 );
+
+CREATE TABLE food (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name VARCHAR(64) UNIQUE NOT NULL,
+    calories REAL NOT NULL,
+    protein REAL,
+    fat REAL,
+    carbohydrate REAL,
+    desc TEXT NOT NULL
+);
+
+CREATE TABLE meal (
+    id INTEGER PRIMARY KEY NOT NULL,
+    date BIGINT NOT NULL,
+    food INTEGER NOT NULL REFERENCES food(id) ON DELETE CASCADE ON UPDATE RESTRICT,
+    desc TEXT NOT NULL
+);

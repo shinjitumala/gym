@@ -30,6 +30,8 @@ const dash = (i) => {
 const data0 = async () => {
     const data = [];
 
+    const exercise = await fetch("/prog").then(r => r.json());
+
     var idx = 0;
     for (const e in exercise) {
         const sets = exercise[e];
@@ -88,7 +90,7 @@ const data0 = async () => {
 
     Plotly.newPlot("load", data, layout);
 }
-const data1 = () => {
+const data1 = async () => {
     const w = {
         x: [],
         y: [],
@@ -110,6 +112,8 @@ const data1 = () => {
             width: 2,
         }
     };
+
+    const weight = await fetch("/weight").then(r => r.json());
     for (const i in weight) {
         const a = weight[i];
         const d = new Date(Date.parse(a.date))
