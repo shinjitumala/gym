@@ -31,7 +31,7 @@ async fn input_place(db: &mut Db) -> Res<db::Place> {
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(Weight, Place, Web, Sync, New, Food);
+pub struct Main(Weight, Place, Web, Sync, New, Food, RegFood);
 
 async fn prog(c: &C) -> Res<db::Prog> {
     let mut db = c.db().await?;
@@ -281,33 +281,52 @@ async fn food(c: &C, _a: Food) -> Res<()> {
             .trim()
             .to_owned();
         if let Some(e) = foods.iter().find(|e| e.name == f) {
-            let x = [db::Food::head(), e.to_line()];
-            println!("{}", to_table(&x));
+            println!("{}", e.print());
             break e.id;
         }
 
         println!("Registering new food...");
-        let calories = CustomType::<f64>::new("calories").prompt()?;
-        let protein = CustomType::<f64>::new("protein")
-            .with_help_message("You can press ESC if unknown")
-            .prompt_skippable()?;
-        let fat = CustomType::<f64>::new("fat")
-            .with_help_message("You can press ESC if unknown")
-            .prompt_skippable()?;
-        let carbohydrate = CustomType::<f64>::new("carbohydrate")
-            .with_help_message("You can press ESC if unknown")
-            .prompt_skippable()?;
-        let desc = Text::new("desc").prompt()?;
-
-        break db
-            .new_food(&f, calories, protein, fat, carbohydrate, &desc)
-            .await?;
+        let f = reg_food(&mut db, &f).await?;
+        break f;
     };
     let date = input_date2("When did you eat?")?;
     let desc = Text::new("desc").prompt()?;
 
     db.new_meal(date.as_timestamp(), f, &desc).await?;
     Ok(())
+}
+
+#[derive(Args)]
+#[args(desc = "Register new food.")]
+pub struct RegFood {}
+impl Run<C> for RegFood {
+    type R = ();
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(reg_food_main(c, a)?)
+    }
+}
+#[tokio::main]
+async fn reg_food_main(c: &C, _a: RegFood) -> Res<()> {
+    let mut db = c.db().await?;
+    let f = Text::new("Name").prompt()?;
+    reg_food(&mut db, &f).await?;
+    Ok(())
+}
+async fn reg_food(db: &mut Db, name: &str) -> Res<i64> {
+    let calories = CustomType::<f64>::new("calories").prompt()?;
+    let protein = CustomType::<f64>::new("protein")
+        .with_help_message("You can press ESC if unknown")
+        .prompt_skippable()?;
+    let fat = CustomType::<f64>::new("fat")
+        .with_help_message("You can press ESC if unknown")
+        .prompt_skippable()?;
+    let carbohydrate = CustomType::<f64>::new("carbohydrate")
+        .with_help_message("You can press ESC if unknown")
+        .prompt_skippable()?;
+    let desc = Text::new("desc").prompt()?;
+    Ok(db
+        .new_food(&name, calories, protein, fat, carbohydrate, &desc)
+        .await?)
 }
 
 fn main2() -> Result<(), String> {

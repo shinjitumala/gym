@@ -390,4 +390,8 @@ impl Food {
     pub fn head2() -> [String; 3] {
         [format!("name"), format!("calorie"), format!("desc")]
     }
+    pub fn print(&self) -> String {
+        let x = [Food::head(), self.to_line()];
+        format!("{}", to_table(&x))
+    }
 }
