@@ -2,6 +2,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use crate::com::*;
 
+use chrono::Local;
 use serde::Serialize;
 use sqlx::{
     query,
@@ -264,6 +265,49 @@ impl Db {
         Ok(r)
     }
 
+    pub async fn get_meals(&mut self) -> Res<Meals> {
+        let offset_seconds = Local::now().offset().local_minus_utc();
+
+        let daily_totals = query_as!(
+            MealsDaily,
+            "SELECT
+            strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) AS date,
+            SUM(food.calories) AS calories,
+            SUM(food.protein) AS protein,
+            SUM(food.fat) AS fat,
+            SUM(food.carbohydrate) AS carbohydrate
+            FROM meal
+            INNER JOIN food WHERE meal.food = food.id
+            GROUP BY strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch'));",
+            offset_seconds,
+            offset_seconds
+        )
+        .fetch_all(&mut self.c)
+        .await?;
+        let breakdown = query_as!(
+            Meal,
+            "SELECT
+            strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) AS date,
+            food.name,
+            food.calories,
+            food.protein,
+            food.fat,
+            food.carbohydrate 
+            FROM meal
+            INNER JOIN food WHERE meal.food = food.id
+            GROUP BY date
+            ORDER BY food.calories DESC;",
+            offset_seconds
+        )
+        .fetch_all(&mut self.c)
+        .await?;
+
+        Ok(Meals {
+            daily: daily_totals,
+            breakdown,
+        })
+    }
+
     pub async fn foods(&mut self) -> Res<Vec<Food>> {
         Ok(query_as!(Food, "SELECT * FROM food")
             .fetch_all(&mut self.c)
@@ -394,4 +438,29 @@ impl Food {
         let x = [Food::head(), self.to_line()];
         format!("{}", to_table(&x))
     }
+}
+
+#[derive(Serialize, Clone)]
+pub struct Meals {
+    pub daily: Vec<MealsDaily>,
+    pub breakdown: Vec<Meal>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct MealsDaily {
+    pub date: Option<String>,
+    pub calories: Option<f64>,
+    pub protein: Option<f64>,
+    pub fat: Option<f64>,
+    pub carbohydrate: Option<f64>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct Meal {
+    pub date: Option<String>,
+    pub name: String,
+    pub calories: f64,
+    pub fat: Option<f64>,
+    pub protein: Option<f64>,
+    pub carbohydrate: Option<f64>,
 }

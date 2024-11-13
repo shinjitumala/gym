@@ -119,18 +119,24 @@ fn sync(c: &C, _a: Sync) -> Res<()> {
 async fn web(c: &C, a: Web) -> Res<()> {
     use warp::{
         fs::{dir, file},
-        path, serve, Filter,
+        path,
+        reply::json,
+        serve, Filter,
     };
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("s");
 
     let rprog = prog(c).await?;
     let rweight = get_weight(c).await?;
 
+    let mut db = c.db().await?;
+    let rfood = db.get_meals().await?;
+
     let x = path!()
         .and(file(root.join("index.html")))
         .or(dir(root))
-        .or(warp::path("prog").map(move || warp::reply::json(&rprog)))
-        .or(warp::path("weight").map(move || warp::reply::json(&rweight)));
+        .or(path("prog").map(move || json(&rprog)))
+        .or(path("weight").map(move || json(&rweight)))
+        .or(path("food").map(move || json(&rfood)));
     println!("Starting web server at '{}'...", a.addr);
     serve(x)
         .run(

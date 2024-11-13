@@ -168,8 +168,80 @@ const data1 = async () => {
 
     Plotly.newPlot("weight", data, layout);
 }
+const data2 = async () => {
+    const food = await fetch("/food").then(r => r.json());
+
+    const layout = {
+        xaxis: {
+            title: {
+                text: "Date"
+            }
+        },
+        yaxis: {
+            title: {
+                text: "Calories (kcal)"
+            }
+        },
+        barmode: "stack",
+        title: {
+            text: "Calorie intake"
+        }
+    };
+    const layout2 = {
+        xaxis: {
+            title: {
+                text: "Date"
+            }
+        },
+        yaxis: {
+            title: {
+                text: "Protein (g)"
+            }
+        },
+        barmode: "stack",
+        title: {
+            text: "Protein intake"
+        }
+    };
+
+    const data = [];
+    const data2 = [];
+    for (const b of food.breakdown) {
+        const d = data.findIndex(e => e.name === b.name);
+        if (d === -1) {
+            const t = {
+                x: [b.date],
+                y: [b.calories],
+                name: b.name,
+                type: "bar",
+            };
+            data.push(t)
+        } else {
+            data[d].x.push(b.date);
+            data[d].y.push(b.calories);
+        }
+
+        const d2 = data2.findIndex(e => e.name === b.name);
+        if (d2 === -1) {
+            const t2 = {
+                x: [b.date],
+                y: [b.protein],
+                name: b.name,
+                type: "bar",
+            };
+            data2.push(t2);
+        } else {
+            data[d2].x.push(b.date);
+            data[d2].y.push(b.protein);
+        }
+    }
+
+    Plotly.newPlot("calorie", data, layout);
+    Plotly.newPlot("protein", data2, layout2);
+}
 const main = () => {
     data0()
     data1()
+    data2()
 }
 document.addEventListener("DOMContentLoaded", () => main())
