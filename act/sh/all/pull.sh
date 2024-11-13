@@ -2,7 +2,7 @@
 set -euox pipefail
 
 # start metadata
-# type text
+# type interactive
 dir=$1
 # end metadata
 
