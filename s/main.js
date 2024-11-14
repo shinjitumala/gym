@@ -231,8 +231,8 @@ const data2 = async () => {
             };
             data2.push(t2);
         } else {
-            data[d2].x.push(b.date);
-            data[d2].y.push(b.protein);
+            data2[d2].x.push(b.date);
+            data2[d2].y.push(b.protein);
         }
     }
 
