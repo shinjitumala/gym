@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [build-dependencies]
-fpr-sh = "0.1.4"
+fpr-sh = "0.2.1"

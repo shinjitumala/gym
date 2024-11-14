@@ -1,5 +1,6 @@
 use fpr_sh::run;
 
-fn main() {
-    run("sh", "linux", "sh.rs");
+fn main() -> Result<(), String> {
+    run("sh", "sh.rs")?;
+    Ok(())
 }
