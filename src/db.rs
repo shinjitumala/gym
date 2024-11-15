@@ -292,7 +292,8 @@ impl Db {
             food.calories * meal.amount AS calories,
             food.protein * meal.amount AS protein,
             food.fat * meal.amount AS fat,
-            food.carbohydrate  * meal.amount AS carbohydrate 
+            food.carbohydrate  * meal.amount AS carbohydrate, 
+            meal.amount
             FROM meal
             INNER JOIN food WHERE meal.food = food.id
             ORDER BY food.calories * meal.amount DESC;",
@@ -463,4 +464,5 @@ pub struct Meal {
     pub fat: Option<f64>,
     pub protein: Option<f64>,
     pub carbohydrate: Option<f64>,
+    pub amount: Option<f64>,
 }

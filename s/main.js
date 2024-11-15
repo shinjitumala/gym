@@ -37,11 +37,13 @@ const data0 = async () => {
         const sets = exercise[e];
         const x = [];
         const y = [];
+        const t = [];
         for (const i in sets) {
             const s = sets[i]
             const d = new Date(Date.parse(s.date));
             x.push(to_day(d))
             y.push(s.max)
+            t.push(s.desc)
         }
 
         const w = {
@@ -53,7 +55,8 @@ const data0 = async () => {
                 color: color(idx),
                 width: 2,
                 dash: dash(idx),
-            }
+            },
+            text: t,
         }
         data.push(w)
         idx++
@@ -85,7 +88,8 @@ const data0 = async () => {
             t: 100
         },
         annotations: [
-        ]
+        ],
+        hoverlabel: { namelength: -1 },
     };
 
     Plotly.newPlot("load", data, layout);
@@ -99,7 +103,9 @@ const data1 = async () => {
         line: {
             color: color(0),
             width: 2,
-        }
+        },
+        hoverlabel: { namelength: -1 },
+        text: [],
     };
     const b = {
         x: [],
@@ -110,7 +116,9 @@ const data1 = async () => {
         line: {
             color: color(3),
             width: 2,
-        }
+        },
+        hoverlabel: { namelength: -1 },
+        text: [],
     };
 
     const weight = await fetch("/weight").then(r => r.json());
@@ -122,6 +130,8 @@ const data1 = async () => {
         b.x.push(d)
         w.y.push(a.kg)
         b.y.push(a.bodyfat)
+        w.text.push(a.desc)
+        b.text.push(a.desc)
     }
     const data = [w, b]
 
@@ -185,7 +195,8 @@ const data2 = async () => {
         barmode: "stack",
         title: {
             text: "Calorie intake"
-        }
+        },
+        hoverlabel: { namelength: -1 },
     };
     const layout2 = {
         xaxis: {
@@ -201,7 +212,8 @@ const data2 = async () => {
         barmode: "stack",
         title: {
             text: "Protein intake"
-        }
+        },
+        hoverlabel: { namelength: -1 },
     };
 
     const data = [];
@@ -214,11 +226,13 @@ const data2 = async () => {
                 y: [b.calories],
                 name: b.name,
                 type: "bar",
+                text: [b.name + " x " + b.amount],
             };
             data.push(t)
         } else {
             data[d].x.push(b.date);
             data[d].y.push(b.calories);
+            data[d].y.push(b.name + " x " + b.amount);
         }
 
         const d2 = data2.findIndex(e => e.name === b.name);
@@ -226,13 +240,15 @@ const data2 = async () => {
             const t2 = {
                 x: [b.date],
                 y: [b.protein],
-                name: b.name,
+                name: b.name + " x " + b.amount,
                 type: "bar",
+                text: [b.name + " x " + b.amount],
             };
             data2.push(t2);
         } else {
             data2[d2].x.push(b.date);
             data2[d2].y.push(b.protein);
+            data2[d2].y.push(b.name + " x " + b.amount);
         }
     }
 
