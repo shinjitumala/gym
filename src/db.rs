@@ -272,10 +272,10 @@ impl Db {
             MealsDaily,
             "SELECT
             strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) AS date,
-            SUM(food.calories) AS calories,
-            SUM(food.protein) AS protein,
-            SUM(food.fat) AS fat,
-            SUM(food.carbohydrate) AS carbohydrate
+            SUM(food.calories * meal.amount) AS calories,
+            SUM(food.protein * meal.amount) AS protein,
+            SUM(food.fat * meal.amount) AS fat,
+            SUM(food.carbohydrate * meal.amount) AS carbohydrate
             FROM meal
             INNER JOIN food WHERE meal.food = food.id
             GROUP BY strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch'));",
@@ -289,15 +289,14 @@ impl Db {
             "SELECT
             strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) AS date,
             food.name,
-            food.calories,
-            food.protein,
-            food.fat,
-            food.carbohydrate 
+            food.calories * meal.amount AS calories,
+            food.protein * meal.amount AS protein,
+            food.fat * meal.amount AS fat,
+            food.carbohydrate  * meal.amount AS carbohydrate 
             FROM meal
             INNER JOIN food WHERE meal.food = food.id
-            GROUP BY date
-            ORDER BY food.calories DESC;",
-            offset_seconds
+            ORDER BY food.calories * meal.amount DESC;",
+            offset_seconds,
         )
         .fetch_all(&mut self.c)
         .await?;
@@ -325,11 +324,12 @@ impl Db {
         let e = self.exec(query!("INSERT INTO food (name, calories, protein, fat, carbohydrate, desc) VALUES (?, ?, ?, ?, ?, ?)", name, calories, protein, fat, carbohydrate,desc)).await?;
         Ok(e.last_insert_rowid())
     }
-    pub async fn new_meal(&mut self, date: i64, food: i64, desc: &str) -> Res<()> {
+    pub async fn new_meal(&mut self, date: i64, food: i64, amount: f64, desc: &str) -> Res<()> {
         self.exec(query!(
-            "INSERT INTO meal (date, food, desc) VALUES (?, ?, ?)",
+            "INSERT INTO meal (date, food, amount, desc) VALUES (?, ?, ?, ?)",
             date,
             food,
+            amount,
             desc
         ))
         .await?;

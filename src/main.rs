@@ -296,9 +296,13 @@ async fn food(c: &C, _a: Food) -> Res<()> {
         break f;
     };
     let date = input_date2("When did you eat?")?;
+    let amount = CustomType::<f64>::new("Amount")
+        .with_help_message("Multiplier")
+        .with_default(1.0f64)
+        .prompt()?;
     let desc = Text::new("desc").prompt()?;
 
-    db.new_meal(date.as_timestamp(), f, &desc).await?;
+    db.new_meal(date.as_timestamp(), f, amount, &desc).await?;
     Ok(())
 }
 
