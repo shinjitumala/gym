@@ -240,7 +240,7 @@ const data2 = async () => {
             const t2 = {
                 x: [b.date],
                 y: [b.protein],
-                name: b.name + " x " + b.amount,
+                name: b.name,
                 type: "bar",
                 text: [b.name + " x " + b.amount],
             };

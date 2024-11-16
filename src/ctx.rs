@@ -3,12 +3,13 @@ use std::{env, fs, path::PathBuf};
 
 use crate::com::*;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Cfg {
     pub db: String,
     pub repo: String,
 }
 
+#[derive(Clone)]
 pub struct C {
     pub cfg: Cfg,
 }

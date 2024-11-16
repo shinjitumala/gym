@@ -17,6 +17,7 @@ use com::*;
 use db::ExerciseHistoryItem;
 use inquire::{list_option::ListOption, Confirm, CustomType, Select, Text};
 use itertools::Itertools;
+use serde::Serialize;
 
 async fn input_place(db: &mut Db) -> Res<db::Place> {
     let places = db.places().await?;
@@ -117,26 +118,64 @@ fn sync(c: &C, _a: Sync) -> Res<()> {
 
 #[tokio::main]
 async fn web(c: &C, a: Web) -> Res<()> {
+    use std::convert::Infallible;
     use warp::{
+        any,
         fs::{dir, file},
         path,
         reply::json,
-        serve, Filter,
+        serve, Filter, Reply,
     };
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("s");
 
-    let rprog = prog(c).await?;
-    let rweight = get_weight(c).await?;
+    async fn food(c: &C) -> Res<db::Meals> {
+        let mut db = c.db().await?;
+        Ok(db.get_meals().await?)
+    }
 
-    let mut db = c.db().await?;
-    let rfood = db.get_meals().await?;
+    #[derive(Serialize)]
+    struct JsonErr {
+        message: String,
+    }
+    impl JsonErr {
+        fn new(e: Err) -> Self {
+            Self {
+                message: String::from(e),
+            }
+        }
+    }
+
+    fn with_db(c: C) -> impl Filter<Extract = (C,), Error = Infallible> + Clone {
+        any().map(move || c.clone())
+    }
+    async fn hprog(c: C) -> Result<impl Reply, Infallible> {
+        let r = prog(&c).await;
+        match r {
+            Err(e) => Ok(json(&JsonErr::new(e))),
+            Ok(e) => Ok(json(&e)),
+        }
+    }
+    async fn hweight(c: C) -> Result<impl Reply, Infallible> {
+        let r = get_weight(&c).await;
+        match r {
+            Err(e) => Ok(json(&JsonErr::new(e))),
+            Ok(e) => Ok(json(&e)),
+        }
+    }
+    async fn hfood(c: C) -> Result<impl Reply, Infallible> {
+        let r = food(&c).await;
+        match r {
+            Err(e) => Ok(json(&JsonErr::new(e))),
+            Ok(e) => Ok(json(&e)),
+        }
+    }
 
     let x = path!()
         .and(file(root.join("index.html")))
         .or(dir(root))
-        .or(path("prog").map(move || json(&rprog)))
-        .or(path("weight").map(move || json(&rweight)))
-        .or(path("food").map(move || json(&rfood)));
+        .or(path("prog").and(with_db(c.clone())).and_then(hprog))
+        .or(path("weight").and(with_db(c.clone())).and_then(hweight))
+        .or(path("food").and(with_db(c.clone())).and_then(hfood));
     println!("Starting web server at '{}'...", a.addr);
     serve(x)
         .run(
