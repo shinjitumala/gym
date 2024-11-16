@@ -232,7 +232,7 @@ const data2 = async () => {
         } else {
             data[d].x.push(b.date);
             data[d].y.push(b.calories);
-            data[d].y.push(b.name + " x " + b.amount);
+            data[d].text.push(b.name + " x " + b.amount);
         }
 
         const d2 = data2.findIndex(e => e.name === b.name);
@@ -248,7 +248,7 @@ const data2 = async () => {
         } else {
             data2[d2].x.push(b.date);
             data2[d2].y.push(b.protein);
-            data2[d2].y.push(b.name + " x " + b.amount);
+            data2[d2].text.push(b.name + " x " + b.amount);
         }
     }
 
