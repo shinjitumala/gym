@@ -41,6 +41,19 @@ impl C {
             )
         })?;
 
+        let p = PathBuf::from(&cfg.db);
+        if !p.exists() {
+            Err(format!("Database path does not exist '{}'", cfg.db))?;
+        }
+
+        let p = PathBuf::from(&cfg.repo);
+        if !p.exists() {
+            Err(format!(
+                "Data repository path does not exist '{}'",
+                cfg.repo
+            ))?;
+        }
+
         Ok(C { cfg })
     }
 
