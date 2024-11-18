@@ -153,7 +153,6 @@ const data1 = async () => {
             zeroline: true,
             showline: true,
             showticklabels: true,
-            rangemode: "tozero",
         },
         yaxis2: {
             title: "bodyfat (%)",
@@ -161,7 +160,6 @@ const data1 = async () => {
             zeroline: true,
             showline: true,
             showticklabels: true,
-            rangemode: "tozero",
             overlaying: "y",
             side: "right",
         },

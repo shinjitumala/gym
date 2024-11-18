@@ -11,7 +11,7 @@ pub mod com {
     pub use inquire::InquireError;
 }
 
-use std::{net::SocketAddr, path::PathBuf, process::exit};
+use std::{net::SocketAddr, process::exit};
 
 use com::*;
 use db::ExerciseHistoryItem;
@@ -120,13 +120,10 @@ fn sync(c: &C, _a: Sync) -> Res<()> {
 async fn web(c: &C, a: Web) -> Res<()> {
     use std::convert::Infallible;
     use warp::{
-        any,
-        fs::{dir, file},
-        path,
-        reply::json,
+        any, path,
+        reply::{html, json, with_header},
         serve, Filter, Reply,
     };
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("s");
 
     async fn food(c: &C) -> Res<db::Meals> {
         let mut db = c.db().await?;
@@ -170,12 +167,21 @@ async fn web(c: &C, a: Web) -> Res<()> {
         }
     }
 
-    let x = path!()
-        .and(file(root.join("index.html")))
-        .or(dir(root))
+    const INDEX: &str = include_str!("../s/index.html");
+    const CSS: &str = include_str!("../s/main.css");
+    const JS: &str = include_str!("../s/main.js");
+
+    let index = warp::path::end().map(|| html(INDEX));
+
+    let x = path("index.html")
+        .map(|| html(INDEX))
+        .or(path("main.css").map(|| with_header(CSS, "content-type", "text/css")))
+        .or(path("main.js").map(|| with_header(JS, "content-type", "text/javascript")))
         .or(path("prog").and(with_db(c.clone())).and_then(hprog))
         .or(path("weight").and(with_db(c.clone())).and_then(hweight))
         .or(path("food").and(with_db(c.clone())).and_then(hfood));
+
+    let x = warp::get().and(x.or(index));
     println!("Starting web server at '{}'...", a.addr);
     serve(x)
         .run(
