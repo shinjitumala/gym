@@ -32,7 +32,7 @@ async fn input_place(db: &mut Db) -> Res<db::Place> {
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(Weight, Place, Web, Sync, New, Food, RegFood);
+pub struct Main(Weight, Place, Web, Sync, New, Food, RegFood, MapExercise);
 
 async fn prog(c: &C) -> Res<db::Prog> {
     let mut db = c.db().await?;
@@ -382,6 +382,109 @@ async fn reg_food(db: &mut Db, name: &str) -> Res<i64> {
     Ok(db
         .new_food(&name, calories, protein, fat, carbohydrate, &desc)
         .await?)
+}
+
+#[derive(Args)]
+#[args(desc = "Map exercise to muscle group.")]
+pub struct MapExercise {}
+impl Run<C> for MapExercise {
+    type R = ();
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(map_exercise(c, a)?)
+    }
+}
+#[tokio::main]
+async fn map_exercise(c: &C, _a: MapExercise) -> Res<()> {
+    let mut db = c.db().await?;
+    let places = db.places().await?;
+    let place = &places[select_line("Filter exercise by place", &places, |e| {
+        e.to_line().map(|e| e.to_owned())
+    })
+    .prompt()?
+    .index];
+
+    let exercises = db.exercises(place.id).await?;
+    let mgs = db.muscle_groups().await?;
+
+    loop {
+        let exercise = &exercises[select_line("Exercise to be mapped", &exercises, |e| {
+            e.to_line().map(|e| e.to_owned())
+        })
+        .prompt()?
+        .index];
+
+        let maps = db.get_exercise_maps(exercise.id).await?;
+
+        let mut maps_new = maps.clone();
+
+        #[derive(Actions, Clone)]
+        enum A {
+            Add,
+            Edit,
+            Delete,
+            Done,
+        }
+
+        loop {
+            println!(
+                "Current:\n{}",
+                to_table(&maps_new.iter().map(|e| e.to_line()).collect_vec())
+            );
+            match A::get("Select action", None)? {
+                A::Add => {
+                    let mgs = mgs
+                        .iter()
+                        .filter(|e| maps_new.iter().find(|e2| e2.id == e.id).is_none())
+                        .collect_vec();
+                    let mg = mgs[select_line("Target muscle group", &mgs, |e| {
+                        [e.name.to_owned(), e.desc.to_owned()]
+                    })
+                    .prompt()?
+                    .index];
+                    let amount = CustomType::<f64>::new("Set for muscle group per set of exercise")
+                        .with_default(1f64)
+                        .prompt()?;
+
+                    maps_new.push(db::MuscleMapOut {
+                        id: mg.id,
+                        name: mg.name.to_owned(),
+                        amount,
+                    });
+                }
+                A::Edit => {
+                    let map = select_line("which one", &maps_new, |e| e.to_line())
+                        .prompt()?
+                        .index;
+                    maps_new[map].amount =
+                        CustomType::<f64>::new("Set for muscle group per set of exercise")
+                            .with_default(maps_new[map].amount)
+                            .prompt()?;
+                }
+                A::Delete => {
+                    let map = select_line("which one", &maps_new, |e| e.to_line())
+                        .prompt()?
+                        .index;
+                    maps_new.remove(map);
+                }
+                A::Done => break,
+            }
+        }
+
+        let a = maps_new
+            .into_iter()
+            .map(|e| db::MuscleMapIn {
+                id: e.id,
+                amount: e.amount,
+            })
+            .collect_vec();
+        db.map_exercise(exercise.id, &a).await?;
+
+        if Confirm::new("done").with_default(true).prompt()? {
+            break;
+        }
+    }
+
+    Ok(())
 }
 
 fn main2() -> Result<(), String> {

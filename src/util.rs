@@ -33,6 +33,11 @@ impl From<InquireError> for Err {
         Self::Str(v.to_string())
     }
 }
+impl From<MyErr> for Err {
+    fn from(v: MyErr) -> Self {
+        Self::Str(v.into())
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Date {

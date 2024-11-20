@@ -336,6 +336,58 @@ impl Db {
         .await?;
         Ok(())
     }
+    pub async fn get_exercise_maps(&mut self, exercise: i64) -> Res<Vec<MuscleMapOut>> {
+        Ok(query_as!(
+            MuscleMapOut,
+            "SELECT musclegroup as id, musclegroup.name AS name, amount FROM exercise2musclegroup
+                INNER JOIN musclegroup ON musclegroup.id = musclegroup
+                WHERE exercise = ?",
+            exercise
+        )
+        .fetch_all(&mut self.c)
+        .await?)
+    }
+    pub async fn map_exercise(&mut self, exercise: i64, muscle_maps: &[MuscleMapIn]) -> Res<()> {
+        for i in muscle_maps {
+            self.exec(query!(
+                "INSERT OR IGNORE INTO exercise2musclegroup (exercise, musclegroup, amount) VALUES (?, ?, ?)",
+                exercise,
+                i.id,
+                i.amount,
+            )).await?;
+        }
+        Ok(())
+    }
+    pub async fn muscle_groups(&mut self) -> Res<Vec<MuscleGroup>> {
+        Ok(query_as!(MuscleGroup, "SELECT * FROM musclegroup;")
+            .fetch_all(&mut self.c)
+            .await?)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MuscleMapIn {
+    pub id: i64,
+    pub amount: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct MuscleGroup {
+    pub id: i64,
+    pub name: String,
+    pub desc: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct MuscleMapOut {
+    pub id: i64,
+    pub name: String,
+    pub amount: f64,
+}
+impl MuscleMapOut {
+    pub fn to_line(&self) -> [String; 2] {
+        [self.name.to_owned(), format!("{:.2}", self.amount)]
+    }
 }
 
 #[derive(Clone, Debug)]

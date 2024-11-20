@@ -4,6 +4,38 @@ CREATE TABLE exercise (
     desc TEXT NOT NULL
 );
 
+CREATE TABLE musclegroup (
+    id INTEGER PRIMARY KEY NOT NULL,
+    name VARCHAR(64) UNIQUE NOT NULL,
+    desc TEXT NOT NULL
+);
+
+INSERT INTO musclegroup (name, desc) VALUES
+    ('pecs',''), 
+    ('side delts',''), 
+    ('front delts',''), 
+    ('rear delts',''), 
+    ('biceps',''), 
+    ('triceps',''), 
+    ('forearms',''), 
+    ('abs',''), 
+    ('obqliques',''), 
+    ('traps',''), 
+    ('lats',''), 
+    ('erectors',''), 
+    ('glutes',''), 
+    ('quads',''), 
+    ('hamstrings',''), 
+    ('calves','');
+
+CREATE TABLE exercise2musclegroup (
+    id INTEGER PRIMARY KEY NOT NULL,
+    exercise INTEGER NOT NULL REFERENCES exercise(id) ON DELETE CASCADE ON UPDATE RESTRICT,
+    musclegroup INTEGER NOT NULL REFERENCES musclegroup(id) ON DELETE CASCADE ON UPDATE RESTRICT,
+    amount REAL NOT NULL CHECK(0 < amount),
+    UNIQUE(exercise, musclegroup)
+);
+
 CREATE TABLE place (
     id INTEGER PRIMARY KEY NOT NULL,
     name VARCHAR(64) UNIQUE NOT NULL,
