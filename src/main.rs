@@ -14,7 +14,7 @@ pub mod com {
 use std::{net::SocketAddr, process::exit};
 
 use com::*;
-use db::ExerciseHistoryItem;
+use db::{ExerciseHistoryItem, MuscleGroup};
 use inquire::{list_option::ListOption, Confirm, CustomType, Select, Text};
 use itertools::Itertools;
 use serde::Serialize;
@@ -32,13 +32,17 @@ async fn input_place(db: &mut Db) -> Res<db::Place> {
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(Weight, Place, Web, Sync, New, Food, RegFood, MapExercise);
-
-async fn prog(c: &C) -> Res<db::Prog> {
-    let mut db = c.db().await?;
-    let r = db.get_prog().await?;
-    Ok(r)
-}
+pub struct Main(
+    Weight,
+    Place,
+    Web,
+    Sync,
+    New,
+    Food,
+    RegFood,
+    MapExercise,
+    Test,
+);
 
 #[derive(Args)]
 #[args(desc = "Add weight data.")]
@@ -58,12 +62,6 @@ async fn weight(c: &C, _a: Weight) -> Res<()> {
     let mut db = c.db().await?;
     db.add_weight(date, weight, bodyfat, desc).await?;
     Ok(())
-}
-
-async fn get_weight(c: &C) -> Res<Vec<db::Weight>> {
-    let mut db = c.db().await?;
-    let d = db.get_weight().await?;
-    Ok(d)
 }
 
 #[derive(Args)]
@@ -101,6 +99,44 @@ impl Run<C> for Web {
 }
 
 #[derive(Args)]
+#[args(desc = "Test website.")]
+pub struct Test {
+    #[arg(desc = "Socket address.", s = ("0.0.0.0:8080"))]
+    addr: String,
+}
+impl Run<C> for Test {
+    type R = ();
+    fn run(c: &C, a: Self) -> Result<Self::R, String> {
+        Ok(test(c, a)?)
+    }
+}
+#[tokio::main]
+async fn test(c: &C, a: Test) -> Res<()> {
+    use web_api::*;
+
+    let r = env!("CARGO_MANIFEST_DIR");
+
+    let x = dir(format!("{r}/s/"))
+        .or(path("mgs").and(with_db(c.clone())).and_then(mgs))
+        .or(path("map").and(with_db(c.clone())).and_then(map))
+        .or(path("prog").and(with_db(c.clone())).and_then(hprog))
+        .or(path("weight").and(with_db(c.clone())).and_then(hweight))
+        .or(path("food").and(with_db(c.clone())).and_then(hfood));
+
+    let x = get().and(x.or(file(format!("{r}/s/index.html"))));
+
+    println!("Starting web server at '{}'...", a.addr);
+    serve(x)
+        .run(
+            a.addr
+                .parse::<SocketAddr>()
+                .map_err(|e| format!("Failed to parse addr '{}' because '{e}'", a.addr))?,
+        )
+        .await;
+    Ok(())
+}
+
+#[derive(Args)]
 #[args(desc = "Sync with remote.")]
 pub struct Sync {}
 impl Run<C> for Sync {
@@ -116,22 +152,128 @@ fn sync(c: &C, _a: Sync) -> Res<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn web(c: &C, a: Web) -> Res<()> {
-    use std::convert::Infallible;
-    use warp::{
-        any, path,
+mod web_api {
+    use super::*;
+    use std::{collections::BTreeMap, convert::Infallible};
+    pub use warp::{
+        any,
+        filters::fs::{dir, file},
+        get, path,
+        path::end,
         reply::{html, json, with_header},
         serve, Filter, Reply,
     };
 
-    async fn food(c: &C) -> Res<db::Meals> {
+    #[derive(Serialize)]
+    struct DataProg {
+        date: Vec<Date>,
+        max: Vec<f64>,
+        desc: Vec<String>,
+    }
+    impl DataProg {
+        pub fn new() -> Self {
+            Self {
+                date: Vec::new(),
+                max: Vec::new(),
+                desc: Vec::new(),
+            }
+        }
+    }
+    async fn prog(c: &C) -> Res<BTreeMap<String, DataProg>> {
         let mut db = c.db().await?;
-        Ok(db.get_meals().await?)
+        let r = db.get_prog().await?;
+        let mut m = BTreeMap::new();
+        for (k, v) in r {
+            let e = match m.get_mut(&k) {
+                Some(e) => e,
+                None => {
+                    m.insert(k.to_owned(), DataProg::new());
+                    m.get_mut(&k).unwrap()
+                }
+            };
+            for v in v {
+                e.date.push(v.date);
+                e.max.push(v.max);
+                e.desc.push(format!("{} x {}\n{}", v.load, v.rep, v.desc));
+            }
+        }
+        Ok(m)
     }
 
     #[derive(Serialize)]
-    struct JsonErr {
+    struct DataWeight {
+        date: Vec<Date>,
+        kg: Vec<f64>,
+        bodyfat: Vec<f64>,
+        desc: Vec<String>,
+    }
+    async fn get_weight(c: &C) -> Res<DataWeight> {
+        let mut db = c.db().await?;
+        let d = db.get_weight().await?;
+
+        let mut r = DataWeight {
+            date: Vec::new(),
+            kg: Vec::new(),
+            bodyfat: Vec::new(),
+            desc: Vec::new(),
+        };
+        for a in d {
+            r.date.push(a.date);
+            r.kg.push(a.kg);
+            r.bodyfat.push(a.bodyfat);
+            r.desc.push(a.desc);
+        }
+
+        Ok(r)
+    }
+
+    #[derive(Serialize)]
+    pub struct DataFood {
+        date: Vec<String>,
+        calories: Vec<f64>,
+        protein: Vec<f64>,
+        desc: Vec<String>,
+    }
+    impl DataFood {
+        fn new() -> Self {
+            Self {
+                date: Vec::new(),
+                calories: Vec::new(),
+                protein: Vec::new(),
+                desc: Vec::new(),
+            }
+        }
+    }
+
+    pub async fn food(c: &C) -> Res<BTreeMap<String, DataFood>> {
+        let mut db = c.db().await?;
+        let mut r = BTreeMap::new();
+        let m = db.get_meals().await?;
+        for m in m.breakdown {
+            let v = match r.get_mut(&m.name) {
+                Some(e) => e,
+                None => {
+                    r.insert(m.name.to_owned(), DataFood::new());
+                    r.get_mut(&m.name).unwrap()
+                }
+            };
+
+            v.date.push(m.date.unwrap_or(String::new()));
+            v.calories.push(m.calories);
+            v.protein.push(m.protein.unwrap_or(0f64));
+            v.desc.push(format!(
+                "{} x {}\n{}",
+                m.name,
+                m.amount.unwrap_or(1.),
+                m.desc
+            ))
+        }
+
+        Ok(r)
+    }
+
+    #[derive(Serialize)]
+    pub struct JsonErr {
         message: String,
     }
     impl JsonErr {
@@ -142,46 +284,73 @@ async fn web(c: &C, a: Web) -> Res<()> {
         }
     }
 
-    fn with_db(c: C) -> impl Filter<Extract = (C,), Error = Infallible> + Clone {
+    pub fn with_db(c: C) -> impl Filter<Extract = (C,), Error = Infallible> + Clone {
         any().map(move || c.clone())
     }
-    async fn hprog(c: C) -> Result<impl Reply, Infallible> {
+    pub async fn hprog(c: C) -> Result<impl Reply, Infallible> {
         let r = prog(&c).await;
         match r {
             Err(e) => Ok(json(&JsonErr::new(e))),
             Ok(e) => Ok(json(&e)),
         }
     }
-    async fn hweight(c: C) -> Result<impl Reply, Infallible> {
+    pub async fn hweight(c: C) -> Result<impl Reply, Infallible> {
         let r = get_weight(&c).await;
         match r {
             Err(e) => Ok(json(&JsonErr::new(e))),
             Ok(e) => Ok(json(&e)),
         }
     }
-    async fn hfood(c: C) -> Result<impl Reply, Infallible> {
+    pub async fn hfood(c: C) -> Result<impl Reply, Infallible> {
         let r = food(&c).await;
         match r {
             Err(e) => Ok(json(&JsonErr::new(e))),
             Ok(e) => Ok(json(&e)),
         }
     }
+    pub async fn mgs(c: C) -> Result<impl Reply, Infallible> {
+        async fn a(c: C) -> Res<Vec<MuscleGroup>> {
+            let mut db = c.db().await?;
+            Ok(db.muscle_groups().await?)
+        }
+        match a(c).await {
+            Err(e) => Ok(json(&JsonErr::new(e))),
+            Ok(e) => Ok(json(&e)),
+        }
+    }
+    pub async fn map(c: C) -> Result<impl Reply, Infallible> {
+        async fn a(c: C) -> Res<db::MajorExerciseMaps> {
+            let mut db = c.db().await?;
+            Ok(db.major_exercise_maps().await?)
+        }
+        match a(c).await {
+            Err(e) => Ok(json(&JsonErr::new(e))),
+            Ok(e) => Ok(json(&e)),
+        }
+    }
 
-    const INDEX: &str = include_str!("../s/index.html");
-    const CSS: &str = include_str!("../s/main.css");
-    const JS: &str = include_str!("../s/main.js");
+    pub const INDEX: &str = include_str!("../s/index.html");
+    pub const CSS: &str = include_str!("../s/main.css");
+    pub const JS: &str = include_str!("../s/main.js");
+}
 
-    let index = warp::path::end().map(|| html(INDEX));
+#[tokio::main]
+async fn web(c: &C, a: Web) -> Res<()> {
+    use web_api::*;
+
+    let index = end().map(|| html(INDEX));
 
     let x = path("index.html")
         .map(|| html(INDEX))
         .or(path("main.css").map(|| with_header(CSS, "content-type", "text/css")))
         .or(path("main.js").map(|| with_header(JS, "content-type", "text/javascript")))
+        .or(path("mgs").and(with_db(c.clone())).and_then(mgs))
+        .or(path("map").and(with_db(c.clone())).and_then(map))
         .or(path("prog").and(with_db(c.clone())).and_then(hprog))
         .or(path("weight").and(with_db(c.clone())).and_then(hweight))
         .or(path("food").and(with_db(c.clone())).and_then(hfood));
 
-    let x = warp::get().and(x.or(index));
+    let x = get().and(x.or(index));
     println!("Starting web server at '{}'...", a.addr);
     serve(x)
         .run(

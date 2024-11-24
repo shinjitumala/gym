@@ -163,6 +163,26 @@ impl Db {
         Ok(())
     }
 
+    pub async fn major_exercise_maps(&mut self) -> Res<MajorExerciseMaps> {
+        let mut r: MajorExerciseMaps = HashMap::new();
+        let a = self.query(query!("
+            SELECT musclegroup.name AS musclegroup, exercise.name AS exercise FROM musclegroup
+            INNER JOIN exercise2musclegroup ON exercise2musclegroup.musclegroup = musclegroup.id AND amount = 1
+            INNER JOIN exercise ON exercise2musclegroup.exercise = exercise.id"
+        ))
+        .await?;
+        for a in a {
+            match r.get_mut(&a.musclegroup) {
+                Some(e) => e.push(a.exercise),
+                None => {
+                    r.insert(a.musclegroup, vec![a.exercise]);
+                }
+            }
+        }
+
+        Ok(r)
+    }
+
     pub async fn get_prog(&mut self) -> Res<Prog> {
         let x = {
             let mut x = HashMap::<String, Vec<BestSet>>::new();
@@ -293,7 +313,8 @@ impl Db {
             food.protein * meal.amount AS protein,
             food.fat * meal.amount AS fat,
             food.carbohydrate  * meal.amount AS carbohydrate, 
-            meal.amount
+            meal.amount,
+            meal.desc
             FROM meal
             INNER JOIN food WHERE meal.food = food.id
             ORDER BY food.calories * meal.amount DESC;",
@@ -371,7 +392,7 @@ pub struct MuscleMapIn {
     pub amount: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct MuscleGroup {
     pub id: i64,
     pub name: String,
@@ -420,10 +441,10 @@ impl Place {
 
 #[derive(Serialize, Clone)]
 pub struct Weight {
-    date: Date,
-    kg: f64,
-    bodyfat: f64,
-    desc: String,
+    pub date: Date,
+    pub kg: f64,
+    pub bodyfat: f64,
+    pub desc: String,
 }
 pub type Prog = HashMap<String, Vec<BestSet>>;
 
@@ -517,4 +538,7 @@ pub struct Meal {
     pub protein: Option<f64>,
     pub carbohydrate: Option<f64>,
     pub amount: Option<f64>,
+    pub desc: String,
 }
+
+pub type MajorExerciseMaps = HashMap<String, Vec<String>>;

@@ -1,0 +1,13 @@
+{
+    "compilerOptions": {
+        "lib": [
+            "ESNext",
+            "dom"
+        ],
+        "moduleResolution": "bundler",
+        "module": "esnext",
+        "target": "ESNext",
+        "strict": true
+    },
+    "exclude": []
+}

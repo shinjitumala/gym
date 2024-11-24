@@ -1,261 +1,207 @@
-const to_day = (d) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`
-const color = (i) => {
-    const c = [
-        "red",
-        "yellow",
-        "blue",
-        "green",
-        "aqua",
-        "fuchsia",
-        "lime",
-        "maroon",
-        "navy",
-        "olive",
-        "purple",
-        "silver",
-        "gray",
-        "teal",
-        "black",
-        "white",
-    ]
-    return c[Math.floor(i / 3)]
-}
-const dash = (i) => {
-    return [
-        "solid",
-        "dot",
-        "dashdot"
-    ][i % 3]
-}
-const data0 = async () => {
-    const data = [];
+(function (strict, p) {
+    'use strict';
 
-    const exercise = await fetch("/prog").then(r => r.json());
-
-    var idx = 0;
-    for (const e in exercise) {
-        const sets = exercise[e];
-        const x = [];
-        const y = [];
-        const t = [];
-        for (const i in sets) {
-            const s = sets[i]
-            const d = new Date(Date.parse(s.date));
-            x.push(to_day(d))
-            y.push(s.max)
-            t.push(s.desc)
+    function _interopNamespaceDefault(e) {
+        var n = Object.create(null);
+        if (e) {
+            Object.keys(e).forEach(function (k) {
+                if (k !== 'default') {
+                    var d = Object.getOwnPropertyDescriptor(e, k);
+                    Object.defineProperty(n, k, d.get ? d : {
+                        enumerable: true,
+                        get: function () { return e[k]; }
+                    });
+                }
+            });
         }
+        n.default = e;
+        return Object.freeze(n);
+    }
 
-        const w = {
-            x: x,
-            y: y,
-            mode: "lines+markers",
-            name: e,
-            line: {
-                color: color(idx),
-                width: 2,
-                dash: dash(idx),
-            },
-            text: t,
+    var p__namespace = /*#__PURE__*/_interopNamespaceDefault(p);
+
+    const s = (s) => {
+        const a = document.querySelector(s);
+        if (a === null) {
+            throw `Not found '${s}'`;
         }
-        data.push(w)
-        idx++
-    }
-    const layout = {
-        title: "Progressive overload",
-        height: 600,
-        xaxis: {
-            showline: true,
-            showgrid: true,
-            showticklabels: true,
-            autotick: true,
-            ticks: "outside",
-        },
-        yaxis: {
-            title: "theoretical one rep max (kg)",
-            showgrid: true,
-            zeroline: true,
-            showline: true,
-            showticklabels: true,
-            ticks: "outside",
-            rangemode: "tozero",
-        },
-        autosize: true,
-        margin: {
-            // autoexpand: false,
-            l: 100,
-            r: 20,
-            t: 100
-        },
-        annotations: [
-        ],
-        hoverlabel: { namelength: -1 },
+        return a;
     };
-
-    Plotly.newPlot("load", data, layout);
-}
-const data1 = async () => {
-    const w = {
-        x: [],
-        y: [],
-        mode: "lines+markers",
-        name: "weight (kg)",
-        line: {
-            color: color(0),
-            width: 2,
-        },
-        hoverlabel: { namelength: -1 },
-        text: [],
+    const e = (k) => {
+        return document.createElement(k);
     };
-    const b = {
-        x: [],
-        y: [],
-        mode: "lines+markers",
-        name: "bodyfat (%)",
-        yaxis: "y2",
-        line: {
-            color: color(3),
-            width: 2,
-        },
-        hoverlabel: { namelength: -1 },
-        text: [],
+    const color = (i) => {
+        const c = [
+            "red",
+            "yellow",
+            "blue",
+            "green",
+            "aqua",
+            "fuchsia",
+            "lime",
+            "maroon",
+            "navy",
+            "olive",
+            "purple",
+            "silver",
+            "gray",
+            "teal",
+            "black",
+            "white",
+        ];
+        return c[i % c.length];
     };
-
-    const weight = await fetch("/weight").then(r => r.json());
-    for (const i in weight) {
-        const a = weight[i];
-        const d = new Date(Date.parse(a.date))
-
-        w.x.push(d)
-        b.x.push(d)
-        w.y.push(a.kg)
-        b.y.push(a.bodyfat)
-        w.text.push(a.desc)
-        b.text.push(a.desc)
-    }
-    const data = [w, b]
-
-    const layout = {
-        title: "Weight",
-        height: 600,
-        xaxis: {
-            showline: true,
-            showgrid: true,
-            showticklabels: true,
-            linecolor: "rgb(204,204,204)",
-            linewidth: 2,
-            autotick: true,
-            ticks: "outside",
-        },
-        yaxis: {
-            title: "weight (kg)",
-            showgrid: true,
-            zeroline: true,
-            showline: true,
-            showticklabels: true,
-        },
-        yaxis2: {
-            title: "bodyfat (%)",
-            showgrid: true,
-            zeroline: true,
-            showline: true,
-            showticklabels: true,
-            overlaying: "y",
-            side: "right",
-        },
-        autosize: true,
-        margin: {
-            // autoexpand: false,
-            l: 100,
-            r: 20,
-            t: 100
-        },
-        annotations: [
-        ]
-    };
-
-    Plotly.newPlot("weight", data, layout);
-}
-const data2 = async () => {
-    const food = await fetch("/food").then(r => r.json());
-
-    const layout = {
-        xaxis: {
-            title: {
-                text: "Date"
+    const load = async () => {
+        const smgs = s("select#musclegroup"); // as HTMLSelectElement;
+        fetch("/mgs").then(e => e.json()).then(a => {
+            const mgs = a;
+            const x = new Array;
+            for (const a of mgs) {
+                const o = e("option");
+                o.innerText = a.name;
+                o.value = a.name;
+                x.push(o);
             }
-        },
-        yaxis: {
-            title: {
-                text: "Calories (kcal)"
-            }
-        },
-        barmode: "stack",
-        title: {
-            text: "Calorie intake"
-        },
-        hoverlabel: { namelength: -1 },
+            smgs.replaceChildren(...x);
+            smgs.selectedIndex = 0;
+            upd();
+        });
+        smgs.onchange = async () => {
+            upd();
+        };
     };
-    const layout2 = {
-        xaxis: {
-            title: {
-                text: "Date"
-            }
-        },
-        yaxis: {
-            title: {
-                text: "Protein (g)"
-            }
-        },
-        barmode: "stack",
-        title: {
-            text: "Protein intake"
-        },
-        hoverlabel: { namelength: -1 },
-    };
-
-    const data = [];
-    const data2 = [];
-    for (const b of food.breakdown) {
-        const d = data.findIndex(e => e.name === b.name);
-        if (d === -1) {
-            const t = {
-                x: [b.date],
-                y: [b.calories],
-                name: b.name,
-                type: "bar",
-                text: [b.name + " x " + b.amount],
+    const upd = async () => {
+        const z = 0.01;
+        const r0 = [0.55 + z, 0.70 - z];
+        const r1 = [0.35 + z, 0.55 - z];
+        const r2 = [0.15 + z, 0.35 - z];
+        const r3 = [0.70 + z, 1];
+        const mg = s("select#musclegroup").value;
+        const t_weight = "weight kg";
+        const c_weight = "red";
+        const t_bf = "bodyfat %";
+        const c_bf = "blue";
+        const t_max = "theoretical max";
+        const c_max = "black";
+        const l = {
+            xaxis: { title: "date", tickformat: "%Y-%m-%d %H:%M" },
+            yaxis: { title: t_weight, domain: r0, side: "left", color: c_weight },
+            yaxis2: { title: t_bf, domain: r0, side: "right", overlaying: "y", color: c_bf },
+            yaxis3: { title: t_max, domain: r3, color: c_max },
+            yaxis4: { title: "calories kcal", domain: r1, color: c_max, side: "left" },
+            yaxis5: { title: "protein g", domain: r2, color: c_max, side: "left" },
+            barmode: "stack",
+            hoverlabel: { namelength: -1 },
+            height: 2400,
+        };
+        let weight = fetch("/weight").then(r => r.json()).then(j => {
+            const weight = j;
+            const t1 = {
+                x: weight.date,
+                y: weight.kg,
+                xaxis: "x",
+                yaxis: "y",
+                text: weight.desc,
+                name: t_weight,
+                line: {
+                    color: c_weight
+                },
+                mode: "lines+markers",
+                showlegend: false,
             };
-            data.push(t)
-        } else {
-            data[d].x.push(b.date);
-            data[d].y.push(b.calories);
-            data[d].text.push(b.name + " x " + b.amount);
-        }
-
-        const d2 = data2.findIndex(e => e.name === b.name);
-        if (d2 === -1) {
             const t2 = {
-                x: [b.date],
-                y: [b.protein],
-                name: b.name,
-                type: "bar",
-                text: [b.name + " x " + b.amount],
+                x: weight.date,
+                y: weight.bodyfat,
+                xaxis: "x",
+                yaxis: "y2",
+                text: weight.desc,
+                name: t_bf,
+                line: {
+                    color: c_bf
+                },
+                mode: "lines+markers",
+                showlegend: false,
             };
-            data2.push(t2);
-        } else {
-            data2[d2].x.push(b.date);
-            data2[d2].y.push(b.protein);
-            data2[d2].text.push(b.name + " x " + b.amount);
-        }
-    }
+            return [t1, t2];
+        });
+        let food = fetch("/food").then(r => r.json()).then(j => {
+            const food = j;
+            const r = [];
+            var idx = 0;
+            for (const n in food) {
+                const f = food[n];
+                const t0 = {
+                    x: f.date,
+                    y: f.calories,
+                    name: n,
+                    type: "bar",
+                    text: f.desc,
+                    xaxis: "x",
+                    yaxis: "y4",
+                    showlegend: false,
+                    marker: {
+                        color: color(idx),
+                    }
+                };
+                const t1 = {
+                    x: f.date,
+                    y: f.protein,
+                    name: n,
+                    type: "bar",
+                    text: f.desc,
+                    xaxis: "x",
+                    yaxis: "y5",
+                    showlegend: false,
+                    marker: {
+                        color: color(idx),
+                    }
+                };
+                idx++;
+                r.push(t0, t1);
+            }
+            return r;
+        });
+        const mem = (await fetch("/map").then(j => j.json()));
+        const prog = fetch("/prog").then(j => j.json()).then(j => {
+            const prog = j;
+            const es = (() => {
+                const x = mem[mg];
+                if (x === undefined) {
+                    return [];
+                }
+                return x;
+            })();
+            const r = [];
+            var idx = 0;
+            for (const e in prog) {
+                if (!es.find(x => e.includes(x))) {
+                    continue;
+                }
+                const s = prog[e];
+                const t2 = {
+                    x: s.date,
+                    y: s.max,
+                    xaxis: "x",
+                    yaxis: "y3",
+                    text: s.desc,
+                    name: e,
+                    line: {
+                        color: color(idx)
+                    },
+                    mode: "lines+markers",
+                    showlegend: true,
+                };
+                r.push(t2);
+                idx++;
+            }
+            return r;
+        });
+        let a = await Promise.all([weight, food, prog]);
+        p__namespace.newPlot("fig", a.flat(), l);
+    };
+    const m = async () => {
+        load();
+    };
+    window.onload = () => m();
 
-    Plotly.newPlot("calorie", data, layout);
-    Plotly.newPlot("protein", data2, layout2);
-}
-const main = () => {
-    data0()
-    data1()
-    data2()
-}
-document.addEventListener("DOMContentLoaded", () => main())
+})(null, Plotly);
