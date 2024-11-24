@@ -40,7 +40,7 @@ const color = (i: number) => {
 }
 
 const load = async () => {
-    const smgs = s("select#musclegroup"); // as HTMLSelectElement;
+    const smgs = s("select#musclegroup");
     fetch("/mgs").then(e => e.json()).then(a => {
         const mgs: Array<MuscleGroup> = a;
         const x = new Array<Element>;
@@ -59,16 +59,20 @@ const load = async () => {
     smgs.onchange = async () => {
         upd()
     }
+
+    const range = s("select#range");
+    range.onchange = async () => {
+        upd()
+    }
 }
 
 type Layout = Partial<p.Layout>;
 
 const upd = async () => {
     const z = 0.02
-    const r0 = [0.50 + z, 0.75 - z];
-    const r1 = [0.25 + z, 0.50 - z];
-    const r2 = [0.00 + z, 0.25 - z];
-    const r3 = [0.75 + z, 1];
+    const d = 5;
+    const w = 1 / d;
+    const r = [...Array(d).keys()].map(e => [w * e + z, w * (e + 1) - z]).reverse()
 
     const mg = s("select#musclegroup").value;
 
@@ -79,14 +83,48 @@ const upd = async () => {
     const t_max = "theoretical max"
     const c_max = "black"
 
+    var today = new Date(Date.now());
+    var begin;
+    const range = s("select#range");
+    const t = new Date(today);
+    switch (range.value) {
+        case "week":
+            t.setDate(t.getDate() - 7)
+            begin = t
+            break;
+        case "2 weeks":
+            t.setDate(t.getDate() - 14)
+            begin = t
+            break;
+        case "3 weeks":
+            t.setDate(t.getDate() - 21)
+            begin = t
+            break;
+        case "4 weeks":
+            t.setDate(t.getDate() - 28)
+            begin = t
+            break;
+        case "month":
+            t.setMonth(t.getMonth() - 1)
+            begin = t
+            break;
+        case "year":
+            t.setFullYear(t.getFullYear() - 1)
+            begin = t
+            break;
+        case "all":
+            begin = "2024-09-26" // hard-coded
+            break;
+    }
+
     const l: Layout = {
-        xaxis: { title: "date", tickformat: "%Y-%m-%d %H:%M" },
-        yaxis: { title: t_weight, domain: r0, side: "left", color: c_weight },
-        yaxis2: { title: t_bf, domain: r0, side: "right", overlaying: "y", color: c_bf },
-        yaxis3: { title: t_max, domain: r3, color: c_max },
-        yaxis4: { title: "calories kcal", domain: r1, color: c_max, side: "left" },
-        yaxis5: { title: "protein g", domain: r2, color: c_max, side: "left" },
-        yaxis6: { title: "sets", domain: r3, side: "right", overlaying: "y3" },
+        xaxis: { title: "date", tickformat: "%Y-%m-%d %H:%M", range: [begin, today] },
+        yaxis: { title: t_weight, domain: r[2], side: "left", color: c_weight },
+        yaxis2: { title: t_bf, domain: r[2], side: "right", overlaying: "y", color: c_bf },
+        yaxis3: { title: t_max, domain: r[0], color: c_max },
+        yaxis4: { title: "calories kcal", domain: r[3], color: c_max, side: "left" },
+        yaxis5: { title: "protein g", domain: r[4], color: c_max, side: "left" },
+        yaxis6: { title: "sets", domain: r[1], side: "left" },
         barmode: "stack",
         hoverlabel: { namelength: -1 },
         height: 2400,
