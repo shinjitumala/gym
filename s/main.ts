@@ -17,7 +17,6 @@ class MuscleGroup {
     name: string = ""
 }
 
-const to_day = (d: Date) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`
 const color = (i: number) => {
     const c = [
         "red",
@@ -65,11 +64,11 @@ const load = async () => {
 type Layout = Partial<p.Layout>;
 
 const upd = async () => {
-    const z = 0.01
-    const r0 = [0.55 + z, 0.70 - z];
-    const r1 = [0.35 + z, 0.55 - z];
-    const r2 = [0.15 + z, 0.35 - z];
-    const r3 = [0.70 + z, 1];
+    const z = 0.02
+    const r0 = [0.50 + z, 0.75 - z];
+    const r1 = [0.25 + z, 0.50 - z];
+    const r2 = [0.00 + z, 0.25 - z];
+    const r3 = [0.75 + z, 1];
 
     const mg = s("select#musclegroup").value;
 
@@ -87,6 +86,7 @@ const upd = async () => {
         yaxis3: { title: t_max, domain: r3, color: c_max },
         yaxis4: { title: "calories kcal", domain: r1, color: c_max, side: "left" },
         yaxis5: { title: "protein g", domain: r2, color: c_max, side: "left" },
+        yaxis6: { title: "sets", domain: r3, side: "right", overlaying: "y3" },
         barmode: "stack",
         hoverlabel: { namelength: -1 },
         height: 2400,
@@ -181,6 +181,14 @@ const upd = async () => {
     const mem = (await fetch("/map").then(j => j.json())) as {
         string: [string]
     };
+    const es = (() => {
+        const x = mem[mg as keyof typeof mem]
+        if (x === undefined) {
+            return []
+        }
+        return x
+    })();
+
     const prog = fetch("/prog").then(j => j.json()).then(j => {
         const prog = j as {
             string: {
@@ -190,13 +198,6 @@ const upd = async () => {
             }
         }
 
-        const es = (() => {
-            const x = mem[mg as keyof typeof mem]
-            if (x === undefined) {
-                return []
-            }
-            return x
-        })();
 
         const r: Partial<p.Data>[] = [];
         var idx = 0;
@@ -218,7 +219,7 @@ const upd = async () => {
                     color: color(idx)
                 },
                 mode: "lines+markers",
-                showlegend: true,
+                showlegend: false,
             }
             r.push(t2);
             idx++;
@@ -227,7 +228,43 @@ const upd = async () => {
         return r
     });
 
-    let a = await Promise.all([weight, food, prog])
+    const sets = fetch("/sets").then(j => j.json()).then(j => {
+        const sets = j as {
+            string: {
+                string: {
+                    date: Array<Date>,
+                    place: Array<string>,
+                    count: Array<number>,
+                    desc: Array<string>,
+                }
+            }
+        };
+
+        const r: Partial<p.Data>[] = [];
+
+        var idx = 0;
+        const a = sets[mg as keyof typeof sets];
+        for (const e in a) {
+            const s = a[e as keyof typeof a];
+
+            const t2: Partial<p.Data> = {
+                x: s.date,
+                y: s.count,
+                xaxis: "x",
+                yaxis: "y6",
+                text: s.desc,
+                name: e,
+                type: "bar",
+                showlegend: false,
+            }
+            r.push(t2);
+            idx++;
+        }
+
+        return r
+    });
+
+    let a = await Promise.all([weight, food, prog, sets])
 
     p.newPlot("fig", a.flat(), <any>l)
 }

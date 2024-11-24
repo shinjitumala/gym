@@ -150,6 +150,31 @@ impl Db {
             .await?)
     }
 
+    pub async fn sets(&mut self) -> Res<Vec<Sets>> {
+        Ok(query!(
+        "
+            SELECT session.date, place.name AS place, exercise.name AS exercise, COUNT(_set.id) AS count, exercise2musclegroup.amount AS mg_mult, musclegroup.name AS mg, exercise2musclegroup.amount AS desc
+            FROM _set
+            INNER JOIN session2set ON session2set._set = _set.id
+            INNER JOIN session ON session2set.session = session.id
+            INNER JOIN place ON place.id = session.place
+            INNER JOIN exercise ON _set.exercise = exercise.id
+            INNER JOIN exercise2musclegroup ON exercise2musclegroup.exercise = exercise.id
+            INNER JOIN musclegroup ON exercise2musclegroup.musclegroup = musclegroup.id
+            GROUP BY date, place, exercise.id, musclegroup.id
+            ORDER BY date;
+            ").fetch_all(&mut self.c).await?.into_iter().map(|e|{
+                Sets {
+                    date: Date::from_timestamp(e.date),
+                    place: e.place,
+                    exercise: e.exercise,
+                    count: (e.count as f64) * e.mg_mult,
+                    mg: e.mg,
+                    desc: e.desc,
+                }
+            }).collect())
+    }
+
     pub async fn add_weight(&mut self, date: Date, kg: f64, bodyfat: f64, note: String) -> Res<()> {
         let date = date.as_timestamp();
         self.exec(query!(
@@ -542,3 +567,13 @@ pub struct Meal {
 }
 
 pub type MajorExerciseMaps = HashMap<String, Vec<String>>;
+
+#[derive(Serialize)]
+pub struct Sets {
+    pub date: Date,
+    pub place: String,
+    pub exercise: String,
+    pub count: f64,
+    pub mg: String,
+    pub desc: f64,
+}

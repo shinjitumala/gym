@@ -119,6 +119,7 @@ async fn test(c: &C, a: Test) -> Res<()> {
     let x = dir(format!("{r}/s/"))
         .or(path("mgs").and(with_db(c.clone())).and_then(mgs))
         .or(path("map").and(with_db(c.clone())).and_then(map))
+        .or(path("sets").and(with_db(c.clone())).and_then(hsets))
         .or(path("prog").and(with_db(c.clone())).and_then(hprog))
         .or(path("weight").and(with_db(c.clone())).and_then(hweight))
         .or(path("food").and(with_db(c.clone())).and_then(hfood));
@@ -196,6 +197,56 @@ mod web_api {
                 e.max.push(v.max);
                 e.desc.push(format!("{} x {}\n{}", v.load, v.rep, v.desc));
             }
+        }
+        Ok(m)
+    }
+
+    #[derive(Serialize)]
+    struct DataSets {
+        date: Vec<Date>,
+        place: Vec<String>,
+        count: Vec<f64>,
+        desc: Vec<f64>,
+    }
+    impl DataSets {
+        fn new() -> Self {
+            Self {
+                date: Vec::new(),
+                place: Vec::new(),
+                count: Vec::new(),
+                desc: Vec::new(),
+            }
+        }
+    }
+
+    type Sets = BTreeMap<String, BTreeMap<String, DataSets>>;
+    async fn sets(c: &C) -> Res<Sets> {
+        let mut db = c.db().await?;
+        let b = db.sets().await?;
+        let mut m = BTreeMap::new();
+        for b in b {
+            let k1 = b.mg;
+            let v1 = match m.get_mut(&k1) {
+                Some(e) => e,
+                None => {
+                    m.insert(k1.to_owned(), BTreeMap::new());
+                    m.get_mut(&k1).unwrap()
+                }
+            };
+
+            let k2 = b.exercise;
+            let v2 = match v1.get_mut(&k2) {
+                Some(e) => e,
+                None => {
+                    v1.insert(k2.to_owned(), DataSets::new());
+                    v1.get_mut(&k2).unwrap()
+                }
+            };
+
+            v2.date.push(b.date);
+            v2.place.push(b.place);
+            v2.count.push(b.count);
+            v2.desc.push(b.desc);
         }
         Ok(m)
     }
@@ -318,6 +369,15 @@ mod web_api {
             Ok(e) => Ok(json(&e)),
         }
     }
+    pub async fn hsets(c: C) -> Result<impl Reply, Infallible> {
+        async fn a(c: C) -> Res<Sets> {
+            Ok(sets(&c).await?)
+        }
+        match a(c).await {
+            Err(e) => Ok(json(&JsonErr::new(e))),
+            Ok(e) => Ok(json(&e)),
+        }
+    }
     pub async fn map(c: C) -> Result<impl Reply, Infallible> {
         async fn a(c: C) -> Res<db::MajorExerciseMaps> {
             let mut db = c.db().await?;
@@ -346,6 +406,7 @@ async fn web(c: &C, a: Web) -> Res<()> {
         .or(path("main.js").map(|| with_header(JS, "content-type", "text/javascript")))
         .or(path("mgs").and(with_db(c.clone())).and_then(mgs))
         .or(path("map").and(with_db(c.clone())).and_then(map))
+        .or(path("sets").and(with_db(c.clone())).and_then(hsets))
         .or(path("prog").and(with_db(c.clone())).and_then(hprog))
         .or(path("weight").and(with_db(c.clone())).and_then(hweight))
         .or(path("food").and(with_db(c.clone())).and_then(hfood));
