@@ -395,6 +395,31 @@ impl Db {
         let e = self.exec(query!("INSERT INTO food (name, calories, protein, fat, carbohydrate, desc) VALUES (?, ?, ?, ?, ?, ?)", name, calories, protein, fat, carbohydrate,desc)).await?;
         Ok(e.last_insert_rowid())
     }
+    pub async fn del_food(&mut self, id: i64) -> Res<()> {
+        self.exec(query!("DELETE FROM food WHERE id = ?", id))
+            .await?;
+        Ok(())
+    }
+    pub async fn upd_food(
+        &mut self,
+        id: i64,
+        name: &str,
+        calories: f64,
+        protein: Option<f64>,
+        fat: Option<f64>,
+        carbohydrate: Option<f64>,
+        desc: &str,
+    ) -> Res<()> {
+        self.exec(query!("UPDATE food SET name = ?, calories = ?, protein = ?, fat = ?, carbohydrate = ?, desc = ? WHERE id = ?",
+            name,
+            calories,
+            protein,
+            fat,
+            carbohydrate,
+            desc,
+            id)).await?;
+        Ok(())
+    }
     pub async fn new_meal(&mut self, date: i64, food: i64, amount: f64, desc: &str) -> Res<()> {
         self.exec(query!(
             "INSERT INTO meal (date, food, amount, desc) VALUES (?, ?, ?, ?)",
@@ -533,7 +558,7 @@ impl Food {
             self.carbohydrate
                 .map(|e| format!("{:.1}", e))
                 .unwrap_or(String::new()),
-            format!("{:.1}", self.desc),
+            format!("{}", self.desc),
         ]
     }
     pub fn head() -> [String; 6] {

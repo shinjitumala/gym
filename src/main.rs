@@ -1,22 +1,26 @@
 mod ctx;
 mod db;
+mod food;
 mod util;
 
 pub mod com {
     pub use crate::ctx::C;
     pub use crate::db::Db;
+    pub use crate::db::*;
     pub use crate::util::*;
     pub use fpr_cli::*;
     pub use fpr_cli_derives::*;
-    pub use inquire::InquireError;
+    pub use inquire::{
+        list_option::ListOption,
+        validator::{StringValidator, Validation},
+        Confirm, CustomType, InquireError, Select, Text,
+    };
+    pub use itertools::*;
 }
 
 use std::{net::SocketAddr, process::exit};
 
 use com::*;
-use db::{ExerciseHistoryItem, MuscleGroup};
-use inquire::{list_option::ListOption, Confirm, CustomType, Select, Text};
-use itertools::Itertools;
 use serde::Serialize;
 
 async fn input_place(db: &mut Db) -> Res<db::Place> {
@@ -39,7 +43,7 @@ pub struct Main(
     Sync,
     New,
     Food,
-    RegFood,
+    Foods,
     MapExercise,
     Test,
 );
@@ -557,71 +561,45 @@ async fn food(c: &C, _a: Food) -> Res<()> {
     println!("Today's total:");
     println!("{}", to_table(&t.to_lines_today()));
 
-    let foods = db.foods().await?;
-    let fcmp = TextWithAutocomplete::new(foods.clone(), |f| [f.name.to_owned()]);
-    let f = loop {
-        let f = Text::new("food")
-            .with_autocomplete(fcmp.clone())
-            .prompt()?
-            .trim()
-            .to_owned();
-        if let Some(e) = foods.iter().find(|e| e.name == f) {
-            println!("{}", e.print());
-            break e.id;
-        }
-
-        println!("Registering new food...");
-        let f = reg_food(&mut db, &f).await?;
-        break f;
-    };
     let date = input_date2("When did you eat?")?;
-    let amount = CustomType::<f64>::new("Amount")
-        .with_help_message("Multiplier")
-        .with_default(1.0f64)
-        .prompt()?;
-    let desc = Text::new("desc").prompt()?;
+    let foods = db.foods().await?;
+    loop {
+        let f = match select_line(
+            "What did you eat? (calories kcal, protein g, fat g, carbohydrates g)",
+            &foods,
+            |f| f.to_line(),
+        )
+        .with_help_message("Press ESC to register unknown food")
+        .prompt_skippable()?
+        {
+            Some(f) => foods[f.index].id,
+            None => {
+                println!("Registering new food...");
+                food::reg(&mut db).await?
+            }
+        };
 
-    db.new_meal(date.as_timestamp(), f, amount, &desc).await?;
+        let amount = CustomType::<f64>::new("Amount")
+            .with_help_message("Multiplier")
+            .with_default(1.0f64)
+            .prompt()?;
+        let desc = Text::new("desc").prompt()?;
+
+        db.new_meal(date.as_timestamp(), f, amount, &desc).await?;
+
+        if Confirm::new("Add more food?").with_default(true).prompt()? {
+            break;
+        }
+    }
 
     let t = db.calories_today().await?;
     println!("Today's total:");
     println!("{}", to_table(&t.to_lines_today()));
+
     Ok(())
 }
 
-#[derive(Args)]
-#[args(desc = "Register new food.")]
-pub struct RegFood {}
-impl Run<C> for RegFood {
-    type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
-        Ok(reg_food_main(c, a)?)
-    }
-}
-#[tokio::main]
-async fn reg_food_main(c: &C, _a: RegFood) -> Res<()> {
-    let mut db = c.db().await?;
-    let f = Text::new("Name").prompt()?;
-    reg_food(&mut db, &f).await?;
-    Ok(())
-}
-async fn reg_food(db: &mut Db, name: &str) -> Res<i64> {
-    let calories = CustomType::<f64>::new("calories").prompt()?;
-    let protein = CustomType::<f64>::new("protein")
-        .with_help_message("You can press ESC if unknown")
-        .prompt_skippable()?;
-    let fat = CustomType::<f64>::new("fat")
-        .with_help_message("You can press ESC if unknown")
-        .prompt_skippable()?;
-    let carbohydrate = CustomType::<f64>::new("carbohydrate")
-        .with_help_message("You can press ESC if unknown")
-        .prompt_skippable()?;
-    let desc = Text::new("desc").prompt()?;
-    Ok(db
-        .new_food(&name, calories, protein, fat, carbohydrate, &desc)
-        .await?)
-}
-
+type Foods = food::Main;
 #[derive(Args)]
 #[args(desc = "Map exercise to muscle group.")]
 pub struct MapExercise {}
