@@ -587,7 +587,7 @@ async fn food(c: &C, _a: Food) -> Res<()> {
 
         db.new_meal(date.as_timestamp(), f, amount, &desc).await?;
 
-        if Confirm::new("Add more food?").with_default(true).prompt()? {
+        if !Confirm::new("Add more food?").with_default(false).prompt()? {
             break;
         }
     }
