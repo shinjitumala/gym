@@ -2,7 +2,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use crate::com::*;
 
-use chrono::Local;
+use chrono::{Local, Utc};
 use serde::Serialize;
 use sqlx::{
     query,
@@ -310,6 +310,30 @@ impl Db {
         Ok(r)
     }
 
+    pub async fn calories_today(&mut self) -> Res<MealsDaily> {
+        let now = Utc::now().timestamp();
+        let offset_seconds = Local::now().offset().local_minus_utc();
+        let daily_totals = query_as!(
+            MealsDaily,
+            "SELECT
+            strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) AS date,
+            SUM(food.calories * meal.amount) AS calories,
+            SUM(food.protein * meal.amount) AS protein,
+            SUM(food.fat * meal.amount) AS fat,
+            SUM(food.carbohydrate * meal.amount) AS carbohydrate
+            FROM meal
+            INNER JOIN food ON meal.food = food.id
+            WHERE strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) = strftime('%Y-%m-%d', DATETIME(? + ?, 'unixepoch'));",
+            offset_seconds,
+            offset_seconds,
+            now,
+            offset_seconds
+        )
+        .fetch_one(&mut self.c)
+        .await?;
+        Ok(daily_totals)
+    }
+
     pub async fn get_meals(&mut self) -> Res<Meals> {
         let offset_seconds = Local::now().offset().local_minus_utc();
 
@@ -552,6 +576,24 @@ pub struct MealsDaily {
     pub protein: Option<f64>,
     pub fat: Option<f64>,
     pub carbohydrate: Option<f64>,
+}
+impl MealsDaily {
+    pub fn to_lines_today(&self) -> [[String; 4]; 2] {
+        [
+            [
+                format!("calories kcal"),
+                format!("protein g"),
+                format!("fat g"),
+                format!("carbohydrate g"),
+            ],
+            [
+                format!("{:.2}", self.calories.unwrap_or(0.)),
+                format!("{:.2}", self.protein.unwrap_or(0.)),
+                format!("{:.2}", self.fat.unwrap_or(0.)),
+                format!("{:.2}", self.carbohydrate.unwrap_or(0.)),
+            ],
+        ]
+    }
 }
 
 #[derive(Serialize, Clone)]

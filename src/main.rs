@@ -553,6 +553,10 @@ impl Run<C> for Food {
 async fn food(c: &C, _a: Food) -> Res<()> {
     let mut db = c.db().await?;
 
+    let t = db.calories_today().await?;
+    println!("Today's total:");
+    println!("{}", to_table(&t.to_lines_today()));
+
     let foods = db.foods().await?;
     let fcmp = TextWithAutocomplete::new(foods.clone(), |f| [f.name.to_owned()]);
     let f = loop {
@@ -578,6 +582,10 @@ async fn food(c: &C, _a: Food) -> Res<()> {
     let desc = Text::new("desc").prompt()?;
 
     db.new_meal(date.as_timestamp(), f, amount, &desc).await?;
+
+    let t = db.calories_today().await?;
+    println!("Today's total:");
+    println!("{}", to_table(&t.to_lines_today()));
     Ok(())
 }
 
