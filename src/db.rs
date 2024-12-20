@@ -145,7 +145,7 @@ impl Db {
     }
 
     pub async fn places(&mut self) -> Res<Vec<Place>> {
-        Ok(query_as!(Place, "SELECT place.id, place.name, place.desc FROM place INNER JOIN session ON place.id = session.place GROUP BY place ORDER BY COUNT(session.id) DESC")
+        Ok(query_as!(Place, "SELECT place.id, place.name, place.desc FROM place")
             .fetch_all(&mut self.c)
             .await?)
     }
