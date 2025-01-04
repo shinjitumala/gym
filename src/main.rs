@@ -453,91 +453,87 @@ async fn new_session(c: &C, _a: New) -> Res<()> {
         let mut t = db.start().await?;
         let e = Text::new("Exercise")
             .with_autocomplete(ecomp.clone())
-            .prompt()?
-            .trim()
-            .to_owned();
-        let e = t.get_exercise(&e).await?;
-        t.commit().await?;
+            .with_help_message("Press ESC if done")
+            .prompt_skippable()?
+            .map(|e| e.trim().to_owned());
 
-        let h = db.get_exercise_history(p.id, e.id).await?;
-        let mut l = 0i64;
-        let mut b = Vec::<ExerciseHistoryItem>::new();
-        for h in h {
-            if h.date != l {
-                if l != 0 {
-                    let d = Date::from_timestamp(l);
-                    println!("{d}:");
-                    println!(
-                        "{}",
-                        to_table(
-                            &b.iter()
-                                .map(|e| {
-                                    [
-                                        format!("{}", e.load),
-                                        format!("x"),
-                                        format!("{}", e.rep),
-                                        e.desc.to_owned(),
-                                    ]
-                                })
-                                .collect_vec(),
-                        )
-                    );
+        if let Some(e) = e {
+            let e = t.get_exercise(&e).await?;
+            t.commit().await?;
+
+            let h = db.get_exercise_history(p.id, e.id).await?;
+            let mut l = 0i64;
+            let mut b = Vec::<ExerciseHistoryItem>::new();
+            for h in h {
+                if h.date != l {
+                    if l != 0 {
+                        let d = Date::from_timestamp(l);
+                        println!("{d}:");
+                        println!(
+                            "{}",
+                            to_table(
+                                &b.iter()
+                                    .map(|e| {
+                                        [
+                                            format!("{}", e.load),
+                                            format!("x"),
+                                            format!("{}", e.rep),
+                                            e.desc.to_owned(),
+                                        ]
+                                    })
+                                    .collect_vec(),
+                            )
+                        );
+                    }
+                    l = h.date;
+                    b.clear();
                 }
-                l = h.date;
-                b.clear();
+                b.push(h.to_owned());
             }
-            b.push(h.to_owned());
-        }
-        if l != 0 {
-            let d = Date::from_timestamp(l);
-            println!("{d}:");
-            println!(
-                "{}",
-                to_table(
-                    &b.iter()
-                        .map(|e| {
-                            [
-                                format!("{}", e.load),
-                                format!("x"),
-                                format!("{}", e.rep),
-                                e.desc.to_owned(),
-                            ]
-                        })
-                        .collect_vec(),
-                )
-            );
-        }
+            if l != 0 {
+                let d = Date::from_timestamp(l);
+                println!("{d}:");
+                println!(
+                    "{}",
+                    to_table(
+                        &b.iter()
+                            .map(|e| {
+                                [
+                                    format!("{}", e.load),
+                                    format!("x"),
+                                    format!("{}", e.rep),
+                                    e.desc.to_owned(),
+                                ]
+                            })
+                            .collect_vec(),
+                    )
+                );
+            }
 
-        loop {
-            let load = CustomType::<f64>::new("load").prompt()?;
             loop {
-                let mut t = db.start().await?;
-                let rep = CustomType::<f64>::new("rep").prompt()?;
-                let desc = Text::new("Notes").prompt()?;
-                t.new_set(s, e.id, load, rep, to_one_rep_max(load, rep)?, desc)
-                    .await?;
-                t.commit().await?;
-
-                if Confirm::new("Done with current load?")
-                    .with_default(false)
-                    .prompt()?
-                {
+                let load = CustomType::<f64>::new("load")
+                    .with_help_message("Press ESC if done with exercise")
+                    .prompt_skippable()?;
+                if let Some(load) = load {
+                    loop {
+                        let mut t = db.start().await?;
+                        let rep = CustomType::<f64>::new("rep")
+                            .with_help_message("Press ESC if done with load")
+                            .prompt_skippable()?;
+                        if let Some(rep) = rep {
+                            let desc = Text::new("Notes").prompt()?;
+                            t.new_set(s, e.id, load, rep, to_one_rep_max(load, rep)?, desc)
+                                .await?;
+                            t.commit().await?;
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
                     break;
                 }
             }
-
-            if Confirm::new("Done with exercise?")
-                .with_default(false)
-                .prompt()?
-            {
-                break;
-            }
-        }
-
-        if Confirm::new("Done with session?")
-            .with_default(false)
-            .prompt()?
-        {
+        } else {
             break;
         }
     }
@@ -587,7 +583,10 @@ async fn food(c: &C, _a: Food) -> Res<()> {
 
         db.new_meal(date.as_timestamp(), f, amount, &desc).await?;
 
-        if !Confirm::new("Add more food?").with_default(false).prompt()? {
+        if !Confirm::new("Add more food?")
+            .with_default(false)
+            .prompt()?
+        {
             break;
         }
     }
