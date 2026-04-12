@@ -57,7 +57,7 @@ impl C {
         Ok(C { cfg })
     }
 
-    pub async fn db(&self) -> Res<Db> {
-        Ok(Db::new(&self).await?)
+    pub fn db(&self) -> Res<Db> {
+        Ok(Db::new(&self)?)
     }
 }

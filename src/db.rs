@@ -1,389 +1,332 @@
-use std::{collections::HashMap, str::FromStr};
+mod util;
 
 use crate::com::*;
-
-use chrono::{Local, Utc};
-use serde::Serialize;
-use sqlx::{
-    query,
-    query::{Map, Query},
-    query_as,
-    sqlite::*,
-    Connection, Error,
+use chrono::{DateTime, Duration, Local, TimeZone, Timelike};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    path::PathBuf,
 };
+use util::*;
+pub use util::{s2t, t2s};
 
 pub struct Db {
-    c: SqliteConnection,
+    pub exercises: FileDb<Exercise>,
+    pub muscle_groups: FileDb<MuscleGroup>,
+    pub place: FileDb<Place>,
+    pub set: DirDb<Set>,
+    pub session: DirDb<Session>,
+    pub weight: DirDb<Weight>,
+    pub food: FileDb<Food>,
+    pub meal: DirDb<Meal>,
 }
 
-type Txx<'a> = sqlx::Transaction<'a, Sqlite>;
-
-pub struct Tx<'a> {
-    t: Txx<'a>,
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Exercise {
+    pub name: String,
+    pub desc: String,
+    pub muscle_groups: Vec<Exercise2MuscleGroup>,
 }
-
-impl<'a> Tx<'a> {
-    fn new(t: Txx<'a>) -> Self {
-        Self { t }
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Exercise2MuscleGroup {
+    group: usize,
+    amount: f64,
+}
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct MuscleGroup {
+    pub name: String,
+    pub desc: String,
+}
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Place {
+    name: String,
+    desc: String,
+}
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Set {
+    date: String,
+    session: usize,
+    exercise: usize,
+    load: f64,
+    rep: f64,
+    desc: String,
+}
+impl Timed for Set {
+    fn time(&self) -> &str {
+        &self.date
     }
-    pub async fn commit(self) -> Res<()> {
-        Ok(self.t.commit().await?)
+}
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Session {
+    date: String,
+    place: usize,
+    sets: Vec<usize>,
+    desc: String,
+}
+impl Timed for Session {
+    fn time(&self) -> &str {
+        &self.date
     }
-
-    async fn exec<'b>(
-        &mut self,
-        q: Query<'b, Sqlite, SqliteArguments<'b>>,
-    ) -> Res<SqliteQueryResult> {
-        Ok(q.execute(&mut *self.t).await?)
+}
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Weight {
+    pub date: String,
+    pub kg: f64,
+    pub bodyfat: f64,
+    pub desc: String,
+}
+impl Timed for Weight {
+    fn time(&self) -> &str {
+        &self.date
     }
-
-    pub async fn new_session(&mut self, place: i64, date: Date) -> Res<i64> {
-        let b = date.as_timestamp();
-        let a = self
-            .exec(query!(
-                "INSERT INTO session (place,date) VALUES (?,?)",
-                place,
-                b
-            ))
-            .await?;
-        Ok(a.last_insert_rowid())
-    }
-
-    pub async fn new_set(
-        &mut self,
-        session: i64,
-        exercise: i64,
-        load: f64,
-        rep: f64,
-        tmax: f64,
-        desc: String,
-    ) -> Res<()> {
-        let e = self
-            .exec(query!(
-                "INSERT INTO _set (exercise, load, rep, desc, tmax) VALUES (?, ?, ?, ?, ?)",
-                exercise,
-                load,
-                rep,
-                desc,
-                tmax
-            ))
-            .await?;
-        let id = e.last_insert_rowid();
-        self.exec(query!(
-            "INSERT INTO session2set (session, _set) VALUES (?, ?)",
-            session,
-            id
-        ))
-        .await?;
-        Ok(())
-    }
-
-    pub async fn get_exercise(&mut self, name: &str) -> Res<Exercise> {
-        let a = query_as!(Exercise, "SELECT * FROM exercise WHERE name = ?", name)
-            .fetch_all(&mut *self.t)
-            .await?;
-        Ok(if !a.is_empty() {
-            a[0].to_owned()
-        } else {
-            let e = self
-                .exec(query!(
-                    "INSERT INTO exercise (name,desc) VALUES (?,'')",
-                    name
-                ))
-                .await?;
-            Exercise {
-                id: e.last_insert_rowid(),
-                name: name.to_owned(),
-                desc: format!(""),
-            }
-        })
+}
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Food {
+    pub name: String,
+    pub calories: f64,
+    pub protein: f64,
+    pub fat: f64,
+    pub carbohydrate: f64,
+    pub desc: String,
+}
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct Meal {
+    date: String,
+    food: usize,
+    amount: f64,
+    desc: String,
+}
+impl Timed for Meal {
+    fn time(&self) -> &str {
+        &self.date
     }
 }
 
 impl Db {
-    pub async fn new(c: &C) -> Res<Self> {
-        let o = SqliteConnectOptions::from_str(&c.cfg.db)?;
-        let mut c = SqliteConnection::connect_with(&o).await?;
-        query!("PRAGMA FOREIGN_KEYS = ON").execute(&mut c).await?;
-        Ok(Self { c })
+    const F_EXERCISE: &str = "exercise.toml";
+    const F_MUSCLE_GROUP: &str = "muscle_group.toml";
+    const F_EXERCISE2MUSCLE_GROUP: &str = "exercise2muscle_group.toml";
+    const F_PLACE: &str = "place.toml";
+    const D_SET: &str = "set";
+    const D_SESSION: &str = "session";
+    const D_WEIGHT: &str = "weight";
+    const F_FOOD: &str = "food.toml";
+    const D_MEAL: &str = "meal";
+
+    pub fn new(c: &C) -> Res<Self> {
+        let base = PathBuf::from(&c.cfg.db);
+        let e = base
+            .try_exists()
+            .map_err(|e| format!("Failed to read db directory '{}' because '{e}'.", &c.cfg.db))?;
+        if !e {
+            return Err(format!(
+                "Database directory '{}' does not exist.",
+                &c.cfg.db
+            ))?;
+        }
+
+        Ok(Self {
+            exercises: FileDb::load(base.join(Self::F_EXERCISE)).unwrap_or_default(),
+            muscle_groups: FileDb::load(base.join(Self::F_MUSCLE_GROUP)).unwrap_or_default(),
+            place: FileDb::load(base.join(Self::F_PLACE)).unwrap_or_default(),
+            set: DirDb::load(base.join(Self::D_SET), DirDbType::Day)?,
+            session: DirDb::load(base.join(Self::D_SESSION), DirDbType::Month)?,
+            weight: DirDb::load(base.join(Self::D_WEIGHT), DirDbType::Month)?,
+            food: FileDb::load(base.join(Self::F_FOOD)).unwrap_or_default(),
+            meal: DirDb::load(base.join(Self::D_MEAL), DirDbType::Day)?,
+        })
+    }
+    pub fn load_full(&mut self) -> Res<()> {
+        self.set.load_full()?;
+        self.session.load_full()?;
+        self.weight.load_full()?;
+        self.meal.load_full()?;
+        Ok(())
+    }
+    pub fn save(&self) -> Res<()> {
+        self.exercises.save()?;
+        self.muscle_groups.save()?;
+        self.place.save()?;
+        self.set.save()?;
+        self.session.save()?;
+        self.weight.save()?;
+        self.food.save()?;
+        self.meal.save()?;
+        Ok(())
     }
 
-    pub async fn exercises(&mut self, place: i64) -> Res<Vec<Exercise>> {
-        Ok(query_as!(
-            Exercise,
-            r"
-                SELECT exercise.id, exercise.name, exercise.desc
-                FROM session
-                INNER JOIN place ON place.id = session.place
-                INNER JOIN session2set ON session2set.session = session.id
-                INNER JOIN _set ON session2set._set = _set.id
-                INNER JOIN exercise ON _set.exercise = exercise.id
-                WHERE place.id = ?
-                GROUP BY exercise.id
-        ",
-            place
-        )
-        .fetch_all(&mut self.c)
-        .await?)
+    pub fn exercises(&self, place: usize) -> Res<Vec<(&usize, &Exercise)>> {
+        let sids: HashSet<_> = self
+            .session
+            .find(|(_, e)| e.place == place)?
+            .into_iter()
+            .map(|(_, e)| e.sets)
+            .flatten()
+            .collect();
+        let eids: HashSet<_> = self
+            .set
+            .find(|(id, _)| sids.contains(id))?
+            .into_iter()
+            .map(|(_, e)| e.exercise)
+            .collect();
+
+        Ok(self
+            .exercises
+            .e
+            .e
+            .iter()
+            .filter(|(id, _)| eids.contains(*id))
+            .collect())
     }
 
-    async fn exec<'a>(
+    pub fn new_session(&mut self, place: usize, d: Date, desc: String) -> Res<usize> {
+        let id = self.session.add(Session {
+            date: d.to_string(),
+            place,
+            sets: Vec::new(),
+            desc,
+        });
+        Ok(id)
+    }
+    pub fn get_exercise(&mut self, exercise: &str) -> Res<(usize, Exercise)> {
+        if let Some((id, e)) = self.exercises.e.e.iter().find(|(_, e)| e.name == exercise) {
+            return Ok((*id, e.clone()));
+        }
+
+        let e = Exercise {
+            name: exercise.to_string(),
+            ..Exercise::default()
+        };
+        let id = self.exercises.e.add(e.clone());
+        Ok((id, e))
+    }
+    pub fn get_exercise_history(
+        &self,
+        place: usize,
+        exercise: usize,
+        limit: usize,
+    ) -> Res<Vec<ExerciseHistoryItem>> {
+        let mut s = HashSet::new();
+        Ok(self
+            .set
+            .find(|(_, e)| e.exercise == exercise)?
+            .into_iter()
+            .sorted_by_key(|(_, e)| e.date.to_owned())
+            .rev()
+            .map(|(id, e)| -> Res<_> {
+                let x = self
+                    .session
+                    .find(|(_, e)| e.sets.contains(&id) && e.place == place)?;
+                Ok((e, x))
+            })
+            .filter_map_ok(|(s, e)| e.into_iter().next().map(|(sid, e)| (s, sid, e)))
+            .take_while(|e| {
+                if let Ok((_, sid, _)) = e {
+                    s.insert(*sid);
+                };
+                s.len() <= limit
+            })
+            .map_ok(|(e, _, session)| ExerciseHistoryItem {
+                date: session.date,
+                load: e.load,
+                rep: e.rep,
+                desc: e.desc,
+            })
+            .process_results(|i| i.collect())?)
+    }
+
+    pub fn places(&self) -> Vec<(&usize, &Place)> {
+        self.place.e.e.iter().collect()
+    }
+
+    pub fn new_set<T: TimeZone>(
         &mut self,
-        q: Query<'a, Sqlite, SqliteArguments<'a>>,
-    ) -> Res<SqliteQueryResult> {
-        Ok(q.execute(&mut self.c).await?)
-    }
-    async fn query<'a, O: Send + Unpin>(
-        &mut self,
-        q: Map<'a, Sqlite, impl FnMut(SqliteRow) -> Result<O, Error> + Send, SqliteArguments<'a>>,
-    ) -> Res<Vec<O>> {
-        Ok(q.fetch_all(&mut self.c).await?)
-    }
-
-    pub async fn start(&mut self) -> Res<Tx> {
-        Ok(Tx::new(self.c.begin().await?))
-    }
-
-    pub async fn places(&mut self) -> Res<Vec<Place>> {
-        Ok(query_as!(Place, "SELECT place.id, place.name, place.desc FROM place")
-            .fetch_all(&mut self.c)
-            .await?)
+        date: DateTime<T>,
+        session: usize,
+        exercise: usize,
+        load: f64,
+        rep: f64,
+        one_rep_max: f64,
+        desc: String,
+    ) -> Res<()> {
+        self.set.add(Set {
+            date: t2s(date),
+            session,
+            exercise,
+            load,
+            rep,
+            desc,
+        });
+        Ok(())
     }
 
-    pub async fn sets(&mut self) -> Res<Vec<Sets>> {
-        Ok(query!(
-        "
-            SELECT session.date, place.name AS place, exercise.name AS exercise, COUNT(_set.id) AS count, exercise2musclegroup.amount AS mg_mult, musclegroup.name AS mg, exercise2musclegroup.amount AS desc
-            FROM _set
-            INNER JOIN session2set ON session2set._set = _set.id
-            INNER JOIN session ON session2set.session = session.id
-            INNER JOIN place ON place.id = session.place
-            INNER JOIN exercise ON _set.exercise = exercise.id
-            INNER JOIN exercise2musclegroup ON exercise2musclegroup.exercise = exercise.id
-            INNER JOIN musclegroup ON exercise2musclegroup.musclegroup = musclegroup.id
-            GROUP BY date, place, exercise.id, musclegroup.id
-            ORDER BY date;
-            ").fetch_all(&mut self.c).await?.into_iter().map(|e|{
-                Sets {
-                    date: Date::from_timestamp(e.date),
-                    place: e.place,
-                    exercise: e.exercise,
-                    count: (e.count as f64) * e.mg_mult,
-                    mg: e.mg,
-                    desc: e.desc,
-                }
-            }).collect())
-    }
-
-    pub async fn add_weight(&mut self, date: Date, kg: f64, bodyfat: f64, note: String) -> Res<()> {
-        let date = date.as_timestamp();
-        self.exec(query!(
-            "INSERT INTO weight (date, kg, bodyfat, desc) VALUES (?, ?, ?, ?)",
-            date,
+    pub fn add_weight(&mut self, date: Date, kg: f64, bodyfat: f64, note: String) -> Res<()> {
+        self.weight.add(Weight {
+            date: date.to_string(),
             kg,
             bodyfat,
-            note
-        ))
-        .await?;
+            desc: note,
+        });
         Ok(())
     }
 
     pub async fn major_exercise_maps(&mut self) -> Res<MajorExerciseMaps> {
-        let mut r: MajorExerciseMaps = HashMap::new();
-        let a = self.query(query!("
-            SELECT musclegroup.name AS musclegroup, exercise.name AS exercise FROM musclegroup
-            INNER JOIN exercise2musclegroup ON exercise2musclegroup.musclegroup = musclegroup.id AND amount = 1
-            INNER JOIN exercise ON exercise2musclegroup.exercise = exercise.id"
-        ))
-        .await?;
-        for a in a {
-            match r.get_mut(&a.musclegroup) {
-                Some(e) => e.push(a.exercise),
-                None => {
-                    r.insert(a.musclegroup, vec![a.exercise]);
-                }
-            }
-        }
-
-        Ok(r)
+        todo!()
     }
 
     pub async fn get_prog(&mut self) -> Res<Prog> {
-        let x = {
-            let mut x = HashMap::<String, Vec<BestSet>>::new();
-            let r = self.query(query!(r"
-                SELECT session.date, place.name AS place, exercise.name AS exercise, MAX(_set.tmax) AS tmax, _set.load, _set.rep, _set.desc
-                FROM session
-                INNER JOIN place ON place.id = session.place
-                INNER JOIN session2set ON session2set.session = session.id
-                INNER JOIN _set ON session2set._set = _set.id
-                INNER JOIN exercise ON _set.exercise = exercise.id
-                GROUP BY date, place, exercise
-                ORDER BY exercise;
-            ")).await?;
-            for r in r {
-                let exercise = format!("{}@{}", r.exercise.unwrap(), r.place.unwrap());
-                let e = match x.get_mut(&exercise) {
-                    Some(e) => e,
-                    None => {
-                        x.insert(exercise.clone(), Vec::new());
-                        x.get_mut(&exercise).unwrap()
-                    }
-                };
-
-                let b = BestSet {
-                    date: Date::from_timestamp(r.date.unwrap()),
-                    max: r.tmax,
-                    load: r.load.unwrap(),
-                    rep: r.rep.unwrap(),
-                    desc: r.desc.to_owned().unwrap(),
-                };
-                e.push(b);
-            }
-            for (_k, v) in x.iter_mut() {
-                v.sort_by(|l, r| l.date.cmp(&r.date));
-            }
-            x
-        };
-        Ok(x)
+        todo!()
     }
 
     pub async fn new_place(&mut self, name: &str, desc: &str) -> Res<()> {
-        self.exec(query!(
-            "INSERT INTO place (name, desc) VALUES (?, ?)",
-            name,
-            desc
-        ))
-        .await?;
-        Ok(())
+        todo!()
     }
 
     pub async fn get_weight(&mut self) -> Res<Vec<Weight>> {
-        let w: Vec<_> = self
-            .query(query!("SELECT * FROM weight"))
-            .await?
-            .into_iter()
-            .map(|e| Weight {
-                date: Date::from_timestamp(e.date),
-                kg: e.kg,
-                bodyfat: e.bodyfat,
-                desc: e.desc.to_owned(),
+        todo!()
+    }
+
+    pub fn calories_today(&mut self) -> Res<MealsDaily> {
+        let n = Local::now();
+        let o = Duration::seconds((n.hour() * 60 * 60 + n.minute() * 60 + n.second()) as i64);
+        let s = n - o;
+        let e = s + Duration::days(1);
+        println!("{} {}", s.to_rfc3339(), e.to_rfc3339());
+
+        let e = self
+            .meal
+            .find(|(_, m)| s2t(&m.date).map(|t| s <= t && t < e).unwrap_or(false))?
+            .iter()
+            .map(|(_, m)| -> Res<_> {
+                let f = self
+                    .food
+                    .e
+                    .e
+                    .get(&m.food)
+                    .ok_or(Err::Str(format!("No food with id '{}'.", m.food)))?;
+                Ok((m, f))
             })
-            .collect();
-        Ok(w)
+            .process_results(|i| {
+                i.fold(MealsDaily::default(), |mut c, (m, f)| {
+                    c.calories += m.amount * f.calories;
+                    c.protein += m.amount * f.protein;
+                    c.fat += m.amount * f.fat;
+                    c.carbohydrate += m.amount * f.carbohydrate;
+                    c
+                })
+            })?;
+        Ok(e)
     }
 
-    pub async fn get_exercise_history(
-        &mut self,
-        place: i64,
-        exercise: i64,
-    ) -> Res<Vec<ExerciseHistoryItem>> {
-        let r = query_as!(
-            ExerciseHistoryItem,
-            r"
-                SELECT session.date, _set.load, _set.rep, _set.desc
-                FROM session
-                INNER JOIN place ON place.id = session.place
-                INNER JOIN session2set ON session2set.session = session.id
-                INNER JOIN _set ON session2set._set = _set.id
-                INNER JOIN exercise ON _set.exercise = exercise.id
-                WHERE session.id IN (
-                    SELECT session.id FROM session
-                    INNER JOIN place ON place.id = session.place
-                    INNER JOIN session2set ON session2set.session = session.id
-                    INNER JOIN _set ON session2set._set = _set.id
-                    INNER JOIN exercise ON _set.exercise = exercise.id
-                    WHERE place.id = ? AND exercise.id = ?
-                    GROUP BY session.id
-                    ORDER BY session.date DESC LIMIT 4
-                ) AND place.id = ? AND exercise.id = ?
-                ORDER BY session.date DESC, _set.load DESC, _set.rep DESC
-            ",
-            place,
-            exercise,
-            place,
-            exercise
-        )
-        .fetch_all(&mut self.c)
-        .await?;
+    // pub async fn get_meals(&mut self) -> Res<Meals> {
+    //     todo!()
+    // }
 
-        Ok(r)
+    pub fn foods(&mut self) -> Res<Vec<(&usize, &Food)>> {
+        Ok(self.food.e.e.iter().collect())
     }
-
-    pub async fn calories_today(&mut self) -> Res<MealsDaily> {
-        let now = Utc::now().timestamp();
-        let offset_seconds = Local::now().offset().local_minus_utc();
-        let daily_totals = query_as!(
-            MealsDaily,
-            "SELECT
-            strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) AS date,
-            SUM(food.calories * meal.amount) AS calories,
-            SUM(food.protein * meal.amount) AS protein,
-            SUM(food.fat * meal.amount) AS fat,
-            SUM(food.carbohydrate * meal.amount) AS carbohydrate
-            FROM meal
-            INNER JOIN food ON meal.food = food.id
-            WHERE strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) = strftime('%Y-%m-%d', DATETIME(? + ?, 'unixepoch'));",
-            offset_seconds,
-            offset_seconds,
-            now,
-            offset_seconds
-        )
-        .fetch_one(&mut self.c)
-        .await?;
-        Ok(daily_totals)
-    }
-
-    pub async fn get_meals(&mut self) -> Res<Meals> {
-        let offset_seconds = Local::now().offset().local_minus_utc();
-
-        let daily_totals = query_as!(
-            MealsDaily,
-            "SELECT
-            strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) AS date,
-            SUM(food.calories * meal.amount) AS calories,
-            SUM(food.protein * meal.amount) AS protein,
-            SUM(food.fat * meal.amount) AS fat,
-            SUM(food.carbohydrate * meal.amount) AS carbohydrate
-            FROM meal
-            INNER JOIN food WHERE meal.food = food.id
-            GROUP BY strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch'));",
-            offset_seconds,
-            offset_seconds
-        )
-        .fetch_all(&mut self.c)
-        .await?;
-        let breakdown = query_as!(
-            Meal,
-            "SELECT
-            strftime('%Y-%m-%d', DATETIME(date + ?, 'unixepoch')) AS date,
-            food.name,
-            food.calories * meal.amount AS calories,
-            food.protein * meal.amount AS protein,
-            food.fat * meal.amount AS fat,
-            food.carbohydrate  * meal.amount AS carbohydrate, 
-            meal.amount,
-            meal.desc
-            FROM meal
-            INNER JOIN food WHERE meal.food = food.id
-            ORDER BY food.calories * meal.amount DESC;",
-            offset_seconds,
-        )
-        .fetch_all(&mut self.c)
-        .await?;
-
-        Ok(Meals {
-            daily: daily_totals,
-            breakdown,
-        })
-    }
-
-    pub async fn foods(&mut self) -> Res<Vec<Food>> {
-        Ok(query_as!(Food, "SELECT * FROM food")
-            .fetch_all(&mut self.c)
-            .await?)
-    }
-    pub async fn new_food(
+    pub fn new_food(
         &mut self,
         name: &str,
         calories: f64,
@@ -391,72 +334,31 @@ impl Db {
         fat: Option<f64>,
         carbohydrate: Option<f64>,
         desc: &str,
-    ) -> Res<i64> {
-        let e = self.exec(query!("INSERT INTO food (name, calories, protein, fat, carbohydrate, desc) VALUES (?, ?, ?, ?, ?, ?)", name, calories, protein, fat, carbohydrate,desc)).await?;
-        Ok(e.last_insert_rowid())
+    ) -> Res<usize> {
+        let id = self.food.e.add(Food {
+            name: name.to_owned(),
+            calories,
+            protein: protein.unwrap_or_default(),
+            fat: fat.unwrap_or_default(),
+            carbohydrate: carbohydrate.unwrap_or_default(),
+            desc: desc.to_owned(),
+        });
+        Ok(id)
     }
-    pub async fn del_food(&mut self, id: i64) -> Res<()> {
-        self.exec(query!("DELETE FROM food WHERE id = ?", id))
-            .await?;
-        Ok(())
-    }
-    pub async fn upd_food(
+    pub fn new_meal<T: TimeZone>(
         &mut self,
-        id: i64,
-        name: &str,
-        calories: f64,
-        protein: Option<f64>,
-        fat: Option<f64>,
-        carbohydrate: Option<f64>,
+        date: DateTime<T>,
+        food: usize,
+        amount: f64,
         desc: &str,
     ) -> Res<()> {
-        self.exec(query!("UPDATE food SET name = ?, calories = ?, protein = ?, fat = ?, carbohydrate = ?, desc = ? WHERE id = ?",
-            name,
-            calories,
-            protein,
-            fat,
-            carbohydrate,
-            desc,
-            id)).await?;
-        Ok(())
-    }
-    pub async fn new_meal(&mut self, date: i64, food: i64, amount: f64, desc: &str) -> Res<()> {
-        self.exec(query!(
-            "INSERT INTO meal (date, food, amount, desc) VALUES (?, ?, ?, ?)",
-            date,
+        self.meal.add(Meal {
+            date: t2s(date),
             food,
             amount,
-            desc
-        ))
-        .await?;
+            desc: desc.to_owned(),
+        });
         Ok(())
-    }
-    pub async fn get_exercise_maps(&mut self, exercise: i64) -> Res<Vec<MuscleMapOut>> {
-        Ok(query_as!(
-            MuscleMapOut,
-            "SELECT musclegroup as id, musclegroup.name AS name, amount FROM exercise2musclegroup
-                INNER JOIN musclegroup ON musclegroup.id = musclegroup
-                WHERE exercise = ?",
-            exercise
-        )
-        .fetch_all(&mut self.c)
-        .await?)
-    }
-    pub async fn map_exercise(&mut self, exercise: i64, muscle_maps: &[MuscleMapIn]) -> Res<()> {
-        for i in muscle_maps {
-            self.exec(query!(
-                "INSERT OR IGNORE INTO exercise2musclegroup (exercise, musclegroup, amount) VALUES (?, ?, ?)",
-                exercise,
-                i.id,
-                i.amount,
-            )).await?;
-        }
-        Ok(())
-    }
-    pub async fn muscle_groups(&mut self) -> Res<Vec<MuscleGroup>> {
-        Ok(query_as!(MuscleGroup, "SELECT * FROM musclegroup;")
-            .fetch_all(&mut self.c)
-            .await?)
     }
 }
 
@@ -466,12 +368,12 @@ pub struct MuscleMapIn {
     pub amount: f64,
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct MuscleGroup {
-    pub id: i64,
-    pub name: String,
-    pub desc: String,
-}
+// #[derive(Clone, Debug, Serialize)]
+// pub struct MuscleGroup {
+//     pub id: i64,
+//     pub name: String,
+//     pub desc: String,
+// }
 
 #[derive(Clone, Debug)]
 pub struct MuscleMapOut {
@@ -487,7 +389,7 @@ impl MuscleMapOut {
 
 #[derive(Clone, Debug)]
 pub struct ExerciseHistoryItem {
-    pub date: i64,
+    pub date: String,
     pub load: f64,
     pub rep: f64,
     pub desc: String,
@@ -501,63 +403,66 @@ pub struct BestSet {
     pub desc: String,
 }
 
-#[derive(Clone)]
-pub struct Place {
-    pub id: i64,
-    pub name: String,
-    pub desc: String,
-}
+// #[derive(Clone)]
+// pub struct Place {
+//     pub id: i64,
+//     pub name: String,
+//     pub desc: String,
+// }
 impl Place {
     pub fn to_line(&self) -> [&str; 2] {
         [&self.name, &self.desc]
     }
 }
 
-#[derive(Serialize, Clone)]
-pub struct Weight {
-    pub date: Date,
-    pub kg: f64,
-    pub bodyfat: f64,
-    pub desc: String,
-}
+// #[derive(Serialize, Clone)]
+// pub struct Weight {
+//     pub date: Date,
+//     pub kg: f64,
+//     pub bodyfat: f64,
+//     pub desc: String,
+// }
 pub type Prog = HashMap<String, Vec<BestSet>>;
 
-#[derive(Clone)]
-pub struct Exercise {
-    pub id: i64,
-    pub name: String,
-    pub desc: String,
-}
+// #[derive(Clone, Serialize, Deserialize, Debug)]
+// pub struct Exercise {
+//     pub id: i64,
+//     pub name: String,
+//     pub desc: String,
+// }
 impl Exercise {
     pub fn to_line(&self) -> [&str; 2] {
         [&self.name, &self.desc]
     }
 }
 
-#[derive(Serialize, Clone)]
-pub struct Food {
-    pub id: i64,
-    pub name: String,
-    pub calories: f64,
-    pub protein: Option<f64>,
-    pub fat: Option<f64>,
-    pub carbohydrate: Option<f64>,
-    pub desc: String,
-}
+// #[derive(Serialize, Clone)]
+// pub struct Food {
+//     pub id: i64,
+//     pub name: String,
+//     pub calories: f64,
+//     pub protein: Option<f64>,
+//     pub fat: Option<f64>,
+//     pub carbohydrate: Option<f64>,
+//     pub desc: String,
+// }
 impl Food {
     pub fn to_line(&self) -> [String; 6] {
         [
             self.name.to_owned(),
             format!("{:.1}", self.calories),
-            self.protein
-                .map(|e| format!("{:.1}", e))
-                .unwrap_or(String::new()),
-            self.fat
-                .map(|e| format!("{:.1}", e))
-                .unwrap_or(String::new()),
-            self.carbohydrate
-                .map(|e| format!("{:.1}", e))
-                .unwrap_or(String::new()),
+            format!("{:.1}", self.protein),
+            // self.protein
+            //     .map(|e| format!("{:.1}", e))
+            //     .unwrap_or(String::new()),
+            format!("{:.1}", self.fat),
+            // self.fat
+            //     .map(|e| format!("{:.1}", e))
+            //     .unwrap_or(String::new()),
+            format!("{:.1}", self.carbohydrate),
+            // self.carbohydrate
+            //     .map(|e| format!("{:.1}", e))
+            //     .unwrap_or(String::new()),
             format!("{}", self.desc),
         ]
     }
@@ -588,19 +493,18 @@ impl Food {
     }
 }
 
-#[derive(Serialize, Clone)]
-pub struct Meals {
-    pub daily: Vec<MealsDaily>,
-    pub breakdown: Vec<Meal>,
-}
+// #[derive(Serialize, Clone)]
+// pub struct Meals {
+//     pub daily: Vec<MealsDaily>,
+//     pub breakdown: Vec<Meal>,
+// }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub struct MealsDaily {
-    pub date: Option<String>,
-    pub calories: Option<f64>,
-    pub protein: Option<f64>,
-    pub fat: Option<f64>,
-    pub carbohydrate: Option<f64>,
+    pub calories: f64,
+    pub protein: f64,
+    pub fat: f64,
+    pub carbohydrate: f64,
 }
 impl MealsDaily {
     pub fn to_lines_today(&self) -> [[String; 4]; 2] {
@@ -612,35 +516,35 @@ impl MealsDaily {
                 format!("carbohydrate g"),
             ],
             [
-                format!("{:.2}", self.calories.unwrap_or(0.)),
-                format!("{:.2}", self.protein.unwrap_or(0.)),
-                format!("{:.2}", self.fat.unwrap_or(0.)),
-                format!("{:.2}", self.carbohydrate.unwrap_or(0.)),
+                format!("{:.2}", self.calories),
+                format!("{:.2}", self.protein),
+                format!("{:.2}", self.fat),
+                format!("{:.2}", self.carbohydrate),
             ],
         ]
     }
 }
 
-#[derive(Serialize, Clone)]
-pub struct Meal {
-    pub date: Option<String>,
-    pub name: String,
-    pub calories: f64,
-    pub fat: Option<f64>,
-    pub protein: Option<f64>,
-    pub carbohydrate: Option<f64>,
-    pub amount: Option<f64>,
-    pub desc: String,
-}
+// #[derive(Serialize, Clone)]
+// pub struct Meal {
+//     pub date: Option<String>,
+//     pub name: String,
+//     pub calories: f64,
+//     pub fat: Option<f64>,
+//     pub protein: Option<f64>,
+//     pub carbohydrate: Option<f64>,
+//     pub amount: Option<f64>,
+//     pub desc: String,
+// }
 
 pub type MajorExerciseMaps = HashMap<String, Vec<String>>;
 
-#[derive(Serialize)]
-pub struct Sets {
-    pub date: Date,
-    pub place: String,
-    pub exercise: String,
-    pub count: f64,
-    pub mg: String,
-    pub desc: f64,
-}
+// #[derive(Serialize)]
+// pub struct Sets {
+//     pub date: Date,
+//     pub place: String,
+//     pub exercise: String,
+//     pub count: f64,
+//     pub mg: String,
+//     pub desc: f64,
+// }

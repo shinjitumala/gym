@@ -5,7 +5,6 @@ use std::fmt::Display;
 use crate::com::*;
 
 pub type Res<T> = Result<T, Err>;
-type DbErr = sqlx::Error;
 
 pub enum Err {
     Str(String),
@@ -13,11 +12,6 @@ pub enum Err {
 impl From<String> for Err {
     fn from(v: String) -> Self {
         Err::Str(v)
-    }
-}
-impl From<DbErr> for Err {
-    fn from(v: DbErr) -> Self {
-        Err::Str(v.to_string())
     }
 }
 impl From<Err> for String {
@@ -36,6 +30,14 @@ impl From<InquireError> for Err {
 impl From<MyErr> for Err {
     fn from(v: MyErr) -> Self {
         Self::Str(v.into())
+    }
+}
+impl Display for Err {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Err::*;
+        match self {
+            Str(s) => write!(f, "{s}"),
+        }
     }
 }
 

@@ -20,33 +20,25 @@ pub mod com {
 
 use std::{net::SocketAddr, process::exit};
 
+use chrono::Utc;
 use com::*;
 use serde::Serialize;
 
-async fn input_place(db: &mut Db) -> Res<db::Place> {
-    let places = db.places().await?;
-    let lines = to_lines(&places.iter().map(|e| e.to_line()).collect_vec())
+fn input_place(db: &Db) -> Res<(usize, db::Place)> {
+    let places = db.places();
+    let lines = to_lines(&places.iter().map(|(_, e)| e.to_line()).collect_vec())
         .into_iter()
         .enumerate()
         .map(|(i, e)| ListOption::new(i, e))
         .collect();
-    Ok(places[Select::new("Place", lines).prompt()?.index].clone())
+    let (id, place) = places[Select::new("Place", lines).prompt()?.index];
+    Ok((*id, place.to_owned()))
 }
 
 #[derive(Acts)]
 #[acts(desc = "")]
 #[allow(dead_code)]
-pub struct Main(
-    Weight,
-    Place,
-    Web,
-    Sync,
-    New,
-    Food,
-    Foods,
-    MapExercise,
-    Test,
-);
+pub struct Main(Weight, Web, Sync, New, Food, Test);
 
 #[derive(Args)]
 #[args(desc = "Add weight data.")]
@@ -57,35 +49,13 @@ impl Run<C> for Weight {
         Ok(weight(c, a)?)
     }
 }
-#[tokio::main]
-async fn weight(c: &C, _a: Weight) -> Res<()> {
+fn weight(c: &C, _a: Weight) -> Res<()> {
     let date = input_date2("When did you measure?")?;
     let weight = CustomType::<f64>::new("Weight (kg)").prompt()?;
     let bodyfat = CustomType::<f64>::new("Bodyfat (%)").prompt()?;
     let desc = Text::new("Note").prompt()?;
-    let mut db = c.db().await?;
-    db.add_weight(date, weight, bodyfat, desc).await?;
-    Ok(())
-}
-
-#[derive(Args)]
-#[args(desc = "Add a place.")]
-pub struct Place {
-    #[arg(desc = "Name of a place you train.")]
-    name: String,
-    #[arg(desc = "Description of the place.")]
-    desc: String,
-}
-impl Run<C> for Place {
-    type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
-        Ok(place(c, a)?)
-    }
-}
-#[tokio::main]
-async fn place(c: &C, a: Place) -> Res<()> {
-    let mut db = c.db().await?;
-    db.new_place(&a.name, &a.desc).await?;
+    let mut db = c.db()?;
+    db.add_weight(date, weight, bodyfat, desc)?;
     Ok(())
 }
 
@@ -185,7 +155,7 @@ mod web_api {
         }
     }
     async fn prog(c: &C) -> Res<BTreeMap<String, DataProg>> {
-        let mut db = c.db().await?;
+        let mut db = c.db()?;
         let r = db.get_prog().await?;
         let mut m = BTreeMap::new();
         for (k, v) in r {
@@ -225,34 +195,34 @@ mod web_api {
 
     type Sets = BTreeMap<String, BTreeMap<String, DataSets>>;
     async fn sets(c: &C) -> Res<Sets> {
-        let mut db = c.db().await?;
-        let b = db.sets().await?;
-        let mut m = BTreeMap::new();
-        for b in b {
-            let k1 = b.mg;
-            let v1 = match m.get_mut(&k1) {
-                Some(e) => e,
-                None => {
-                    m.insert(k1.to_owned(), BTreeMap::new());
-                    m.get_mut(&k1).unwrap()
-                }
-            };
-
-            let k2 = b.exercise;
-            let v2 = match v1.get_mut(&k2) {
-                Some(e) => e,
-                None => {
-                    v1.insert(k2.to_owned(), DataSets::new());
-                    v1.get_mut(&k2).unwrap()
-                }
-            };
-
-            v2.date.push(b.date);
-            v2.place.push(b.place);
-            v2.count.push(b.count);
-            v2.desc.push(b.desc);
-        }
-        Ok(m)
+        let mut db = c.db()?;
+        let b = todo!(); //db.sets().await?;
+                         // let mut m = BTreeMap::new();
+                         // for b in b {
+                         //     let k1 = b.mg;
+                         //     let v1 = match m.get_mut(&k1) {
+                         //         Some(e) => e,
+                         //         None => {
+                         //             m.insert(k1.to_owned(), BTreeMap::new());
+                         //             m.get_mut(&k1).unwrap()
+                         //         }
+                         //     };
+                         //
+                         //     let k2 = b.exercise;
+                         //     let v2 = match v1.get_mut(&k2) {
+                         //         Some(e) => e,
+                         //         None => {
+                         //             v1.insert(k2.to_owned(), DataSets::new());
+                         //             v1.get_mut(&k2).unwrap()
+                         //         }
+                         //     };
+                         //
+                         //     v2.date.push(b.date);
+                         //     v2.place.push(b.place);
+                         //     v2.count.push(b.count);
+                         //     v2.desc.push(b.desc);
+                         // }
+                         // Ok(m)
     }
 
     #[derive(Serialize)]
@@ -263,7 +233,7 @@ mod web_api {
         desc: Vec<String>,
     }
     async fn get_weight(c: &C) -> Res<DataWeight> {
-        let mut db = c.db().await?;
+        let mut db = c.db()?;
         let d = db.get_weight().await?;
 
         let mut r = DataWeight {
@@ -273,7 +243,7 @@ mod web_api {
             desc: Vec::new(),
         };
         for a in d {
-            r.date.push(a.date);
+            r.date.push(Date::from_timestamp(s2t(&a.date)?.timestamp()));
             r.kg.push(a.kg);
             r.bodyfat.push(a.bodyfat);
             r.desc.push(a.desc);
@@ -301,30 +271,31 @@ mod web_api {
     }
 
     pub async fn food(c: &C) -> Res<BTreeMap<String, DataFood>> {
-        let mut db = c.db().await?;
-        let mut r = BTreeMap::new();
-        let m = db.get_meals().await?;
-        for m in m.breakdown {
-            let v = match r.get_mut(&m.name) {
-                Some(e) => e,
-                None => {
-                    r.insert(m.name.to_owned(), DataFood::new());
-                    r.get_mut(&m.name).unwrap()
-                }
-            };
-
-            v.date.push(m.date.unwrap_or(String::new()));
-            v.calories.push(m.calories);
-            v.protein.push(m.protein.unwrap_or(0f64));
-            v.desc.push(format!(
-                "{} x {}\n{}",
-                m.name,
-                m.amount.unwrap_or(1.),
-                m.desc
-            ))
-        }
-
-        Ok(r)
+        let mut db = c.db()?;
+        // let mut r = BTreeMap::new();
+        todo!()
+        // let m = db.get_meals().await?;
+        // for m in m.breakdown {
+        //     let v = match r.get_mut(&m.name) {
+        //         Some(e) => e,
+        //         None => {
+        //             r.insert(m.name.to_owned(), DataFood::new());
+        //             r.get_mut(&m.name).unwrap()
+        //         }
+        //     };
+        //
+        //     v.date.push(m.date.unwrap_or(String::new()));
+        //     v.calories.push(m.calories);
+        //     v.protein.push(m.protein.unwrap_or(0f64));
+        //     v.desc.push(format!(
+        //         "{} x {}\n{}",
+        //         m.name,
+        //         m.amount.unwrap_or(1.),
+        //         m.desc
+        //     ))
+        // }
+        //
+        // Ok(r)
     }
 
     #[derive(Serialize)]
@@ -365,8 +336,9 @@ mod web_api {
     }
     pub async fn mgs(c: C) -> Result<impl Reply, Infallible> {
         async fn a(c: C) -> Res<Vec<MuscleGroup>> {
-            let mut db = c.db().await?;
-            Ok(db.muscle_groups().await?)
+            todo!()
+            // let mut db = c.db()?;
+            // Ok(db.muscle_groups().await?)
         }
         match a(c).await {
             Err(e) => Ok(json(&JsonErr::new(e))),
@@ -384,7 +356,7 @@ mod web_api {
     }
     pub async fn map(c: C) -> Result<impl Reply, Infallible> {
         async fn a(c: C) -> Res<db::MajorExerciseMaps> {
-            let mut db = c.db().await?;
+            let mut db = c.db()?;
             Ok(db.major_exercise_maps().await?)
         }
         match a(c).await {
@@ -436,21 +408,25 @@ impl Run<C> for New {
         Ok(new_session(c, a)?)
     }
 }
-#[tokio::main]
-async fn new_session(c: &C, _a: New) -> Res<()> {
-    let mut db = c.db().await?;
-    let p = input_place(&mut db).await?;
+fn new_session(c: &C, _a: New) -> Res<()> {
+    let mut db = c.db()?;
+    let (pid, _) = input_place(&db)?;
     let d = input_date2("Training time")?;
-    let ecomp = TextWithAutocomplete::new(db.exercises(p.id).await?, |e| {
-        [e.name.to_owned(), e.desc.to_owned()]
-    });
-
-    let mut t = db.start().await?;
-    let s = t.new_session(p.id, d).await?;
-    t.commit().await?;
+    let desc = Text::new("Description")
+        .prompt_skippable()?
+        .unwrap_or_default();
+    let s = db.new_session(pid, d, desc)?;
+    db.save()?;
 
     loop {
-        let mut t = db.start().await?;
+        let ecomp = TextWithAutocomplete::new(
+            db.exercises(pid)?
+                .into_iter()
+                .map(|(id, e)| (*id, e.to_owned()))
+                .collect(),
+            |(_, e)| [e.name.to_owned(), e.desc.to_owned()],
+        );
+
         let e = Text::new("Exercise")
             .with_autocomplete(ecomp.clone())
             .with_help_message("Press ESC if done")
@@ -458,16 +434,15 @@ async fn new_session(c: &C, _a: New) -> Res<()> {
             .map(|e| e.trim().to_owned());
 
         if let Some(e) = e {
-            let e = t.get_exercise(&e).await?;
-            t.commit().await?;
+            let (eid, _) = db.get_exercise(&e)?;
 
-            let h = db.get_exercise_history(p.id, e.id).await?;
-            let mut l = 0i64;
+            let h = db.get_exercise_history(pid, eid, 3)?;
+            let mut l = String::new();
             let mut b = Vec::<ExerciseHistoryItem>::new();
             for h in h {
                 if h.date != l {
-                    if l != 0 {
-                        let d = Date::from_timestamp(l);
+                    if !l.is_empty() {
+                        let d = s2t(&l)?.to_rfc3339();
                         println!("{d}:");
                         println!(
                             "{}",
@@ -485,13 +460,13 @@ async fn new_session(c: &C, _a: New) -> Res<()> {
                             )
                         );
                     }
-                    l = h.date;
+                    l = h.date.to_owned();
                     b.clear();
                 }
                 b.push(h.to_owned());
             }
-            if l != 0 {
-                let d = Date::from_timestamp(l);
+            if !l.is_empty() {
+                let d = s2t(&l)?.to_rfc3339();
                 println!("{d}:");
                 println!(
                     "{}",
@@ -516,15 +491,21 @@ async fn new_session(c: &C, _a: New) -> Res<()> {
                     .prompt_skippable()?;
                 if let Some(load) = load {
                     loop {
-                        let mut t = db.start().await?;
                         let rep = CustomType::<f64>::new("rep")
                             .with_help_message("Press ESC if done with load")
                             .prompt_skippable()?;
                         if let Some(rep) = rep {
                             let desc = Text::new("Notes").prompt()?;
-                            t.new_set(s, e.id, load, rep, to_one_rep_max(load, rep)?, desc)
-                                .await?;
-                            t.commit().await?;
+                            db.new_set(
+                                Utc::now(),
+                                s,
+                                eid,
+                                load,
+                                rep,
+                                to_one_rep_max(load, rep)?,
+                                desc,
+                            )?;
+                            db.save()?;
                         } else {
                             break;
                         }
@@ -537,6 +518,8 @@ async fn new_session(c: &C, _a: New) -> Res<()> {
             break;
         }
     }
+    db.load_full()?;
+    db.save()?;
     Ok(())
 }
 
@@ -549,29 +532,32 @@ impl Run<C> for Food {
         Ok(food(c, a)?)
     }
 }
-#[tokio::main]
-async fn food(c: &C, _a: Food) -> Res<()> {
-    let mut db = c.db().await?;
+fn food(c: &C, _a: Food) -> Res<()> {
+    let mut db = c.db()?;
 
-    let t = db.calories_today().await?;
+    let t = db.calories_today()?;
     println!("Today's total:");
     println!("{}", to_table(&t.to_lines_today()));
 
     let date = input_date2("When did you eat?")?;
-    let foods = db.foods().await?;
+    let foods = db
+        .foods()?
+        .into_iter()
+        .map(|(k, v)| (*k, v.to_owned()))
+        .collect_vec();
     loop {
         let f = match select_line(
             "What did you eat? (calories kcal, protein g, fat g, carbohydrates g)",
             &foods,
-            |f| f.to_line(),
+            |(_, f)| f.to_line(),
         )
         .with_help_message("Press ESC to register unknown food")
         .prompt_skippable()?
         {
-            Some(f) => foods[f.index].id,
+            Some(f) => foods[f.index].0,
             None => {
                 println!("Registering new food...");
-                food::reg(&mut db).await?
+                food::reg(&mut db)?
             }
         };
 
@@ -581,7 +567,8 @@ async fn food(c: &C, _a: Food) -> Res<()> {
             .prompt()?;
         let desc = Text::new("desc").prompt()?;
 
-        db.new_meal(date.as_timestamp(), f, amount, &desc).await?;
+        db.new_meal(date.as_datetime().to_owned(), f, amount, &desc)?;
+        db.save()?;
 
         if !Confirm::new("Add more food?")
             .with_default(false)
@@ -591,113 +578,9 @@ async fn food(c: &C, _a: Food) -> Res<()> {
         }
     }
 
-    let t = db.calories_today().await?;
+    let t = db.calories_today()?;
     println!("Today's total:");
     println!("{}", to_table(&t.to_lines_today()));
-
-    Ok(())
-}
-
-type Foods = food::Main;
-#[derive(Args)]
-#[args(desc = "Map exercise to muscle group.")]
-pub struct MapExercise {}
-impl Run<C> for MapExercise {
-    type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
-        Ok(map_exercise(c, a)?)
-    }
-}
-#[tokio::main]
-async fn map_exercise(c: &C, _a: MapExercise) -> Res<()> {
-    let mut db = c.db().await?;
-    let places = db.places().await?;
-    let place = &places[select_line("Filter exercise by place", &places, |e| {
-        e.to_line().map(|e| e.to_owned())
-    })
-    .prompt()?
-    .index];
-
-    let exercises = db.exercises(place.id).await?;
-    let mgs = db.muscle_groups().await?;
-
-    loop {
-        let exercise = &exercises[select_line("Exercise to be mapped", &exercises, |e| {
-            e.to_line().map(|e| e.to_owned())
-        })
-        .prompt()?
-        .index];
-
-        let maps = db.get_exercise_maps(exercise.id).await?;
-
-        let mut maps_new = maps.clone();
-
-        #[derive(Actions, Clone)]
-        enum A {
-            Add,
-            Edit,
-            Delete,
-            Done,
-        }
-
-        loop {
-            println!(
-                "Current:\n{}",
-                to_table(&maps_new.iter().map(|e| e.to_line()).collect_vec())
-            );
-            match A::get("Select action", None)? {
-                A::Add => {
-                    let mgs = mgs
-                        .iter()
-                        .filter(|e| maps_new.iter().find(|e2| e2.id == e.id).is_none())
-                        .collect_vec();
-                    let mg = mgs[select_line("Target muscle group", &mgs, |e| {
-                        [e.name.to_owned(), e.desc.to_owned()]
-                    })
-                    .prompt()?
-                    .index];
-                    let amount = CustomType::<f64>::new("Set for muscle group per set of exercise")
-                        .with_default(1f64)
-                        .prompt()?;
-
-                    maps_new.push(db::MuscleMapOut {
-                        id: mg.id,
-                        name: mg.name.to_owned(),
-                        amount,
-                    });
-                }
-                A::Edit => {
-                    let map = select_line("which one", &maps_new, |e| e.to_line())
-                        .prompt()?
-                        .index;
-                    maps_new[map].amount =
-                        CustomType::<f64>::new("Set for muscle group per set of exercise")
-                            .with_default(maps_new[map].amount)
-                            .prompt()?;
-                }
-                A::Delete => {
-                    let map = select_line("which one", &maps_new, |e| e.to_line())
-                        .prompt()?
-                        .index;
-                    maps_new.remove(map);
-                }
-                A::Done => break,
-            }
-        }
-
-        let a = maps_new
-            .into_iter()
-            .map(|e| db::MuscleMapIn {
-                id: e.id,
-                amount: e.amount,
-            })
-            .collect_vec();
-        db.map_exercise(exercise.id, &a).await?;
-
-        if Confirm::new("done").with_default(true).prompt()? {
-            break;
-        }
-    }
 
     Ok(())
 }
