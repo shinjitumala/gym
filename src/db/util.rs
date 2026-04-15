@@ -73,9 +73,6 @@ impl<I: Sized + DeserializeOwned + Serialize + Debug + Clone> Entries<I> {
         self.e.insert(id, i);
         id
     }
-    fn merge(&mut self, o: &Self) {
-        self.e.extend(o.e.clone());
-    }
 }
 
 #[derive(Clone, Default, Deserialize)]

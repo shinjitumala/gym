@@ -106,7 +106,6 @@ impl Timed for Meal {
 impl Db {
     const F_EXERCISE: &str = "exercise.toml";
     const F_MUSCLE_GROUP: &str = "muscle_group.toml";
-    const F_EXERCISE2MUSCLE_GROUP: &str = "exercise2muscle_group.toml";
     const F_PLACE: &str = "place.toml";
     const D_SET: &str = "set";
     const D_SESSION: &str = "session";
@@ -164,19 +163,32 @@ impl Db {
             .map(|(_, e)| e.sets)
             .flatten()
             .collect();
-        let eids: HashSet<_> = self
+        let eids: HashMap<_, _> = self
             .set
             .find(|(id, _)| sids.contains(id))?
             .into_iter()
-            .map(|(_, e)| e.exercise)
-            .collect();
+            .into_group_map_by(|(_, e)| e.exercise)
+            .into_iter()
+            .map(|(id, s)| -> Res<_> {
+                Ok((
+                    id,
+                    s.into_iter()
+                        .map(|(_, s)| s2t(&s.date))
+                        .process_results(|i| i.sorted_by_key(|s| -s.timestamp()))?
+                        .next()
+                        .unwrap_or_default(),
+                ))
+            })
+            .process_results(|i| i.collect())?;
 
         Ok(self
             .exercises
             .e
             .e
             .iter()
-            .filter(|(id, _)| eids.contains(*id))
+            .filter_map(|(id, e)| eids.get(id).map(|d| (id, e, d)))
+            .sorted_by_key(|(_, _, d)| -d.timestamp())
+            .map(|(id, e, _)| (id, e))
             .collect())
     }
 
@@ -236,8 +248,34 @@ impl Db {
             .process_results(|i| i.collect())?)
     }
 
-    pub fn places(&self) -> Vec<(&usize, &Place)> {
-        self.place.e.e.iter().collect()
+    pub fn places(&self) -> Res<Vec<(&usize, &Place)>> {
+        Ok(self
+            .place
+            .e
+            .e
+            .iter()
+            .map(|(id, p)| -> Res<_> {
+                let d = self
+                    .session
+                    .find(|(_, s)| s.place == *id)?
+                    .into_iter()
+                    .map(|(id, s)| -> Res<_> {
+                        let t = s2t(&s.date)?;
+                        Ok((id, s, t))
+                    })
+                    .process_results(|i| {
+                        i.sorted_by_key(|(_, _, d)| -d.timestamp())
+                            .next()
+                            .map(|(_, _, d)| d)
+                            .unwrap_or_default()
+                    })?;
+                Ok((id, p, d))
+            })
+            .process_results(|i| {
+                i.sorted_by_key(|(_, _, d)| -d.timestamp())
+                    .map(|(id, p, _)| (id, p))
+                    .collect()
+            })?)
     }
 
     pub fn new_set<T: TimeZone>(
@@ -247,7 +285,6 @@ impl Db {
         exercise: usize,
         load: f64,
         rep: f64,
-        one_rep_max: f64,
         desc: String,
     ) -> Res<()> {
         self.set.add(Set {
@@ -269,22 +306,6 @@ impl Db {
             desc: note,
         });
         Ok(())
-    }
-
-    pub async fn major_exercise_maps(&mut self) -> Res<MajorExerciseMaps> {
-        todo!()
-    }
-
-    pub async fn get_prog(&mut self) -> Res<Prog> {
-        todo!()
-    }
-
-    pub async fn new_place(&mut self, name: &str, desc: &str) -> Res<()> {
-        todo!()
-    }
-
-    pub async fn get_weight(&mut self) -> Res<Vec<Weight>> {
-        todo!()
     }
 
     pub fn calories_today(&mut self) -> Res<MealsDaily> {
@@ -318,10 +339,6 @@ impl Db {
             })?;
         Ok(e)
     }
-
-    // pub async fn get_meals(&mut self) -> Res<Meals> {
-    //     todo!()
-    // }
 
     pub fn foods(&mut self) -> Res<Vec<(&usize, &Food)>> {
         Ok(self.food.e.e.iter().collect())
@@ -363,31 +380,6 @@ impl Db {
 }
 
 #[derive(Clone, Debug)]
-pub struct MuscleMapIn {
-    pub id: i64,
-    pub amount: f64,
-}
-
-// #[derive(Clone, Debug, Serialize)]
-// pub struct MuscleGroup {
-//     pub id: i64,
-//     pub name: String,
-//     pub desc: String,
-// }
-
-#[derive(Clone, Debug)]
-pub struct MuscleMapOut {
-    pub id: i64,
-    pub name: String,
-    pub amount: f64,
-}
-impl MuscleMapOut {
-    pub fn to_line(&self) -> [String; 2] {
-        [self.name.to_owned(), format!("{:.2}", self.amount)]
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct ExerciseHistoryItem {
     pub date: String,
     pub load: f64,
@@ -403,66 +395,25 @@ pub struct BestSet {
     pub desc: String,
 }
 
-// #[derive(Clone)]
-// pub struct Place {
-//     pub id: i64,
-//     pub name: String,
-//     pub desc: String,
-// }
 impl Place {
     pub fn to_line(&self) -> [&str; 2] {
         [&self.name, &self.desc]
     }
 }
-
-// #[derive(Serialize, Clone)]
-// pub struct Weight {
-//     pub date: Date,
-//     pub kg: f64,
-//     pub bodyfat: f64,
-//     pub desc: String,
-// }
 pub type Prog = HashMap<String, Vec<BestSet>>;
-
-// #[derive(Clone, Serialize, Deserialize, Debug)]
-// pub struct Exercise {
-//     pub id: i64,
-//     pub name: String,
-//     pub desc: String,
-// }
 impl Exercise {
     pub fn to_line(&self) -> [&str; 2] {
         [&self.name, &self.desc]
     }
 }
-
-// #[derive(Serialize, Clone)]
-// pub struct Food {
-//     pub id: i64,
-//     pub name: String,
-//     pub calories: f64,
-//     pub protein: Option<f64>,
-//     pub fat: Option<f64>,
-//     pub carbohydrate: Option<f64>,
-//     pub desc: String,
-// }
 impl Food {
     pub fn to_line(&self) -> [String; 6] {
         [
             self.name.to_owned(),
             format!("{:.1}", self.calories),
             format!("{:.1}", self.protein),
-            // self.protein
-            //     .map(|e| format!("{:.1}", e))
-            //     .unwrap_or(String::new()),
             format!("{:.1}", self.fat),
-            // self.fat
-            //     .map(|e| format!("{:.1}", e))
-            //     .unwrap_or(String::new()),
             format!("{:.1}", self.carbohydrate),
-            // self.carbohydrate
-            //     .map(|e| format!("{:.1}", e))
-            //     .unwrap_or(String::new()),
             format!("{}", self.desc),
         ]
     }
@@ -492,13 +443,6 @@ impl Food {
         format!("{}", to_table(&x))
     }
 }
-
-// #[derive(Serialize, Clone)]
-// pub struct Meals {
-//     pub daily: Vec<MealsDaily>,
-//     pub breakdown: Vec<Meal>,
-// }
-
 #[derive(Serialize, Clone, Default)]
 pub struct MealsDaily {
     pub calories: f64,
@@ -524,27 +468,3 @@ impl MealsDaily {
         ]
     }
 }
-
-// #[derive(Serialize, Clone)]
-// pub struct Meal {
-//     pub date: Option<String>,
-//     pub name: String,
-//     pub calories: f64,
-//     pub fat: Option<f64>,
-//     pub protein: Option<f64>,
-//     pub carbohydrate: Option<f64>,
-//     pub amount: Option<f64>,
-//     pub desc: String,
-// }
-
-pub type MajorExerciseMaps = HashMap<String, Vec<String>>;
-
-// #[derive(Serialize)]
-// pub struct Sets {
-//     pub date: Date,
-//     pub place: String,
-//     pub exercise: String,
-//     pub count: f64,
-//     pub mg: String,
-//     pub desc: f64,
-// }

@@ -1,8 +1,5 @@
 use crate::com::*;
 
-pub fn print_food(e: &Food) -> [&str; 2] {
-    [&e.name, &e.desc]
-}
 pub fn reg(db: &mut Db) -> Res<usize> {
     let foods = db.foods()?;
 
