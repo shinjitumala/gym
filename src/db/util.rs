@@ -184,4 +184,21 @@ impl<I: Sized + DeserializeOwned + Serialize + Debug + Clone + Timed + Default> 
             .map(|e| Entries::<I>::load(e))
             .process_results(|i| i.map(|e| e.e.into_iter().filter(p)).flatten().collect())?)
     }
+    pub fn find_mut<P: FnMut(&(usize, I)) -> bool + Copy>(
+        &mut self,
+        p: P,
+    ) -> Res<Vec<(usize, &mut I)>> {
+        let e = files(&self.p)?
+            .into_iter()
+            .map(|e| Entries::<I>::load(e))
+            .process_results(|i| i.map(|e| e.e.into_iter().filter(p)).flatten().collect_vec())?;
+        self.b.e.extend(e.clone());
+        Ok(self
+            .b
+            .e
+            .iter_mut()
+            .filter(|(id, _)| e.iter().any(|(oid, _)| *oid == **id))
+            .map(|(id, i)| (*id, i))
+            .collect())
+    }
 }

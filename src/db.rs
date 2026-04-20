@@ -287,7 +287,7 @@ impl Db {
         rep: f64,
         desc: String,
     ) -> Res<()> {
-        self.set.add(Set {
+        let sid = self.set.add(Set {
             date: t2s(date),
             session,
             exercise,
@@ -295,6 +295,14 @@ impl Db {
             rep,
             desc,
         });
+        let (_, s) = self
+            .session
+            .find_mut(|(id, _)| *id == session)?
+            .into_iter()
+            .exactly_one()
+            .map_err(|e| format!("Could not find session with id = '{session}' because '{e}'"))?;
+        s.sets.push(sid);
+        s.sets.sort();
         Ok(())
     }
 
