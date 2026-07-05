@@ -53,6 +53,7 @@ fn weight(c: &C, _a: Weight) -> Res<()> {
     let desc = Text::new("Note").prompt()?;
     let mut db = c.db()?;
     db.add_weight(date, weight, bodyfat, desc)?;
+    db.save()?;
     Ok(())
 }
 
