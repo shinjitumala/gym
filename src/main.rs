@@ -188,14 +188,7 @@ fn new_session(c: &C, _a: New) -> Res<()> {
                             .prompt_skippable()?;
                         if let Some(rep) = rep {
                             let desc = Text::new("Notes").prompt()?;
-                            db.new_set(
-                                Utc::now(),
-                                s,
-                                eid,
-                                load,
-                                rep,
-                                desc,
-                            )?;
+                            db.new_set(Utc::now(), s, eid, load, rep, desc)?;
                             db.save()?;
                         } else {
                             break;

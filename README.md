@@ -1,67 +1,105 @@
-# What is it?
+# gym
 
-This tool can track your progressive overload and weight using local databases and lets you view them in an interactive graph in your browser.
+A local-first fitness tracker for progressive overload, body weight and food.
+It records your training sets, weigh-ins and meals in plain-text [TOML][toml]
+files on your machine, with no server and no account.
 
-## Images
 ![Progressive overload (mixed)](i/0.jpg)
 ![Progressive overload (single)](i/1.jpg)
 ![Weight and bodyfat](i/2.jpg)
 
-# Quickstart
+[toml]: https://toml.io
+
+## Install
+
+Builds and installs the `gym` binary into `$CARGO_HOME/bin` (default
+`~/.cargo/bin`).
+
+Prerequisites: `cargo` (Rust), `jq`, `rsync`, and `git` (used by `gym sync`).
 
 ```bash
 $ git clone https://github.com/shinjitumala/gym.git
 $ cd gym
-$ cat ./install.sh
-...
 $ ./install.sh
-$ echo '{"db": "<path to your database file>"}' > ~/.config/gym.json
-$ sqlite3 "<path to your database file" < up.sql
 ```
 
-# Prerequisites
-- rust
-- sqlite3
+`install.sh` runs `cargo fmt`, builds with `cargo build --release --locked`,
+resolves the target directory via `cargo metadata` (so a relocated
+`CARGO_TARGET_DIR` is honored), and `rsync -ruP`s `target/release/gym` into
+`$CARGO_HOME/bin` using a temp file plus an atomic `mv -f` rename. It is
+idempotent and safe to run while `gym` is already running.
 
-# Examples
-## Add a place
-```bash
-$ gym place --name "my personal gym" --desc "Near my house at foo."
-```
-## Add data
+## Configuration
 
-```bash
-$ cat 2024-10-24.csv
-bench press,30x8,50x4,72.5x8x4x2
-lat pull down,75x13x6x4
-...
-$ gym add --data 2024-10-24.csv
-# Follow the prompt
-...
+Create `~/.config/gym.json` (or point `$CONFIG_PATH` at a file):
+
+```json
+{
+  "db": "/home/me/g/gym_data/d",
+  "repo": "/home/me/g/gym_data"
+}
 ```
 
-## Generate graphs
+| Field  | Meaning                                                                 |
+|--------|-------------------------------------------------------------------------|
+| `db`   | Directory holding the TOML database. Must already exist.                 |
+| `repo` | Git repository used by `gym sync`. Must already exist.                   |
 
-### Manually generating graphs (optional)
-Usually, the data gets updated when you add new data using the `gym add` command.
-You can manually generate them using the following if necessary.
+The database is a set of TOML files under `db`: `exercise.toml`,
+`muscle_group.toml`, `place.toml`, `food.toml`, and the entry directories
+`set/`, `session/`, `weight/` and `meal/` (sharded per day or per month).
 
-```bash
-$ gym upd
-```
-### Viewing the graph
-#### Local file
-Open `s/index.html` with a browser of your choise.
+## Usage
+
+### `gym weight` — record a weigh-in
+
+Prompts for the date, weight (kg), bodyfat (%) and a note, then saves.
 
 ```bash
-vivaldi s/index.html
+$ gym weight
 ```
-#### Web server
-Alternatively, you can use the built in web server.
+
+### `gym new` — log a training session
+
+Pick a place and time, then add exercises and their sets (load × reps). Recent
+history for the chosen exercise is printed so you can beat your last session.
+Press ESC to finish an exercise or the session.
 
 ```bash
-[shinji@fpr0 gym]$ gym web
-Starting web server at '0.0.0.0:8080'...
+$ gym new
 ```
 
-You can now access the graphs via your browser at "localhost:8080" or from any device in your local network with the appropriate ip address, etc.
+### `gym food` — log meals
+
+Shows today's running totals, lets you pick a food (or register a new one),
+and records an amount multiplier per meal.
+
+```bash
+$ gym food
+```
+
+### `gym sync` — sync the data repository
+
+Pulls the `repo`, commits any changes and pushes to its remotes.
+
+```bash
+$ gym sync
+```
+
+### `gym web` — web server
+
+Not implemented yet: the handler is a `todo!()`, so this command panics.
+Graphing currently means reading the TOML database directly.
+
+## Deploy to Android
+
+`deploy.sh` cross-compiles a release binary for `aarch64-linux-android` with
+the Android NDK toolchain.
+
+```bash
+$ ./deploy.sh
+```
+
+## License
+
+Proprietary. See [LICENSE](LICENSE).
