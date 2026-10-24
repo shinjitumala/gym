@@ -23,15 +23,14 @@ $ cd gym
 $ ./install.sh
 ```
 
-`install.sh` runs `cargo fmt`, builds with `cargo build --release --locked`,
-resolves the target directory via `cargo metadata` (so a relocated
-`CARGO_TARGET_DIR` is honored), and `rsync -ruP`s `target/release/gym` into
-`$CARGO_HOME/bin` using a temp file plus an atomic `mv -f` rename. It is
-idempotent and safe to run while `gym` is already running.
+`install.sh` formats, builds with `cargo build --release --locked`, and
+`rsync -ruP`s the binary into place through a temp file and an atomic rename,
+so it is idempotent and safe while `gym` is running.
 
-## Configuration
+## Quick start
 
-Create `~/.config/gym.json` (or point `$CONFIG_PATH` at a file):
+Point `gym` at a data directory and a git repository for it, in
+`~/.config/gym.json`:
 
 ```json
 {
@@ -40,56 +39,37 @@ Create `~/.config/gym.json` (or point `$CONFIG_PATH` at a file):
 }
 ```
 
-| Field  | Meaning                                                                 |
-|--------|-------------------------------------------------------------------------|
-| `db`   | Directory holding the TOML database. Must already exist.                 |
-| `repo` | Git repository used by `gym sync`. Must already exist.                   |
+Both directories must already exist; see
+[Configuration](doc/src/configuration.md) for the lookup order, the smallest
+directory that works, and a throwaway setup.
 
-The database is a set of TOML files under `db`: `exercise.toml`,
-`muscle_group.toml`, `place.toml`, `food.toml`, and the entry directories
-`set/`, `session/`, `weight/` and `meal/` (sharded per day or per month).
-
-## Usage
-
-### `gym weight` — record a weigh-in
-
-Prompts for the date, weight (kg), bodyfat (%) and a note, then saves.
+Then log a session, a meal or a weigh-in:
 
 ```bash
-$ gym weight
+$ gym new     # training sets, with the last three sessions as history
+$ gym food    # meals, with the day's calories and macros
+$ gym weight  # a weigh-in
 ```
 
-### `gym new` — log a training session
+## Commands
 
-Pick a place and time, then add exercises and their sets (load × reps). Recent
-history for the chosen exercise is printed so you can beat your last session.
-Press ESC to finish an exercise or the session.
+| Command     | What it does                                                    |
+|-------------|-----------------------------------------------------------------|
+| `gym new`   | A training session: place, exercises, load × reps per set.       |
+| `gym food`  | Meals for the day, with running calorie and macro totals.        |
+| `gym weight`| A weigh-in: kilograms, body fat, note.                           |
+| `gym sync`  | Pull, commit and push the data repository.                       |
+| `gym web`   | Not implemented yet: panics with `not yet implemented`.          |
 
-```bash
-$ gym new
-```
+Run `gym` with no command for a menu of the five. Every command is interactive
+and ESC backs out of the current question.
 
-### `gym food` — log meals
+## Links
 
-Shows today's running totals, lets you pick a food (or register a new one),
-and records an amount multiplier per meal.
-
-```bash
-$ gym food
-```
-
-### `gym sync` — sync the data repository
-
-Pulls the `repo`, commits any changes and pushes to its remotes.
-
-```bash
-$ gym sync
-```
-
-### `gym web` — web server
-
-Not implemented yet: the handler is a `todo!()`, so this command panics.
-Graphing currently means reading the TOML database directly.
+- [Design notes](doc/src/index.md) — the mdBook in `doc/`: configuration, the
+  data file schemas, each command with a worked example, and the
+  [feature list with acceptance criteria](doc/src/features.md).
+  Build it with `mdbook build doc`, or read it with `mdbook serve doc`.
 
 ## Deploy to Android
 

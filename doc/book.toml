@@ -1,0 +1,11 @@
+[book]
+title = "gym design notes"
+authors = ["Shinji Hoshino"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "dark"
