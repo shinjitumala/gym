@@ -120,7 +120,7 @@ Not implemented. The command parses an optional address (default
 
 ```text
 $ gym web
-thread 'main' panicked at src/main.rs:91:5:
+thread 'main' panicked at ...:
 not yet implemented
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```

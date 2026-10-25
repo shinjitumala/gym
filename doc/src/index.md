@@ -34,8 +34,8 @@ and nothing is kept in memory between commands.
 - **Interactive only.** Every command except `gym web` prompts for input on the
   terminal. There is no batch mode.
 - **ESC means "not this one".** At every prompt, ESC cancels the current
-  question: on a list it means "none of these", on the set loop it ends the
-  exercise, on the exercise loop it ends the session.
+  question: on the set loop it ends the exercise, on the exercise loop it ends
+  the session, on the food list it opens food registration instead of picking.
 
 ## Pages
 
