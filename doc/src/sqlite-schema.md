@@ -6,6 +6,20 @@ migration from the TOML directories is described after it. Both are on
 
 ## Conventions
 
+- **The schema is a migration file.** The SQL below is `migrations/0001_init.sql`,
+  applied by `sqlx::migrate!` at startup and against a scratch database when the
+  commit-time query cache is refreshed. There is no second copy of the schema to
+  fall out of step.
+- **Every query is a macro.** `sqlx::query!`/`query_as!`/`query_scalar!` check
+  each statement against that migration at build time. A column rename that a
+  query still uses is a compile error, which is the point. Statements are
+  literals: a screen with an optional filter binds parameters, it does not
+  build SQL — `WHERE (?1 IS NULL OR date >= ?1) AND (?2 IS NULL OR date <= ?2)`.
+- **Connection setup is per connection, not per database.** WAL, foreign keys
+  and the busy timeout are set through `SqliteConnectOptions`
+  (`.journal_mode(Wal)`, `.foreign_keys(true)`,
+  `.busy_timeout(Duration::from_secs(5))`), because SQLite forgets two of the
+  three whenever a connection is opened.
 - **Dates are RFC3339 `TEXT`.** The existing log already uses them, they sort
   chronologically as text in the same offset, and their precision varies (some
   rows carry nanoseconds), which a SQL type would have to round.
@@ -18,6 +32,8 @@ migration from the TOML directories is described after it. Both are on
   "none".
 
 ## Tables
+
+The migration, in full:
 
 ```sql
 PRAGMA journal_mode = WAL;

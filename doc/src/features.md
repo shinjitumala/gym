@@ -85,8 +85,12 @@ Acceptance criteria:
 - [ ] The installed binary reports which build it is (`gym --version`).
 - [ ] The hydrated web assets are inside the binary, so installing is still one
       file and the Android build produces something runnable.
-- [ ] A build needs no database: queries are written at runtime, not with the
-      compile-time macros.
+- [ ] Every query is a `sqlx` macro checked at build time; a dynamic SQL string
+      is absent from the source tree.
+- [ ] A build needs no database: the `.sqlx` offline cache is committed and
+      `install.sh` builds with `SQLX_OFFLINE=true`.
+- [ ] After a migration changes, one documented command sequence refreshes the
+      cache, and a stale cache fails the build instead of failing at runtime.
 - [ ] `./deploy.sh` states its NDK prerequisites and fails with a message, not
       a linker error, when they are missing.
 - [ ] `mdbook build doc` is checked, and a broken internal link fails it.
@@ -101,6 +105,8 @@ Acceptance criteria:
 - [ ] `gym db init` creates an empty database at the configured path with the
       schema and the seeded effort vocabulary, and refuses to touch a file that
       is already a database.
+- [ ] The schema exists only as `migrations/0001_init.sql`, applied by
+      `sqlx::migrate!` on open, with no second copy in the source.
 - [ ] `gym db import <toml-dir>` fills a fresh database from the TOML
       directories and is all-or-nothing.
 - [ ] Every old row arrives with its old id, and every reference — a set's
@@ -116,19 +122,25 @@ Acceptance criteria:
 - [ ] The schema is documented on [the schema page](sqlite-schema.md), and the
       document matches the migration files.
 
-## Feature: `gym serve`, the local web UI
+## Feature: `gym web`, the local web UI
 
-Status: missing. `gym web` parses an address and panics with
-`not yet implemented`.
+Status: missing. The command parses an address and panics with
+`not yet implemented`. It keeps its name — `web` is what exists and what is
+shortest.
 
 Acceptance criteria:
 
-- [ ] `gym serve` serves the UI on `127.0.0.1:8080` by default, and binds
+- [ ] `gym web` serves the UI on `127.0.0.1:8080` by default, and binds
       loopback unless another address is passed explicitly.
 - [ ] The UI is Leptos with hydration: the first paint is server-rendered, and
       the page works with scripts enabled and without them.
+- [ ] A new install never pairs a cached script with a newly built WASM: every
+      response carries `Cache-Control: no-cache`.
 - [ ] The six tabs exist at stable routes: `/food`, `/food/edit`,
       `/food/analysis`, `/gym`, `/gym/edit`, `/gym/analysis`.
+- [ ] The look is the one on [the overhaul](overhaul.md#the-look) page: black
+      background, green ramp, blocky 2px borders, no rounded corners, Tailwind
+      defaults for type.
 - [ ] The analysis tabs are read-only: no request from them writes a row.
 - [ ] The server and a CLI write can run at the same time without a lock
       failure under normal use (WAL, a busy timeout, one short transaction per
@@ -269,16 +281,18 @@ Acceptance criteria:
 - [ ] Exercises with no muscle group are listed, so an empty analysis is
       explained rather than silent.
 
-## Feature: Sync the database to the server
+## Feature: Sync the database to the remote
 
 Status: missing. Today's `gym sync` is a git pull, commit and push of the data
 directory.
 
 Acceptance criteria:
 
-- [ ] `gym sync` copies the database to the configured `remote` with `rsync`,
-      from a consistent snapshot taken with `VACUUM INTO`, never from the live
-      file.
+- [ ] `gym sync` copies the database to `remote` with `rsync`, from a
+      consistent snapshot taken with `VACUUM INTO`, never from the live file.
+- [ ] `remote` is one string used verbatim as rsync's destination, and a local
+      path and a `host:path` both work.
+- [ ] Nothing is ever pulled back: a sync only writes at the destination.
 - [ ] A failed transfer exits non-zero and says what failed; a successful one
       says where the copy went and how big it is.
 - [ ] Running it twice in a row succeeds and leaves one file at the
@@ -348,10 +362,10 @@ numbers, an exercise's muscle groups, places and muscle groups.
 
 ## Feature: Sync the data directory to a remote
 
-Status: superseded by [Sync the database to the server](#feature-sync-the-database-to-the-server).
+Status: superseded by [Sync the database to the remote](#feature-sync-the-database-to-the-remote).
 The git transport is retired; the data directory keeps its history as the
 archive of the TOML era.
 
 ## Feature: Web view
 
-Status: superseded by [`gym serve`, the local web UI](#feature-gym-serve-the-local-web-ui).
+Status: superseded by [`gym web`, the local web UI](#feature-gym-web-the-local-web-ui).

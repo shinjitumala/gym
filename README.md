@@ -59,7 +59,7 @@ $ gym weight  # a weigh-in
 | `gym food`  | Meals for the day, with running calorie and macro totals.        |
 | `gym weight`| A weigh-in: kilograms, body fat, note.                           |
 | `gym sync`  | Pull, commit and push the data repository.                       |
-| `gym web`   | Not implemented yet: panics with `not yet implemented`.          |
+| `gym web`   | Today: panics. Planned: the local web UI, on loopback.            |
 
 Run `gym` with no command for a menu of the five. Every command is interactive
 and ESC backs out of the current question.
@@ -70,7 +70,7 @@ and ESC backs out of the current question.
   data file schemas, each command with a worked example, and the
   [feature list with acceptance criteria](doc/src/features.md).
 - [The overhaul](doc/src/overhaul.md) — the rebuild onto a SQLite database and
-  a local web UI (`gym serve`), with the
+  a local web UI (`gym web`), with the
   [schema](doc/src/sqlite-schema.md) and the migration from the TOML log.
 
 The book is built with `mdbook build doc` and read with `mdbook serve doc`.

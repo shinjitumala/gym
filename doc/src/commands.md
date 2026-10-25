@@ -1,8 +1,8 @@
 # Commands
 
 > **What this page describes.** The commands of the running build. The rebuild
-keeps their prompts, adds `gym serve` and `gym db`, and changes `gym sync`'s
-transport; see [the overhaul](overhaul.md) and
+keeps their prompts, adds `gym db`, turns `gym web` into the UI, and changes
+`gym sync`'s transport; see [the overhaul](overhaul.md) and
 [its acceptance criteria](features.md).
 
 ```text
@@ -120,7 +120,7 @@ repository whose remotes and branch tracking are already configured.
 
 ## `gym web`
 
-Not implemented. The command parses an optional address (default
+Not implemented yet. The command parses an optional address (default
 `0.0.0.0:8080`) and then panics:
 
 ```text
@@ -131,5 +131,5 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
 Exit status 101. Reading the data currently means reading the TOML files
-directly, or using whatever the [feature list](features.md) eventually decides
-this command should be.
+directly. In [the overhaul](overhaul.md#the-web-ui) this command becomes the
+local web UI, on `127.0.0.1:8080` by default instead of `0.0.0.0`.
