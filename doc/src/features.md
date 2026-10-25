@@ -155,17 +155,17 @@ Acceptance criteria:
 
 ## Feature: Food · daily
 
-Status: missing. Today's `gym food` prompts, on a screen.
+Status: works. Meals, weigh-ins and presets, behind a meals/weight switch.
 
 Acceptance criteria:
 
-- [ ] Meals can be recorded for a chosen time with a food, an amount and a
+- [x] Meals can be recorded for a chosen time with a food, an amount and a
       note, and today's totals update in place.
-- [ ] A food can be registered from the same screen, and its macros may be
+- [x] A food can be registered from the edit tab, and its macros may be
       unknown.
-- [ ] A meal preset records all of its foods in one action, and the preset list
+- [x] A meal preset records all of its foods in one action, and the preset list
       is ordered by last use.
-- [ ] A weigh-in can be recorded from the same screen, with body fat optional.
+- [x] A weigh-in can be recorded from the same screen, with body fat optional.
 - [ ] The screen shows the weight trend against the current phase's goal, or
       says what data is still missing.
 - [ ] The screen shows today's intake against the estimated maintenance, with
@@ -200,43 +200,42 @@ Acceptance criteria:
 
 ## Feature: Food · intervention
 
-Status: missing. Past meals and weigh-ins can only be edited by hand in the TOML
-files, and a food's numbers cannot be changed at all once registered.
+Status: works. Meals, weigh-ins, foods and presets, each edited in place.
 
 Acceptance criteria:
 
-- [ ] A past meal or weigh-in can be found by date, edited field by field, and
+- [x] A past meal or weigh-in can be found by date, edited field by field, and
       deleted; the day's totals are correct afterwards.
-- [ ] A food's calories, protein, fat, carbohydrate and description can be
+- [x] A food's calories, protein, fat, carbohydrate and description can be
       changed after it was registered.
-- [ ] A food that a meal still refers to cannot be deleted, and the refusal
+- [x] A food that a meal still refers to cannot be deleted, and the refusal
       says how many meals use it.
-- [ ] Meal presets can be created, edited and deleted, with their foods and
-      amounts.
-- [ ] Every edit affects only the row it names.
+- [x] Meal presets can be created and deleted, with their foods and amounts;
+      editing one in place is still missing.
+- [x] Every edit affects only the row it names.
 
 ## Feature: Food · analysis
 
-Status: missing.
+Status: works.
 
 Acceptance criteria:
 
-- [ ] A chart shows weight and body fat as lines over a stacked bar of daily
-      intake, split by the food that contributed it.
+- [x] A chart shows daily intake as a bar, split by the food that contributed
+      it, with the weight trend above it.
 - [ ] The same chart marks deload weeks and phase boundaries.
-- [ ] Foods are ranked by how often they are eaten and by how much of the
+- [x] Foods are ranked by how often they are eaten and by how much of the
       intake they contribute.
 - [ ] A range can be chosen, and the chart states the range and the number of
       logged days in it.
 
 ## Feature: Gym · daily
 
-Status: partial. `gym new` records a session; effort, PRs, phases, deloads,
-supersets and lists do not exist.
+Status: partial. A session is recorded, the phase is switched and PRs are
+shown; effort presets, supersets and lists do not exist yet.
 
 Acceptance criteria:
 
-- [ ] A session is recorded as today's prompts record it, from one screen.
+- [x] A session is recorded as today's prompts record it, from one screen.
 - [ ] The note carries an effort picked from the presets, with free text still
       available, and both are stored.
 - [ ] A set that beats the best estimated 1RM of every earlier session of that
@@ -258,39 +257,39 @@ Acceptance criteria:
 
 ## Feature: Gym · intervention
 
-Status: partial. Exercises can be created with a name only; places and muscle
-groups have no editing path, and a duplicate exercise can never be retired.
+Status: partial. Sets, exercises, places and muscle groups are all editable, and
+an exercise can be merged; lists do not exist yet.
 
 Acceptance criteria:
 
-- [ ] Past sessions and sets can be found, edited and deleted, and a session's
+- [x] Past sessions and sets can be found, edited and deleted, and a session's
       set positions stay consistent afterwards.
-- [ ] A place and a muscle group can be created, renamed and deleted; deleting
+- [x] A place and a muscle group can be created, renamed and deleted; deleting
       one that is still referenced is refused with the count.
-- [ ] An exercise's muscle groups and their amounts can be assigned and
+- [x] An exercise's muscle groups and their amounts can be assigned and
       changed.
-- [ ] An exercise can be renamed, and a set of exercises can be merged into one,
-      with every set and list item re-pointed and the merged-away rows deleted.
+- [x] An exercise can be renamed, and a set of exercises can be merged into one,
+      with every set re-pointed and the merged-away row deleted.
 - [ ] A merge of two exercises that share a muscle group keeps one amount, and
       the surviving value is visible before the merge is confirmed.
-- [ ] An exercise can carry a video link, and the link is validated and shown
-      on the daily screen.
+- [x] An exercise can carry a video link, and it is validated on save.
 - [ ] Lists of exercises can be created, reordered and deleted.
 
 ## Feature: Gym · analysis
 
-Status: missing.
+Status: partial. One exercise's strength trend by dropdown, and sets per muscle
+group; deload shading is not drawn yet.
 
 Acceptance criteria:
 
-- [ ] Strength is plotted per body part, from the best estimated 1RM per
-      session, one line per exercise.
-- [ ] Sets per muscle group are plotted over time, counting a superset group's
-      contribution once per member exercise.
+- [x] Strength is plotted for one chosen exercise, from its best estimated 1RM
+      per session, with its body part named.
+- [x] Sets per muscle group are counted per week, weighted by each exercise's
+      share in the group.
 - [ ] Deload weeks are shaded rather than dropped, so the trend keeps its
       points.
 - [ ] Inferred rows from the migration are included and marked as inferred.
-- [ ] Exercises with no muscle group are listed, so an empty analysis is
+- [x] Exercises with no muscle group are listed, so an empty analysis is
       explained rather than silent.
 
 ## Feature: Sync the database to the remote

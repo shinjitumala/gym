@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT i.preset AS \"preset!\", i.food AS \"food!\", i.amount AS \"amount!\",\n                  f.name AS \"name!\"\n           FROM meal_preset_item i JOIN food f ON f.id = i.food\n           ORDER BY f.name",
+  "describe": {
+    "columns": [
+      {
+        "name": "preset!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "meal_preset_item",
+            "name": "preset"
+          }
+        }
+      },
+      {
+        "name": "food!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "meal_preset_item",
+            "name": "food"
+          }
+        }
+      },
+      {
+        "name": "amount!",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "meal_preset_item",
+            "name": "amount"
+          }
+        }
+      },
+      {
+        "name": "name!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1bc68d71699eb25568be55f3ae4830d3d075b035ada9996f2791a6108b91bbd4"
+}

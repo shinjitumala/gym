@@ -1,6 +1,6 @@
 [package]
 name = "gym"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 
 # The web build needs both: `cdylib` is the WASM half, `rlib` is everything the
@@ -58,7 +58,7 @@ ssr = [
 output-name = "gym"
 site-root = "target/site"
 site-pkg-dir = "pkg"
-style-file = "style/main.css"
+tailwind-input-file = "style/main.scss"
 assets-dir = "public"
 site-addr = "127.0.0.1:8080"
 reload-port = 8081

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO phase (kind, start, target_rate, target_rep, target_weight)\n           VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id AS \"id!\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "phase",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e81f8171b2635f81292ad021d7ff552578635205c2f9e3b44f9f782b03c5b935"
+}

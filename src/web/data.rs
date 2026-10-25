@@ -51,6 +51,10 @@ fn days(d: NaiveDate) -> i64 {
     d.num_days_from_ce() as i64
 }
 
+fn clock() -> String {
+    Local::now().format("%H:%M").to_string()
+}
+
 /// Midnight at the start of `d`, **in the machine's zone**, as an RFC3339
 /// instant.
 ///
@@ -348,6 +352,7 @@ pub async fn food_daily(db: &Db) -> Res<FoodDaily> {
 
     Ok(FoodDaily {
         today: iso(today),
+        now: clock(),
         totals: sum(meals.iter()),
         meals,
         foods: foods(db).await?,
@@ -362,16 +367,7 @@ pub async fn food_daily(db: &Db) -> Res<FoodDaily> {
         need_days: s.maintenance_min_days,
         outliers,
         phase: p,
-        presets: crate::web::actions::presets(db)
-            .await?
-            .into_iter()
-            .map(|(id, name, per_unit, items)| PresetRow {
-                id,
-                name,
-                items,
-                per_unit,
-            })
-            .collect(),
+        presets: crate::web::actions::presets(db).await?,
     })
 }
 
@@ -386,6 +382,9 @@ pub async fn food_edit(db: &Db) -> Res<FoodEdit> {
         .collect();
     weights.reverse();
     Ok(FoodEdit {
+        today: iso(today),
+        now: clock(),
+        presets: crate::web::actions::presets(db).await?,
         meals,
         weights,
         foods: foods(db).await?,
@@ -705,7 +704,13 @@ pub async fn gym_daily(db: &Db) -> Res<GymDaily> {
         .as_ref()
         .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
         .map(|d| (today - d).num_days() / 7);
+    let last_set = sqlx::query_scalar!("SELECT COALESCE(MAX(id), 0) FROM training_set")
+        .fetch_one(&db.pool)
+        .await?;
     Ok(GymDaily {
+        today: iso(Local::now().date_naive()),
+        now: clock(),
+        last_set,
         places: places(db).await?,
         exercises,
         sessions: sessions.rows,
@@ -844,5 +849,125 @@ pub async fn gym_analysis(db: &Db) -> Res<GymAnalysis> {
         ungrouped,
         deloads,
         span: 180,
+    })
+}
+
+/// The last `limit` sessions of one exercise at one place, newest first.
+///
+/// The recording form asks for this when an exercise is chosen, so the page
+/// shows the numbers to beat without printing the whole log.
+pub async fn exercise_history(db: &Db, exercise: i64, place: i64, limit: i64) -> Res<History> {
+    let name = sqlx::query_scalar!(
+        r#"SELECT name AS "name!" FROM exercise WHERE id = ?1"#,
+        exercise
+    )
+    .fetch_optional(&db.pool)
+    .await?
+    .ok_or_else(|| format!("No exercise with id '{exercise}'."))?;
+    let rows = sqlx::query!(
+        r#"
+SELECT s.date, p.name AS "place!", ts.load AS "load!", ts.rep AS "rep!", ts.note AS "note!"
+FROM training_set ts
+JOIN session s ON s.id = ts.session
+JOIN place p ON p.id = s.place
+WHERE ts.exercise = ?1 AND s.place = ?2
+  AND ts.session IN (
+      SELECT ts2.session FROM training_set ts2
+      JOIN session s2 ON s2.id = ts2.session
+      WHERE ts2.exercise = ?1 AND s2.place = ?2
+      GROUP BY ts2.session
+      ORDER BY MAX(julianday(s2.date)) DESC
+      LIMIT ?3
+  )
+ORDER BY julianday(s.date) DESC, ts.position
+"#,
+        exercise,
+        place,
+        limit
+    )
+    .fetch_all(&db.pool)
+    .await?;
+
+    let mut sessions: Vec<HistorySession> = Vec::new();
+    for r in rows {
+        let date = iso(local_date(&r.date).unwrap_or_default());
+        match sessions.last_mut() {
+            Some(last) if last.date == date => last.sets.push(HistorySet {
+                load: r.load,
+                rep: r.rep,
+                note: r.note,
+            }),
+            _ => sessions.push(HistorySession {
+                date,
+                place: r.place,
+                sets: vec![HistorySet {
+                    load: r.load,
+                    rep: r.rep,
+                    note: r.note,
+                }],
+            }),
+        }
+    }
+    Ok(History {
+        exercise: name,
+        sessions,
+    })
+}
+
+/// The exercises the analysis dropdown offers, with one series chosen.
+///
+/// `chosen` is the requested exercise, or the one with the most sessions when
+/// none was requested: a tab that opens on an empty chart is a tab the reader
+/// has to work out before it says anything.
+pub async fn exercise_picker(db: &Db, want: Option<i64>) -> Res<ExercisePicker> {
+    let (_, exercises) = exercise_index(db).await?;
+    let full = gym_analysis(db).await?;
+    let counts: HashMap<i64, i64> = sqlx::query!(
+        r#"SELECT exercise AS "exercise!", count(DISTINCT session) AS "n!" FROM training_set GROUP BY exercise"#
+    )
+    .fetch_all(&db.pool)
+    .await?
+    .into_iter()
+    .map(|r| (r.exercise, r.n))
+    .collect();
+
+    let group_of: HashMap<i64, String> = exercises
+        .iter()
+        .map(|e| {
+            (
+                e.id,
+                e.groups
+                    .first()
+                    .map(|g| g.name.clone())
+                    .unwrap_or_else(|| "ungrouped".to_string()),
+            )
+        })
+        .collect();
+
+    let mut rows: Vec<PickRow> = exercises
+        .iter()
+        .filter(|e| counts.get(&e.id).copied().unwrap_or(0) >= 2)
+        .map(|e| PickRow {
+            id: e.id,
+            name: e.name.clone(),
+            group: group_of.get(&e.id).cloned().unwrap_or_default(),
+            sessions: counts.get(&e.id).copied().unwrap_or(0),
+        })
+        .collect();
+    rows.sort_by(|a, b| a.group.cmp(&b.group).then(a.name.cmp(&b.name)));
+
+    // Default to the exercise trained in the most sessions: the tab should
+    // open on a trend the reader recognizes, not on whatever sorts first.
+    let pick = want
+        .or_else(|| rows.iter().max_by_key(|r| r.sessions).map(|r| r.id))
+        .filter(|id| rows.iter().any(|r| r.id == *id));
+    let chosen = pick.and_then(|id| {
+        let name = rows.iter().find(|r| r.id == id)?.name.clone();
+        full.strength.into_iter().find(|s| s.exercise == name)
+    });
+
+    Ok(ExercisePicker {
+        exercises: rows,
+        chosen,
     })
 }

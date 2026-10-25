@@ -56,6 +56,74 @@ pub async fn add_meal(
     .await?)
 }
 
+/// Record a batch of meals at one instant: the form's rows, in one
+/// transaction, so a half-entered meal is never written.
+pub async fn add_meals(
+    db: &Db,
+    date: &str,
+    time: &str,
+    rows: Vec<(i64, f64, String)>,
+) -> Res<usize> {
+    if rows.is_empty() {
+        Err("Add at least one food.".to_string())?;
+    }
+    for (_, amount, _) in &rows {
+        if *amount <= 0.0 {
+            Err("Every amount must be greater than zero.".to_string())?;
+        }
+    }
+    let at = instant_of(date, time)?;
+    let mut tx = db.pool.begin().await?;
+    for (food, amount, note) in &rows {
+        sqlx::query!(
+            "INSERT INTO meal (date, food, amount, note) VALUES (?1, ?2, ?3, ?4)",
+            at,
+            food,
+            amount,
+            note
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(rows.len())
+}
+
+/// Start a phase. The old one stays: a session records the phase that was
+/// active, so history does not shift when a new phase starts.
+pub async fn set_phase(
+    db: &Db,
+    kind: &str,
+    start: &str,
+    target_rate: f64,
+    target_rep: i64,
+    target_weight: Option<f64>,
+) -> Res<i64> {
+    if kind != "bulk" && kind != "cut" {
+        Err(format!("'{kind}' is not a phase: it is 'bulk' or 'cut'."))?;
+    }
+    if target_rep <= 0 {
+        Err("The rep target must be at least one.".to_string())?;
+    }
+    if let Some(w) = target_weight {
+        if !(0.0..500.0).contains(&w) {
+            Err(format!("'{w}' is not a plausible target weight."))?;
+        }
+    }
+    let at = instant_of(start, "")?;
+    Ok(sqlx::query_scalar!(
+        r#"INSERT INTO phase (kind, start, target_rate, target_rep, target_weight)
+           VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id AS "id!""#,
+        kind,
+        at,
+        target_rate,
+        target_rep,
+        target_weight
+    )
+    .fetch_one(&db.pool)
+    .await?)
+}
+
 pub async fn delete_meal(db: &Db, id: i64) -> Res<()> {
     let n = sqlx::query!("DELETE FROM meal WHERE id = ?1", id)
         .execute(&db.pool)
@@ -730,8 +798,9 @@ pub async fn set_setting(db: &Db, key: &str, value: &str) -> Res<()> {
     Ok(())
 }
 
-/// The presets a page shows, newest-used first.
-pub async fn presets(db: &Db) -> Res<Vec<(i64, String, Totals, usize)>> {
+/// Every preset with its parts and totals, newest-used first.
+pub async fn presets(db: &Db) -> Res<Vec<crate::web::dto::PresetRow>> {
+    use crate::web::dto::{PresetPart, PresetRow};
     let rows = sqlx::query!(
         r#"
 SELECT p.id AS "id!", p.name AS "name!", p.last_used,
@@ -749,20 +818,35 @@ ORDER BY COALESCE(julianday(p.last_used), 0.0) DESC, p.name
     )
     .fetch_all(&db.pool)
     .await?;
+    let parts = sqlx::query!(
+        r#"SELECT i.preset AS "preset!", i.food AS "food!", i.amount AS "amount!",
+                  f.name AS "name!"
+           FROM meal_preset_item i JOIN food f ON f.id = i.food
+           ORDER BY f.name"#
+    )
+    .fetch_all(&db.pool)
+    .await?;
+    let mut by_preset: std::collections::HashMap<i64, Vec<PresetPart>> = Default::default();
+    for p in parts {
+        by_preset.entry(p.preset).or_default().push(PresetPart {
+            food: p.food,
+            name: p.name,
+            amount: p.amount,
+        });
+    }
     Ok(rows
         .into_iter()
-        .map(|r| {
-            (
-                r.id,
-                r.name,
-                Totals {
-                    kcal: r.kcal,
-                    protein: r.protein,
-                    fat: r.fat,
-                    carbohydrate: r.carbohydrate,
-                },
-                r.items as usize,
-            )
+        .map(|r| PresetRow {
+            parts: by_preset.remove(&r.id).unwrap_or_default(),
+            id: r.id,
+            name: r.name,
+            items: r.items as usize,
+            per_unit: Totals {
+                kcal: r.kcal,
+                protein: r.protein,
+                fat: r.fat,
+                carbohydrate: r.carbohydrate,
+            },
         })
         .collect())
 }

@@ -1,0 +1,33 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT exercise AS \"exercise!\", count(DISTINCT session) AS \"n!\" FROM training_set GROUP BY exercise",
+  "describe": {
+    "columns": [
+      {
+        "name": "exercise!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "exercise"
+          }
+        }
+      },
+      {
+        "name": "n!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "081685d4fda3858d68cc5d6379fdaccd9ad56d7a92e4731cd29dc015f9b1bef2"
+}

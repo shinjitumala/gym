@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(id), 0) FROM training_set",
+  "describe": {
+    "columns": [
+      {
+        "name": "COALESCE(MAX(id), 0)",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6b71e5ba6bf18d0c3460de4cd49ec11276a8e1dcdaa7d3794e609b3edc0fe0e2"
+}

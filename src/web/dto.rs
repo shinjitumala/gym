@@ -128,6 +128,9 @@ pub struct PhaseRow {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FoodDaily {
     pub today: String,
+    /// The local clock when the page was rendered, `HH:MM`, for the "now"
+    /// button. Sent from the server so the browser needs no clock.
+    pub now: String,
     pub totals: Totals,
     pub meals: Vec<MealRow>,
     pub foods: Vec<FoodRow>,
@@ -148,11 +151,60 @@ pub struct PresetRow {
     pub name: String,
     pub items: usize,
     pub per_unit: Totals,
+    /// What it is made of, for the management panel.
+    pub parts: Vec<PresetPart>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PresetPart {
+    pub food: i64,
+    pub name: String,
+    pub amount: f64,
+}
+
+/// The last few sessions of one exercise, for the recording form.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct History {
+    pub exercise: String,
+    pub sessions: Vec<HistorySession>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HistorySession {
+    pub date: String,
+    pub place: String,
+    pub sets: Vec<HistorySet>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HistorySet {
+    pub load: f64,
+    pub rep: f64,
+    pub note: String,
+}
+
+/// The exercises the analysis dropdown offers, and one exercise's own series.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ExercisePicker {
+    pub exercises: Vec<PickRow>,
+    pub chosen: Option<StrengthSeries>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PickRow {
+    pub id: i64,
+    pub name: String,
+    pub group: String,
+    /// Sessions it has, so the dropdown can say what is worth picking.
+    pub sessions: i64,
 }
 
 /// Food · intervention.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FoodEdit {
+    pub today: String,
+    pub now: String,
+    pub presets: Vec<PresetRow>,
     pub meals: Vec<MealRow>,
     pub weights: Vec<WeightRow>,
     pub foods: Vec<FoodRow>,
@@ -237,6 +289,9 @@ pub struct MuscleRow {
 /// Gym · daily.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct GymDaily {
+    pub today: String,
+    pub now: String,
+    pub last_set: i64,
     pub places: Vec<PlaceRow>,
     pub exercises: Vec<ExerciseRow>,
     pub sessions: Vec<SessionRow>,

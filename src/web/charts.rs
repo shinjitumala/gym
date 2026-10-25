@@ -64,9 +64,9 @@ pub fn Line(
     let first = xs.first().copied().unwrap_or(0);
     let last = xs.last().copied().unwrap_or(0);
     view! {
-        <svg class="chart" viewBox=format!("0 0 {W} {H}") preserveAspectRatio="none">
-            <line class="axis" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
-            <line class="axis" x1=PAD y1=PAD x2=PAD y2=H - PAD />
+        <svg class="w-full h-auto block border border-green-900 bg-black text-gray-500 text-[9px]" viewBox=format!("0 0 {W} {H}") preserveAspectRatio="none">
+            <line stroke="#14532d" stroke-width="1" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
+            <line stroke="#14532d" stroke-width="1" x1=PAD y1=PAD x2=PAD y2=H - PAD />
             <text x=PAD y=14.0>
                 {format!("{:.1} {unit}", ys.iter().copied().fold(f64::MIN, f64::max))}
             </text>
@@ -75,10 +75,10 @@ pub fn Line(
             </text>
             <text x=W / 2.0 - 20.0 y=H - 8.0>{day_label(first)}</text>
             <text x=W - PAD - 30.0 y=H - 8.0>{day_label(last)}</text>
-            <polyline class="series" points=line.join(" ") />
+            <polyline fill="none" stroke="#4ade80" stroke-width="1.5" points=line.join(" ") />
             {dots
                 .iter()
-                .map(|(x, y)| view! { <circle class="dot" cx=*x cy=*y r=1.6 /> })
+                .map(|(x, y)| view! { <circle fill="#4ade80" cx=*x cy=*y r=1.6 /> })
                 .collect_view()}
         </svg>
     }
@@ -141,8 +141,8 @@ pub fn Stacked(
     let first = labels.first().cloned().unwrap_or_default();
     let last = labels.last().cloned().unwrap_or_default();
     view! {
-        <svg class="chart" viewBox=format!("0 0 {W} {H}") preserveAspectRatio="none">
-            <line class="axis" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
+        <svg class="w-full h-auto block border border-green-900 bg-black text-gray-500 text-[9px]" viewBox=format!("0 0 {W} {H}") preserveAspectRatio="none">
+            <line stroke="#14532d" stroke-width="1" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
             <text x=PAD y=14.0>{format!("{:.0} {unit}", top)}</text>
             <text x=W / 2.0 - 20.0 y=H - 8.0>{first}</text>
             <text x=W - PAD - 30.0 y=H - 8.0>{last}</text>

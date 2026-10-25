@@ -1,5 +1,11 @@
 //! The server functions the pages call.
 //!
+//! `input = Post` for all of them: the default codec is URL-encoded, which
+//! cannot carry a list of rows, and a form here regularly sends one (the meal
+//! rows, a session's sets, the muscle groups). With the JSON body the argument
+//! names survive, which is what makes a typed error like "missing field `rows`"
+//! impossible to get by accident.
+//!
 //! Each one is a declaration the WASM half can see and a body only the server
 //! compiles, which is how the browser gets data without ever holding a
 //! database handle. They are read-only for now; the write calls arrive with the
@@ -7,13 +13,14 @@
 
 use crate::web::dto::*;
 use leptos::prelude::*;
+use server_fn::codec::Json;
 
 #[cfg(feature = "ssr")]
 fn error(e: impl std::fmt::Display) -> ServerFnError {
     ServerFnError::new(e.to_string())
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn load_server_info() -> Result<ServerInfo, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -22,42 +29,42 @@ pub async fn load_server_info() -> Result<ServerInfo, ServerFnError> {
         .map_err(error)
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn load_food_daily() -> Result<FoodDaily, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
     crate::web::data::food_daily(&db).await.map_err(error)
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn load_food_edit() -> Result<FoodEdit, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
     crate::web::data::food_edit(&db).await.map_err(error)
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn load_food_analysis() -> Result<FoodAnalysis, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
     crate::web::data::food_analysis(&db).await.map_err(error)
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn load_gym_daily() -> Result<GymDaily, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
     crate::web::data::gym_daily(&db).await.map_err(error)
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn load_gym_edit() -> Result<GymEdit, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
     crate::web::data::gym_edit(&db).await.map_err(error)
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn load_gym_analysis() -> Result<GymAnalysis, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -69,7 +76,7 @@ pub async fn load_gym_analysis() -> Result<GymAnalysis, ServerFnError> {
 /// The date and time fields default to "now" on the page, so the common case is
 /// one click.
 
-#[server]
+#[server(input = Json)]
 pub async fn act_add_meal(
     date: String,
     time: String,
@@ -86,7 +93,7 @@ pub async fn act_add_meal(
     Ok(format!("Recorded {amount} × food #{food}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_delete_meal(id: i64) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -96,7 +103,7 @@ pub async fn act_delete_meal(id: i64) -> Result<String, ServerFnError> {
     Ok(format!("Deleted meal #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_edit_meal(
     id: i64,
     date: String,
@@ -114,7 +121,7 @@ pub async fn act_edit_meal(
     Ok(format!("Updated meal #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_add_weight(
     date: String,
     kg: String,
@@ -131,7 +138,7 @@ pub async fn act_add_weight(
     Ok(format!("Weighed in at {kg} kg."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_edit_weight(
     id: i64,
     date: String,
@@ -149,7 +156,7 @@ pub async fn act_edit_weight(
     Ok(format!("Updated weigh-in #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_delete_weight(id: i64) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -159,7 +166,7 @@ pub async fn act_delete_weight(id: i64) -> Result<String, ServerFnError> {
     Ok(format!("Deleted weigh-in #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_add_food(
     name: String,
     calories: String,
@@ -180,7 +187,7 @@ pub async fn act_add_food(
     Ok(format!("Added food #{id}: {name}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_edit_food(
     id: i64,
     name: String,
@@ -202,7 +209,7 @@ pub async fn act_edit_food(
     Ok(format!("Updated food #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_delete_food(id: i64) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -212,7 +219,7 @@ pub async fn act_delete_food(id: i64) -> Result<String, ServerFnError> {
     Ok(format!("Deleted food #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_apply_preset(
     preset: i64,
     date: String,
@@ -232,7 +239,7 @@ pub async fn act_apply_preset(
     Ok(format!("Recorded {n} meal(s) from the preset."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_add_preset(
     name: String,
     foods: Vec<(i64, String)>,
@@ -252,7 +259,7 @@ pub async fn act_add_preset(
     Ok(format!("Added preset #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_delete_preset(id: i64) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -262,7 +269,7 @@ pub async fn act_delete_preset(id: i64) -> Result<String, ServerFnError> {
     Ok(format!("Deleted preset #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_add_session(
     place: i64,
     date: String,
@@ -298,7 +305,7 @@ pub async fn act_add_session(
     Ok(format!("Recorded session #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_set_deload(id: i64, deload: bool) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -312,7 +319,7 @@ pub async fn act_set_deload(id: i64, deload: bool) -> Result<String, ServerFnErr
     })
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_edit_set(
     id: i64,
     load: String,
@@ -329,7 +336,7 @@ pub async fn act_edit_set(
     Ok(format!("Updated set #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_delete_set(id: i64) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -339,7 +346,7 @@ pub async fn act_delete_set(id: i64) -> Result<String, ServerFnError> {
     Ok(format!("Deleted set #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_edit_exercise(
     id: i64,
     name: String,
@@ -354,7 +361,7 @@ pub async fn act_edit_exercise(
     Ok(format!("Updated exercise #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_set_groups(
     exercise: i64,
     groups: Vec<(i64, String)>,
@@ -374,7 +381,7 @@ pub async fn act_set_groups(
     Ok(format!("Set the muscle groups of exercise #{exercise}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_merge_exercises(from: i64, to: i64) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -384,7 +391,7 @@ pub async fn act_merge_exercises(from: i64, to: i64) -> Result<String, ServerFnE
     Ok(format!("Merged exercise #{from} into #{to}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_add_place(name: String, note: String) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -394,7 +401,7 @@ pub async fn act_add_place(name: String, note: String) -> Result<String, ServerF
     Ok(format!("Added place #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_edit_place(id: i64, name: String, note: String) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -404,7 +411,7 @@ pub async fn act_edit_place(id: i64, name: String, note: String) -> Result<Strin
     Ok(format!("Updated place #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_delete_place(id: i64) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -414,7 +421,7 @@ pub async fn act_delete_place(id: i64) -> Result<String, ServerFnError> {
     Ok(format!("Deleted place #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_add_group(name: String, note: String) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -424,7 +431,7 @@ pub async fn act_add_group(name: String, note: String) -> Result<String, ServerF
     Ok(format!("Added muscle group #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_delete_group(id: i64) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -434,7 +441,7 @@ pub async fn act_delete_group(id: i64) -> Result<String, ServerFnError> {
     Ok(format!("Deleted muscle group #{id}."))
 }
 
-#[server]
+#[server(input = Json)]
 pub async fn act_set_setting(key: String, value: String) -> Result<String, ServerFnError> {
     let c = crate::ctx::C::new().map_err(error)?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
@@ -442,4 +449,71 @@ pub async fn act_set_setting(key: String, value: String) -> Result<String, Serve
         .await
         .map_err(error)?;
     Ok(format!("Set {key} = {value}."))
+}
+
+#[server(input = Json)]
+pub async fn act_add_meals(
+    date: String,
+    time: String,
+    rows: Vec<(i64, String, String)>,
+) -> Result<String, ServerFnError> {
+    let c = crate::ctx::C::new().map_err(error)?;
+    let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
+    let mut out = Vec::new();
+    for (food, amount, note) in rows {
+        out.push((
+            food,
+            crate::web::actions::num(&amount, "amount").map_err(error)?,
+            note,
+        ));
+    }
+    let n = crate::web::actions::add_meals(&db, &date, &time, out)
+        .await
+        .map_err(error)?;
+    Ok(format!("Recorded {n} meal(s)."))
+}
+
+#[server(input = Json)]
+pub async fn act_set_phase(
+    kind: String,
+    start: String,
+    target_rate: String,
+    target_rep: String,
+    target_weight: String,
+) -> Result<String, ServerFnError> {
+    let c = crate::ctx::C::new().map_err(error)?;
+    let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
+    let rate = if target_rate.trim().is_empty() {
+        1.0
+    } else {
+        crate::web::actions::num(&target_rate, "target rate").map_err(error)?
+    };
+    let rep = if target_rep.trim().is_empty() {
+        8
+    } else {
+        crate::web::actions::num(&target_rep, "target reps").map_err(error)? as i64
+    };
+    let weight = crate::web::actions::opt_num(&target_weight).map_err(error)?;
+    let id = crate::web::actions::set_phase(&db, &kind, &start, rate, rep, weight)
+        .await
+        .map_err(error)?;
+    Ok(format!("Started phase #{id} ({kind})."))
+}
+
+#[server(input = Json)]
+pub async fn load_exercise_history(exercise: i64, place: i64) -> Result<History, ServerFnError> {
+    let c = crate::ctx::C::new().map_err(error)?;
+    let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
+    crate::web::data::exercise_history(&db, exercise, place, 3)
+        .await
+        .map_err(error)
+}
+
+#[server(input = Json)]
+pub async fn load_exercise_picker(exercise: Option<i64>) -> Result<ExercisePicker, ServerFnError> {
+    let c = crate::ctx::C::new().map_err(error)?;
+    let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
+    crate::web::data::exercise_picker(&db, exercise)
+        .await
+        .map_err(error)
 }
