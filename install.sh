@@ -22,10 +22,13 @@ export SQLX_OFFLINE=true
 # starts the server build before the site is complete, so that pass can embed
 # nothing. The second pass compiles only the binary, and its `build.rs` now sees
 # a finished site and embeds it. `gym web` says so plainly if this is skipped.
-cargo leptos build --release --locked 2>/dev/null ||
-    echo "note: cargo-leptos is not installed; building the CLI only (gym web will refuse to start)" >&2
-cargo build --release --locked --features ssr 2>/dev/null ||
-    cargo build --release --locked
+if command -v cargo-leptos >/dev/null 2>&1; then
+    cargo leptos build --release
+else
+    echo "note: cargo-leptos is not installed, so the web UI is not built" >&2
+    echo "      (install it with 'cargo install cargo-leptos', or gym web will refuse to start)" >&2
+fi
+cargo build --release --locked --features ssr
 
 target=$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)
 dest="${CARGO_HOME:-$HOME/.cargo}/bin"
