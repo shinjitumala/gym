@@ -1,19 +1,77 @@
 [package]
 name = "gym"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
+
+# The web build needs both: `cdylib` is the WASM half, `rlib` is everything the
+# binary links against.
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 chrono = "0.4.38"
+itertools = "0.13.0"
+leptos = { version = "0.8.22" }
+leptos_meta = { version = "0.8.7" }
+leptos_router = { version = "0.8.17" }
+regex = "1.11.1"
+serde = { version = "1.0.215", features = ["derive"] }
+toml = "1.1.2"
+
+# The web build. `ssr` is the server half (the binary that serves the UI) and
+# `hydrate` is the WASM half (the same components, hydrated in the browser).
+# Neither is a default: `cargo build` stays a plain CLI, and `cargo leptos
+# build` adds both halves.
+axum = { version = "0.8.9", optional = true, features = ["macros"] }
+console_error_panic_hook = { version = "0.1", optional = true }
+leptos_axum = { version = "0.8.10", optional = true }
+tokio-stream = { version = "0.1", optional = true }
+wasm-bindgen = { version = "0.2.129", optional = true }
+
+# Host-only: the CLI, the store and the server. Kept per-target so the WASM
+# half of the web build never links a database driver or a reactor. Every key
+# after a `[target...]` header belongs to that header, so this table stays last
+# and nothing may follow it.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 fpr-cli = "0.2.6"
 fpr-cli-derives = "0.2.2"
 inquire = "0.7.5"
-itertools = "0.13.0"
-regex = "1.11.1"
-serde = "1.0.215"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
 tokio = { version = "1.41.1", features = ["full"] }
-toml = "1.1.2"
+
+[features]
+hydrate = [
+    "leptos/hydrate",
+    "dep:console_error_panic_hook",
+    "dep:wasm-bindgen",
+]
+ssr = [
+    "leptos/ssr",
+    "leptos_meta/ssr",
+    "leptos_router/ssr",
+    "dep:axum",
+    "dep:leptos_axum",
+    "dep:tokio-stream",
+]
+
+[package.metadata.leptos]
+output-name = "gym"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+style-file = "style/main.css"
+assets-dir = "public"
+site-addr = "127.0.0.1:8080"
+reload-port = 8081
+bin-features = ["ssr"]
+bin-default-features = false
+lib-features = ["hydrate"]
+lib-default-features = false
+lib-profile-release = "wasm-release"
+
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
 
 [[test]]
 name = "cli"

@@ -7,6 +7,8 @@ pub const MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 pub struct Db {
     pub pool: Pool<Sqlite>,
+    /// The file this pool is connected to, for the pages that show it.
+    pub path: String,
 }
 
 fn options(p: &Path, create: bool) -> SqliteConnectOptions {
@@ -44,7 +46,10 @@ impl Db {
         }
         let pool = pool(options(p, false)).await?;
         MIGRATOR.run(&pool).await?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            path: p.to_string_lossy().to_string(),
+        })
     }
 
     pub async fn create(p: &str) -> Res<Self> {
@@ -77,7 +82,10 @@ impl Db {
         }
         let pool = pool(options(p, true)).await?;
         MIGRATOR.run(&pool).await?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            path: p.to_string_lossy().to_string(),
+        })
     }
 
     pub async fn places(&self) -> Res<Vec<Place>> {

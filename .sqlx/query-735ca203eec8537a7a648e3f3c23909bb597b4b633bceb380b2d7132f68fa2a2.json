@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT food AS \"food!\", amount AS \"amount!\" FROM meal_preset_item WHERE preset = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "food!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "meal_preset_item",
+            "name": "food"
+          }
+        }
+      },
+      {
+        "name": "amount!",
+        "ordinal": 1,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "meal_preset_item",
+            "name": "amount"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "735ca203eec8537a7a648e3f3c23909bb597b4b633bceb380b2d7132f68fa2a2"
+}

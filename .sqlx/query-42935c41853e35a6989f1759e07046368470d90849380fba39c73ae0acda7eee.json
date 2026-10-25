@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE meal SET date = ?1, food = ?2, amount = ?3, note = ?4 WHERE id = ?5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "42935c41853e35a6989f1759e07046368470d90849380fba39c73ae0acda7eee"
+}

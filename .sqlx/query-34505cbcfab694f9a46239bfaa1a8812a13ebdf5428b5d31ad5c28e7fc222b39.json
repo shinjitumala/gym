@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE training_set SET position = position - 1 WHERE session = ?1 AND position > ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "34505cbcfab694f9a46239bfaa1a8812a13ebdf5428b5d31ad5c28e7fc222b39"
+}

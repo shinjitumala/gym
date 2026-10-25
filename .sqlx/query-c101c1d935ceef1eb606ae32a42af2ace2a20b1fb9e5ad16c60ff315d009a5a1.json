@@ -1,0 +1,85 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT p.id AS \"id!\", p.name AS \"name!\", p.last_used,\n       COALESCE(SUM(i.amount * f.calories), 0.0) AS \"kcal!: f64\",\n       COALESCE(SUM(i.amount * COALESCE(f.protein, 0.0)), 0.0) AS \"protein!: f64\",\n       COALESCE(SUM(i.amount * COALESCE(f.fat, 0.0)), 0.0) AS \"fat!: f64\",\n       COALESCE(SUM(i.amount * COALESCE(f.carbohydrate, 0.0)), 0.0) AS \"carbohydrate!: f64\",\n       (SELECT count(*) FROM meal_preset_item w WHERE w.preset = p.id) AS \"items!: i64\"\nFROM meal_preset p\nJOIN meal_preset_item i ON i.preset = p.id\nJOIN food f ON f.id = i.food\nGROUP BY p.id\nORDER BY COALESCE(julianday(p.last_used), 0.0) DESC, p.name\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "meal_preset",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "meal_preset",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "last_used",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "meal_preset",
+            "name": "last_used"
+          }
+        }
+      },
+      {
+        "name": "kcal!: f64",
+        "ordinal": 3,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "protein!: f64",
+        "ordinal": 4,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "fat!: f64",
+        "ordinal": 5,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "carbohydrate!: f64",
+        "ordinal": 6,
+        "type_info": "Null",
+        "origin": "Expression"
+      },
+      {
+        "name": "items!: i64",
+        "ordinal": 7,
+        "type_info": "Null",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      null,
+      false,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "c101c1d935ceef1eb606ae32a42af2ace2a20b1fb9e5ad16c60ff315d009a5a1"
+}

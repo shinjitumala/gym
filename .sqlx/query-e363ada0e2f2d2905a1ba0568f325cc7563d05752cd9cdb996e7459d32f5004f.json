@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO food (name, calories, protein, fat, carbohydrate, note)\n           VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id AS \"id!\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e363ada0e2f2d2905a1ba0568f325cc7563d05752cd9cdb996e7459d32f5004f"
+}

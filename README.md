@@ -70,10 +70,14 @@ for what the import reconstructs.
 | `gym weight`| A weigh-in: kilograms, body fat (optional), note.                |
 | `gym sync`  | Snapshot the database and `rsync` it to `remote`.                |
 | `gym db`    | `init` a new database, `import` the TOML archive into one.       |
-| `gym web`   | Today: panics. Planned: the local web UI, on loopback.            |
+| `gym web`   | The same log in a browser, on loopback: six tabs.                |
 
 Run `gym` with no command for a menu of them. Every command is interactive and
-ESC backs out of the current question.
+ESC backs out of the current question. For the browser instead:
+
+```bash
+$ gym web      # http://127.0.0.1:8080
+```
 
 ## Links
 
@@ -82,8 +86,9 @@ ESC backs out of the current question.
   [feature list with acceptance criteria](doc/src/features.md).
 - [The SQLite schema](doc/src/sqlite-schema.md) — the tables, and the migration
   from the TOML archive.
-- [The overhaul](doc/src/overhaul.md) — the plan for the local web UI
-  (`gym web`), the six tabs, and the statistics.
+- [The web UI](doc/src/web.md) — `gym web`, the six tabs, and how it is built.
+- [The overhaul](doc/src/overhaul.md) — the decisions behind the rebuild, and
+  what is still planned.
 
 The book is built with `mdbook build doc` and read with `mdbook serve doc`.
 

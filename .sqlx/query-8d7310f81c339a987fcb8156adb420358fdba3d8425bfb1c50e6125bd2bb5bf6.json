@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO meal_preset_item (preset, food, amount) VALUES (?1, ?2, ?3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "8d7310f81c339a987fcb8156adb420358fdba3d8425bfb1c50e6125bd2bb5bf6"
+}

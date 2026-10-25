@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO exercise_muscle_group (exercise, muscle_group, amount)\n           SELECT ?1, muscle_group, amount FROM exercise_muscle_group WHERE exercise = ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "93039cc090df635cd4cff2fcdce381af0ed533c6a55b8b769216e3999a6af155"
+}

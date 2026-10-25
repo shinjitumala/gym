@@ -242,3 +242,41 @@ fn the_local_day_starts_at_midnight_and_lasts_a_day() {
     assert_eq!(s.date_naive(), now.date_naive());
     assert_eq!(e - s, chrono::Duration::days(1));
 }
+
+/// The web pages' window must use local midnight, not UTC midnight: a meal
+/// eaten at 06:00 JST is 21:00 UTC the day before, and a bare `YYYY-MM-DD`
+/// bound would drop it.
+#[cfg(feature = "ssr")]
+#[tokio::test]
+async fn the_web_day_window_is_local_midnight_to_local_midnight() {
+    use chrono::{Duration, Local, TimeZone};
+    let (_s, db) = fresh("webday").await;
+    let f = db
+        .new_food("unit", 100.0, Some(1.0), Some(1.0), Some(1.0), "")
+        .await
+        .unwrap();
+    let today = Local::now().date_naive();
+    let early = Local
+        .from_local_datetime(&today.and_hms_opt(6, 0, 0).unwrap())
+        .earliest()
+        .unwrap();
+    db.new_meal(&early.to_rfc3339(), f, 1.0, "early local morning")
+        .await
+        .unwrap();
+    let yesterday = today - Duration::days(1);
+    let late_yesterday = Local
+        .from_local_datetime(&yesterday.and_hms_opt(23, 0, 0).unwrap())
+        .earliest()
+        .unwrap();
+    db.new_meal(&late_yesterday.to_rfc3339(), f, 10.0, "last night")
+        .await
+        .unwrap();
+
+    let d = gym::web::data::food_daily(&db).await.unwrap();
+    assert_eq!(
+        d.totals.kcal, 100.0,
+        "only the meal eaten after local midnight counts: {:?}",
+        d.meals
+    );
+    assert_eq!(d.meals.len(), 1);
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE exercise SET name = ?1, note = ?2, video_url = ?3 WHERE id = ?4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "cb8998f291f74ef5cc9898378124ee9cb93b96f865eeae96be5c6fa25a268221"
+}

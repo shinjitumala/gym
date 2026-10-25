@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT s.id AS \"id!\", s.date, p.name AS \"place!\", s.note AS \"note!\",\n                  s.deload AS \"deload!\"\n           FROM session s JOIN place p ON p.id = s.place\n           ORDER BY julianday(s.date) DESC, s.id DESC LIMIT ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "session",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "date",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "session",
+            "name": "date"
+          }
+        }
+      },
+      {
+        "name": "place!",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "place",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "note!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "session",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "name": "deload!",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "session",
+            "name": "deload"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "45df2a5dcf90b002700d7d66319cbda728a301e4ec6d98d4ecfebdc4ea029b66"
+}

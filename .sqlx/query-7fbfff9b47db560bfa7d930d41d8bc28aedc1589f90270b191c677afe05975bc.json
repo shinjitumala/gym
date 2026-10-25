@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE training_set SET exercise = ?1 WHERE exercise = ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7fbfff9b47db560bfa7d930d41d8bc28aedc1589f90270b191c677afe05975bc"
+}

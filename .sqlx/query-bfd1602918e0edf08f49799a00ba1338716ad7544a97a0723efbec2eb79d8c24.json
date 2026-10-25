@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM exercise_muscle_group WHERE exercise = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "bfd1602918e0edf08f49799a00ba1338716ad7544a97a0723efbec2eb79d8c24"
+}

@@ -210,6 +210,13 @@ remote is an archive and never a second writer.
 The old git-based sync is retired; the data directory keeps its git history as
 the archive of the TOML era.
 
+## What has shipped
+
+Step 2 is in place as well: `gym web` serves the six tabs, the hydrated bundle
+is embedded in the binary, and the daily food tab records meals, presets and
+weigh-ins. The charts are inline SVG; the statistics live in `src/stats.rs` with
+their own tests.
+
 ## What shipped first
 
 Step 1 is in place: the schema is `migrations/0001_init.sql`, the store is
@@ -232,9 +239,10 @@ starts.
    here, because from this step on no build has a database to point at. The
    retired git sync left with it: the `act` crate is gone, and `gym sync` is
    the rsync described below.
-2. **`gym web`, read-only.** The Leptos shell in the chat3 look, the embedded
-   hydrated assets, and the two analysis tabs reading only. This proves the
-   build and install path before any write path exists.
+2. **`gym web`. Done.** The Leptos shell in the chat3 look, the embedded
+   hydrated assets, and all six tabs. The analysis and intervention tabs are
+   read-only for now; the daily tabs already write meals, presets and
+   weigh-ins.
 3. **Food writes from the UI.** Daily recording, meal presets, weigh-ins.
 4. **Gym writes from the UI.** Daily recording, supersets, effort presets,
    lists, and the intervention tab's edits and merges.

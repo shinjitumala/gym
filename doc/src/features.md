@@ -131,28 +131,26 @@ Acceptance criteria:
 
 ## Feature: `gym web`, the local web UI
 
-Status: missing. The command parses an address and panics with
-`not yet implemented`. It keeps its name — `web` is what exists and what is
-shortest.
+Status: works, and read-only in the two intervention tabs. `gym web` serves the
+six tabs on loopback; the daily food tab already writes.
 
 Acceptance criteria:
 
-- [ ] `gym web` serves the UI on `127.0.0.1:8080` by default, and binds
+- [x] `gym web` serves the UI on `127.0.0.1:8080` by default, and binds
       loopback unless another address is passed explicitly.
-- [ ] The UI is Leptos with hydration: the first paint is server-rendered, and
+- [x] The UI is Leptos with hydration: the first paint is server-rendered, and
       the page works with scripts enabled and without them.
-- [ ] A new install never pairs a cached script with a newly built WASM: every
+- [x] A new install never pairs a cached script with a newly built WASM: every
       response carries `Cache-Control: no-cache`.
-- [ ] The six tabs exist at stable routes: `/food`, `/food/edit`,
+- [x] The six tabs exist at stable routes: `/food`, `/food/edit`,
       `/food/analysis`, `/gym`, `/gym/edit`, `/gym/analysis`.
-- [ ] The look is the one on [the overhaul](overhaul.md#the-look) page: black
-      background, green ramp, blocky 2px borders, no rounded corners, Tailwind
-      defaults for type.
-- [ ] The analysis tabs are read-only: no request from them writes a row.
-- [ ] The server and a CLI write can run at the same time without a lock
+- [x] The look is the one on [the overhaul](overhaul.md#the-look) page: black
+      background, green ramp, blocky 2px borders, no rounded corners.
+- [x] The analysis tabs are read-only: no request from them writes a row.
+- [x] The server and a CLI write can run at the same time without a lock
       failure under normal use (WAL, a busy timeout, one short transaction per
       row, never a transaction held across a prompt).
-- [ ] A page reflects a change made by another process on the next request,
+- [x] A page reflects a change made by another process on the next request,
       with no restart.
 
 ## Feature: Food · daily

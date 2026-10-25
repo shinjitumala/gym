@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE place SET name = ?1, note = ?2 WHERE id = ?3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "6f0a9d61333e391c5ef27ee0924e4ac34bc51aadc9b505622b4e95477dc1a955"
+}

@@ -160,15 +160,13 @@ copy is an archive, never a second writer.
 
 ## `gym web`
 
-Not implemented yet. The command parses an optional address (default
-`127.0.0.1:8080`) and then panics:
+Serves the six tabs on loopback:
 
 ```text
 $ gym web
-thread 'main' panicked at ...:
-not yet implemented
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+gym web on http://127.0.0.1:8080
 ```
 
-Exit status 101. [The overhaul](overhaul.md#the-web-ui) turns this command into
-the local web UI.
+`--addr` moves it. A build without the embedded bundle — a plain `cargo build`,
+rather than `./install.sh` or `cargo leptos build` — refuses to start and says
+so. See [the web UI](web.md) for the tabs and what they show.

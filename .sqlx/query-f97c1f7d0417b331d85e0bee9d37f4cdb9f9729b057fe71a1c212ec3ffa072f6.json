@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE meal_preset SET last_used = ?1 WHERE id = ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "f97c1f7d0417b331d85e0bee9d37f4cdb9f9729b057fe71a1c212ec3ffa072f6"
+}

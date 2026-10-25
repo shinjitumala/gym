@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT kind AS \"kind!\", start AS \"start!\", target_rate AS \"target_rate!\",\n                  target_rep AS \"target_rep!\", target_weight\n           FROM phase WHERE julianday(start) <= julianday(?1)\n           ORDER BY julianday(start) DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "kind!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "phase",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "start!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "phase",
+            "name": "start"
+          }
+        }
+      },
+      {
+        "name": "target_rate!",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "phase",
+            "name": "target_rate"
+          }
+        }
+      },
+      {
+        "name": "target_rep!",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "phase",
+            "name": "target_rep"
+          }
+        }
+      },
+      {
+        "name": "target_weight",
+        "ordinal": 4,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "phase",
+            "name": "target_weight"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "75c355f8ea8e61b1fe9a31e33d1ab37e99c570a07163cc808f30b5615532810e"
+}

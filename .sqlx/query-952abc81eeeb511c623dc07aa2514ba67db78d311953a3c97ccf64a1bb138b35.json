@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE OR REPLACE exercise_list_item SET exercise = ?1 WHERE exercise = ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "952abc81eeeb511c623dc07aa2514ba67db78d311953a3c97ccf64a1bb138b35"
+}

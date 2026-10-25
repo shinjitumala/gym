@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT emg.exercise AS \"exercise!\", emg.muscle_group AS \"group!\",\n                  emg.amount AS \"amount!\", mg.name AS \"name!\"\n           FROM exercise_muscle_group emg JOIN muscle_group mg ON mg.id = emg.muscle_group",
+  "describe": {
+    "columns": [
+      {
+        "name": "exercise!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise_muscle_group",
+            "name": "exercise"
+          }
+        }
+      },
+      {
+        "name": "group!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise_muscle_group",
+            "name": "muscle_group"
+          }
+        }
+      },
+      {
+        "name": "amount!",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "exercise_muscle_group",
+            "name": "amount"
+          }
+        }
+      },
+      {
+        "name": "name!",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "muscle_group",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "615834ad294d8d09409bfd78c58bdd7aa1bba8f8f250669a74c0406469a259c7"
+}

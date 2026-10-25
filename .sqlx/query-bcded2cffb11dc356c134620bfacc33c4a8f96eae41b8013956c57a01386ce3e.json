@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE food SET name = ?1, calories = ?2, protein = ?3, fat = ?4, carbohydrate = ?5, note = ?6 WHERE id = ?7",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "bcded2cffb11dc356c134620bfacc33c4a8f96eae41b8013956c57a01386ce3e"
+}

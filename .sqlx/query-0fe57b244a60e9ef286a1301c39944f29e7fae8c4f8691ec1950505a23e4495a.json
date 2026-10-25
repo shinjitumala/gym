@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE weight SET date = ?1, kg = ?2, bodyfat = ?3, note = ?4 WHERE id = ?5",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "0fe57b244a60e9ef286a1301c39944f29e7fae8c4f8691ec1950505a23e4495a"
+}

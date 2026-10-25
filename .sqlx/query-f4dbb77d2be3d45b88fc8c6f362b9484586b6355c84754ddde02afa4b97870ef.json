@@ -1,0 +1,122 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!\", session AS \"session!\", exercise AS \"exercise!\",\n                  position AS \"position!\", load AS \"load!\", rep AS \"rep!\",\n                  note AS \"note!\", superset, inferred AS \"inferred!\"\n           FROM training_set ORDER BY session, position",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "session!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "session"
+          }
+        }
+      },
+      {
+        "name": "exercise!",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "exercise"
+          }
+        }
+      },
+      {
+        "name": "position!",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "name": "load!",
+        "ordinal": 4,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "load"
+          }
+        }
+      },
+      {
+        "name": "rep!",
+        "ordinal": 5,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "rep"
+          }
+        }
+      },
+      {
+        "name": "note!",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "name": "superset",
+        "ordinal": 7,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "superset"
+          }
+        }
+      },
+      {
+        "name": "inferred!",
+        "ordinal": 8,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "inferred"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "f4dbb77d2be3d45b88fc8c6f362b9484586b6355c84754ddde02afa4b97870ef"
+}
