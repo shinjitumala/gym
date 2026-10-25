@@ -1,5 +1,10 @@
 # The data files
 
+> **What this page describes.** The TOML store of the running build. The
+rebuild replaces it with one SQLite file and a migration from these
+[directories](sqlite-schema.md#migrating-the-toml-log). This page stays as the
+schema of the archive.
+
 The `db` directory is the database. `gym` reads the files it needs on each
 command and appends rows to them; it never creates a directory and never
 deletes a row.

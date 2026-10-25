@@ -69,7 +69,11 @@ and ESC backs out of the current question.
 - [Design notes](doc/src/index.md) — the mdBook in `doc/`: configuration, the
   data file schemas, each command with a worked example, and the
   [feature list with acceptance criteria](doc/src/features.md).
-  Build it with `mdbook build doc`, or read it with `mdbook serve doc`.
+- [The overhaul](doc/src/overhaul.md) — the rebuild onto a SQLite database and
+  a local web UI (`gym serve`), with the
+  [schema](doc/src/sqlite-schema.md) and the migration from the TOML log.
+
+The book is built with `mdbook build doc` and read with `mdbook serve doc`.
 
 ## Deploy to Android
 

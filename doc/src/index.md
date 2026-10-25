@@ -1,5 +1,10 @@
 # Overview
 
+> **What this page describes.** The program as it runs today, with a TOML data
+directory. [The overhaul](overhaul.md) replaces that store with SQLite and adds
+a local web UI, keeping the commands; these pages stay accurate for the running
+build and for the archive, and the overhaul's pages are the plan.
+
 `gym` records a training log, weigh-ins and meals in plain TOML files on the
 machine that reads them. There is no server, no account and no database
 engine: the data directory is the database, and it belongs to the user, who can
@@ -47,3 +52,7 @@ and nothing is kept in memory between commands.
   example with real output.
 - [Features and acceptance criteria](features.md) — the list of things this
   program is expected to do, each with the criteria that decide it is done.
+- [The overhaul](overhaul.md) — the rebuild onto SQLite and a local web UI: the
+decisions, the six tabs, and the order of work.
+- [The SQLite schema](sqlite-schema.md) — the target tables and the migration
+  from the TOML directories.

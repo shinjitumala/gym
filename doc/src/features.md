@@ -10,23 +10,28 @@ agent. Keep the `## Feature:` heading, the `Status:` line and the checkbox
 list, so a reader can tell what is claimed from what is verified.
 
 Status values: **works** (implemented and exercised), **partial** (some of it
-exists), **missing** (nothing yet).
+exists), **missing** (nothing yet), **deferred** (wanted, deliberately not
+now), **superseded** (replaced by a later entry or by
+[the overhaul](overhaul.md)).
+
+The first four entries are the behaviour the rebuild must preserve. They are
+the parity gate: the rebuild is not done until they pass on the new store with
+the real log in it.
 
 ## Feature: Log a training session
 
 Status: works. `gym new` asks for place, time, description, then exercises and
 their sets, printing the last three sessions of history for each exercise.
+After the rebuild the prompts stay; the rows go into the database.
 
 Acceptance criteria:
 
-- [ ] A session is written to `session/YYYY-MM.toml` with its place, date and
-      the ids of its sets.
-- [ ] Each set is written to `set/YYYY-MM-DD.toml` immediately, with load,
-      reps and notes.
+- [ ] A session is written with its place, date, phase and description.
+- [ ] Each set is written immediately, with load, reps, note and its position
+      in the session.
 - [ ] Before the first set of an exercise, the last three sessions of that
       exercise at that place are printed as `date:` plus `load x rep` rows.
-- [ ] An unknown exercise name is created in `exercise.toml` instead of being
-      refused.
+- [ ] An unknown exercise name is created instead of being refused.
 - [ ] ESC on the `load` prompt ends the exercise; ESC on the exercise prompt
       ends the session.
 - [ ] A session with no sets is still recorded, and is not printed as history.
@@ -42,15 +47,17 @@ Acceptance criteria:
 
 - [ ] Totals cover local midnight to local midnight, whatever the machine's
       timezone offset is.
-- [ ] Each meal is written to `meal/YYYY-MM-DD.toml` with food id, amount and
-      description.
+- [ ] Each meal is written with food id, amount and description.
 - [ ] The amount is a multiplier of the food's per-unit numbers.
 - [ ] A food may be registered during the flow, with protein, fat and
-      carbohydrate optionally unknown.
-- [ ] Registering a name that already exists in `food.toml` is refused with a
-      message saying so.
+      carbohydrate optionally unknown, and an unknown value is not stored as
+      zero.
+- [ ] Registering a name that already exists is refused with a message saying
+      so.
 - [ ] `Add more food?` defaults to no, ending the command with the updated
       totals.
+- [ ] The totals are the same, to the cent, as the old binary's on the same
+      data.
 
 ## Feature: Log weigh-ins
 
@@ -59,129 +66,12 @@ note.
 
 Acceptance criteria:
 
-- [ ] The weigh-in is written to `weight/YYYY-MM.toml`.
-- [ ] Body fat may be left unknown without aborting the command, and an
-      unknown value is distinguishable from a measured zero.
+- [ ] The weigh-in is written, and read back by the trend exactly once.
+- [ ] Body fat may be left unknown without aborting the command, and unknown is
+      distinguishable from a measured zero.
 - [ ] The note may be empty.
 - [ ] Two weigh-ins on the same day are both kept, in the order they were
       entered.
-
-## Feature: A data directory a human owns
-
-Status: works. The data directory is the database: TOML files, one row per
-`[e.N]` table, no server and no account.
-
-Acceptance criteria:
-
-- [ ] Every command reads and writes only inside `db` and `repo`.
-- [ ] Rows the tool did not create in this run are never rewritten or
-      reordered.
-- [ ] No command deletes a row.
-- [ ] The layout and each schema are documented in
-      [the data files](data-files.md), and the document matches the files a
-      command actually writes.
-- [ ] A hand edit that keeps ids intact is picked up by the next command.
-
-## Feature: Bootstrap a fresh data directory
-
-Status: missing. A new data directory must be assembled by hand: the four
-index files need at least an empty `[e]` table, or the first save aborts with
-`Failed to write to ''`.
-
-Acceptance criteria:
-
-- [ ] Pointing the config at an empty directory and running any command either
-      creates the missing files and directories itself, or refuses with a
-      message naming every path it needs.
-- [ ] No command can fail with an empty path in its error message.
-- [ ] A freshly created directory accepts `gym new`, `gym food` and
-      `gym weight` end to end, with no hand-written files.
-
-## Feature: Sync the data directory to a remote
-
-Status: works. `gym sync` pulls, commits changes as `upd.`, and pushes to every
-configured remote.
-
-Acceptance criteria:
-
-- [ ] With a clean tree, `gym sync` prints `There is nothing to commit.` and
-      pushes.
-- [ ] With changes, everything under `repo` is committed in one commit.
-- [ ] A failing pull is reported as a failure, and the command's exit status
-      reflects it.
-- [ ] The commit message says what changed (which part of the log), not `upd.`
-
-## Feature: Read the log back
-
-Status: partial. Only two views exist: the food day's totals, and the last
-three sessions of an exercise during `gym new`.
-
-Acceptance criteria:
-
-- [ ] A command prints the history of one exercise over a chosen period:
-      date, load, reps, and the best set per session.
-- [ ] A command prints the week's or month's training volume per muscle group.
-- [ ] A command prints the body weight and body fat trend, one row per
-      weigh-in in the period.
-- [ ] A one-rep-max estimate is reported per session, using the existing
-      rep-factor table.
-- [ ] Every view reads only the files and rows it needs, and prints nothing
-      else.
-
-## Feature: Correct a logged row
-
-Status: missing. Rows can be added but not edited or removed by the tool.
-
-Acceptance criteria:
-
-- [ ] A command lists recent rows of one kind (set, meal, weigh-in) and lets
-      one be picked.
-- [ ] The picked row can be edited field by field, or deleted, without
-      renumbering any id another row refers to.
-- [ ] A deleted set is removed from its session's `sets` list.
-- [ ] A deleted meal is reflected in the day's totals.
-- [ ] The file the row lives in is the only file rewritten.
-
-## Feature: Exercise and food metadata
-
-Status: partial. Exercises can be created with a name only; muscle groups and
-food numbers have no editing path once written.
-
-Acceptance criteria:
-
-- [ ] An exercise's muscle groups can be assigned and changed from prompts.
-- [ ] A food's calories, protein, fat, carbohydrate and description can be
-      changed after it was registered.
-- [ ] A food or exercise that a row still refers to cannot be deleted.
-- [ ] Muscle-group names are managed in one place and referenced by id.
-
-## Feature: Non-interactive input
-
-Status: missing. Every command prompts; nothing can be scripted.
-
-Acceptance criteria:
-
-- [ ] Each logging command accepts its answers as flags or on stdin, and
-      writes the same rows the prompts would.
-- [ ] The default remains interactive: no flags means prompts.
-- [ ] A malformed value exits non-zero with a message naming the field and the
-      value, and writes nothing.
-- [ ] One worked example per command appears in the documentation, scripted.
-
-## Feature: Web view
-
-Status: missing. `gym web` parses an address and then panics with
-`not yet implemented`.
-
-Acceptance criteria:
-
-- [ ] `gym web` serves the log at the given address (default
-      `0.0.0.0:8080`) without touching the data files.
-- [ ] The pages show the day's food totals, the weight trend, and per-exercise
-      progression.
-- [ ] The server reads the data directory once per request, so a sync from
-      another terminal is visible without restarting it.
-- [ ] A read-only server cannot be used to change the log.
 
 ## Feature: Build and install
 
@@ -193,60 +83,275 @@ Acceptance criteria:
 
 - [ ] `./install.sh` is idempotent and safe while `gym` is running.
 - [ ] The installed binary reports which build it is (`gym --version`).
+- [ ] The hydrated web assets are inside the binary, so installing is still one
+      file and the Android build produces something runnable.
+- [ ] A build needs no database: queries are written at runtime, not with the
+      compile-time macros.
 - [ ] `./deploy.sh` states its NDK prerequisites and fails with a message, not
       a linker error, when they are missing.
-- [ ] The documentation build (`mdbook build doc`) is part of the install or
-      checked separately, and a broken link fails it.
+- [ ] `mdbook build doc` is checked, and a broken internal link fails it.
 
-# Overhaul plan
-Migrate back to sqlite databases. Why? AI had made the cost of CRUD to near zero. The need tonhave human-readable and editable databases has disappeared.
+## Feature: The SQLite store and the importer
 
-Keep CLI interface as is, add a web UI that runs locally by `gym serve` (leptos)
+Status: missing. The log is TOML files sharded by day and month; the rebuild
+puts it in one SQLite database.
 
-Theme similar to ~/g/fpr-rp chat3.
+Acceptance criteria:
 
-Ad hoc migration scripts stay in ~/g/gym_data (current real data)
+- [ ] `gym db init` creates an empty database at the configured path with the
+      schema and the seeded effort vocabulary, and refuses to touch a file that
+      is already a database.
+- [ ] `gym db import <toml-dir>` fills a fresh database from the TOML
+      directories and is all-or-nothing.
+- [ ] Every old row arrives with its old id, and every reference — a set's
+      session, a meal's food, an exercise's muscle groups — points at the row
+      with the same content.
+- [ ] A set that no session lists is reported and stops the import, rather than
+      being attached to a guess.
+- [ ] The 226 parseable superset notes become groups of two sets sharing a
+      load, with the partner row marked `inferred`; the unparseable ones are
+      listed for a human.
+- [ ] The row counts and the aggregates listed under *Verifying an import* hold
+      on the real log.
+- [ ] The schema is documented on [the schema page](sqlite-schema.md), and the
+      document matches the migration files.
 
-## UI design
-Have a tab for daily use (most used path for daily use), intervrntion (editing, fixing stuff), and analysis (looking back at progress over long term, trends, for show and analysis) fpr the food and gym (training record) respectively.
+## Feature: `gym serve`, the local web UI
 
-Organize them into tabs with six tabs total.
+Status: missing. `gym web` parses an address and panics with
+`not yet implemented`.
 
-### Food
-#### Daily use
-Record what and how much you ate when (same purpose as gym food today).
-Record weight and bodyfat (same purpose as gym weight today).
-##### New features
-Use presets for a set meal for repetitive ones. Sort by last used. Define in the intervension tab.
-Show weight trend and show if you're meeting goals depending on weather your bulking or cutting. Bulking is generally +1kg / month trend, And cutting is just going below maintenance. Calculate statistically the weight trend accpunting for slight errors in the weight measurer. Estimate maintenance calories and show diff. Identify possibly incorrectly valued food based on recorded calories vs actual weight change. Take into account poasible water weigjt change when switching between vits and bulks.
+Acceptance criteria:
 
-#### Intervension
-Edit past records.
-Edit food items to change calorie and macro value.
+- [ ] `gym serve` serves the UI on `127.0.0.1:8080` by default, and binds
+      loopback unless another address is passed explicitly.
+- [ ] The UI is Leptos with hydration: the first paint is server-rendered, and
+      the page works with scripts enabled and without them.
+- [ ] The six tabs exist at stable routes: `/food`, `/food/edit`,
+      `/food/analysis`, `/gym`, `/gym/edit`, `/gym/analysis`.
+- [ ] The analysis tabs are read-only: no request from them writes a row.
+- [ ] The server and a CLI write can run at the same time without a lock
+      failure under normal use (WAL, a busy timeout, one short transaction per
+      row, never a transaction held across a prompt).
+- [ ] A page reflects a change made by another process on the next request,
+      with no restart.
 
-#### Analysis
-Show graph of weight and bf trend overlayed above a bar graph of calorie intake and macros that show which food they came from.
-Favorite food ranking, etc.
+## Feature: Food · daily
 
-### Gym
-#### Daily use
-Record training as we do today. (gym new)
-Add, edit places as we do today.
+Status: missing. Today's `gym food` prompts, on a screen.
 
-##### New feature
-Have a preset for recording effort along the optional notes (see ~/g/gym_data for examples)
-Indicate when you get a PR.
-Switch between bulk and cut mode (change to target weight and reps)
-Add deload reminders and target change to half weight and sets during deload.
-Support super sets natively. (see current data to indersfand how we're working arpumd it currently and migrate data.)
-Use lists (set of preset exercises for a session as an ordered checklist. Can perform out of order since a splot may be busy.) Lists are defined in the ontervention tab.
+Acceptance criteria:
 
-#### Intervention
-Edit past records, body part set count per exercise, exercise name, etc.
+- [ ] Meals can be recorded for a chosen time with a food, an amount and a
+      note, and today's totals update in place.
+- [ ] A food can be registered from the same screen, and its macros may be
+      unknown.
+- [ ] A meal preset records all of its foods in one action, and the preset list
+      is ordered by last use.
+- [ ] A weigh-in can be recorded from the same screen, with body fat optional.
+- [ ] The screen shows the weight trend against the current phase's goal, or
+      says what data is still missing.
+- [ ] The screen shows today's intake against the estimated maintenance, with
+      the estimate withheld when the window has too few logged days.
 
-##### New feature
-Allow linking a YouTube video to a specific exercise
+## Feature: Weight and intake statistics
 
-#### Analysis
-Trend of strength per body part by estimated one rep max.
-Trend of sets per muscle group.
+Status: missing. Nothing computes a trend; a weigh-in is only ever read back by
+the exercise history.
+
+Acceptance criteria:
+
+- [ ] The trend is a least-squares slope over a trailing window (21 days by
+      default) that requires at least 14 weigh-ins, and the screen shows how
+      many are missing when there are fewer.
+- [ ] The trend is drawn with its uncertainty band, and a goal is met only when
+      the whole band is inside the goal range.
+- [ ] The maintenance estimate uses intake and weight change over the same
+      window, counts only days with real logging, and is withheld below 10 such
+      days.
+- [ ] A bulk's default goal is `+1 kg/month`; a cut's is at or below zero; both
+      come from the phase, not from a second setting.
+- [ ] Days inconsistent with the weight-implied trend are listed; no food is
+      ever blamed from intake alone.
+- [ ] The first week of a new phase is excluded from the window, so a switch
+      between a bulk and a cut does not read as a jump in body composition.
+- [ ] A test with synthetic weigh-ins of known slope and noise recovers the
+      slope within its band, and refuses the cases below the data threshold.
+
+## Feature: Food · intervention
+
+Status: missing. Past meals and weigh-ins can only be edited by hand in the TOML
+files, and a food's numbers cannot be changed at all once registered.
+
+Acceptance criteria:
+
+- [ ] A past meal or weigh-in can be found by date, edited field by field, and
+      deleted; the day's totals are correct afterwards.
+- [ ] A food's calories, protein, fat, carbohydrate and description can be
+      changed after it was registered.
+- [ ] A food that a meal still refers to cannot be deleted, and the refusal
+      says how many meals use it.
+- [ ] Meal presets can be created, edited and deleted, with their foods and
+      amounts.
+- [ ] Every edit affects only the row it names.
+
+## Feature: Food · analysis
+
+Status: missing.
+
+Acceptance criteria:
+
+- [ ] A chart shows weight and body fat as lines over a stacked bar of daily
+      intake, split by the food that contributed it.
+- [ ] The same chart marks deload weeks and phase boundaries.
+- [ ] Foods are ranked by how often they are eaten and by how much of the
+      intake they contribute.
+- [ ] A range can be chosen, and the chart states the range and the number of
+      logged days in it.
+
+## Feature: Gym · daily
+
+Status: partial. `gym new` records a session; effort, PRs, phases, deloads,
+supersets and lists do not exist.
+
+Acceptance criteria:
+
+- [ ] A session is recorded as today's prompts record it, from one screen.
+- [ ] The note carries an effort picked from the presets, with free text still
+      available, and both are stored.
+- [ ] A set that beats the best estimated 1RM of every earlier session of that
+      exercise is marked as a PR, using the existing rep-factor table, ignoring
+      sets above 30 reps.
+- [ ] The phase's target is shown beside the last performance: more load in a
+      bulk, the same load at more reps in a cut.
+- [ ] A deload is prompted when one is due, and a deload session's suggested
+      target is half the load and half the sets.
+- [ ] Two or more exercises can be recorded as one superset group, each with
+      its own reps, sharing the load.
+- [ ] A list can be started as the session's checklist, items can be completed
+      in any order, and the session keeps the list it started from after the
+      list itself is edited.
+
+## Feature: Gym · intervention
+
+Status: partial. Exercises can be created with a name only; places and muscle
+groups have no editing path, and a duplicate exercise can never be retired.
+
+Acceptance criteria:
+
+- [ ] Past sessions and sets can be found, edited and deleted, and a session's
+      set positions stay consistent afterwards.
+- [ ] A place and a muscle group can be created, renamed and deleted; deleting
+      one that is still referenced is refused with the count.
+- [ ] An exercise's muscle groups and their amounts can be assigned and
+      changed.
+- [ ] An exercise can be renamed, and a set of exercises can be merged into one,
+      with every set and list item re-pointed and the merged-away rows deleted.
+- [ ] A merge of two exercises that share a muscle group keeps one amount, and
+      the surviving value is visible before the merge is confirmed.
+- [ ] An exercise can carry a video link, and the link is validated and shown
+      on the daily screen.
+- [ ] Lists of exercises can be created, reordered and deleted.
+
+## Feature: Gym · analysis
+
+Status: missing.
+
+Acceptance criteria:
+
+- [ ] Strength is plotted per body part, from the best estimated 1RM per
+      session, one line per exercise.
+- [ ] Sets per muscle group are plotted over time, counting a superset group's
+      contribution once per member exercise.
+- [ ] Deload weeks are shaded rather than dropped, so the trend keeps its
+      points.
+- [ ] Inferred rows from the migration are included and marked as inferred.
+- [ ] Exercises with no muscle group are listed, so an empty analysis is
+      explained rather than silent.
+
+## Feature: Sync the database to the server
+
+Status: missing. Today's `gym sync` is a git pull, commit and push of the data
+directory.
+
+Acceptance criteria:
+
+- [ ] `gym sync` copies the database to the configured `remote` with `rsync`,
+      from a consistent snapshot taken with `VACUUM INTO`, never from the live
+      file.
+- [ ] A failed transfer exits non-zero and says what failed; a successful one
+      says where the copy went and how big it is.
+- [ ] Running it twice in a row succeeds and leaves one file at the
+      destination.
+- [ ] The copy opens with `PRAGMA integrity_check` returning `ok`.
+- [ ] `gym sync` works while the server and a CLI write are running.
+
+## Feature: Tests
+
+Status: missing. The program has no tests.
+
+Acceptance criteria:
+
+- [ ] `test/` holds a fixture database with a known food day, a known exercise
+      history and a known set of weigh-ins.
+- [ ] The parity checks — totals to the cent, the history block, the weigh-in
+      read-back — are automated against the fixture.
+- [ ] The statistics are tested against synthetic series with a known slope and
+      noise, including the "not enough data" cases.
+- [ ] `cargo test` runs them, and a failure names the assertion rather than a
+      diff of a whole table.
+
+## Feature: Non-interactive input
+
+Status: deferred. Every command prompts; nothing can be scripted. The web UI
+covers the day-to-day, so this waits until there is a reason to drive the CLI
+from a script.
+
+Acceptance criteria:
+
+- [ ] Each logging command accepts its answers as flags or on stdin, and writes
+      the same rows the prompts would.
+- [ ] The default remains interactive: no flags means prompts.
+- [ ] A malformed value exits non-zero with a message naming the field and the
+      value, and writes nothing.
+
+## Feature: A data directory a human owns
+
+Status: superseded. The TOML store was chosen so the log could be read and
+edited by hand; the rebuild replaces it with SQLite, for the reasons on
+[the overhaul](overhaul.md#why-sqlite) page. The TOML-era directories stay as
+the archive.
+
+## Feature: Bootstrap a fresh data directory
+
+Status: superseded by [the SQLite store and the importer](#feature-the-sqlite-store-and-the-importer).
+The old store needed four index files and four directories, each with at least
+an empty table, before any command worked.
+
+## Feature: Correct a logged row
+
+Status: superseded by [Food · intervention](#feature-food--intervention) and
+[Gym · intervention](#feature-gym--intervention). The CLI is not getting
+editing commands; the intervention tabs do that.
+
+## Feature: Read the log back
+
+Status: superseded by the two analysis tabs,
+[Food · analysis](#feature-food--analysis) and
+[Gym · analysis](#feature-gym--analysis).
+
+## Feature: Exercise and food metadata
+
+Status: superseded by [Gym · intervention](#feature-gym--intervention) and
+[Food · intervention](#feature-food--intervention), which cover editing a food's
+numbers, an exercise's muscle groups, places and muscle groups.
+
+## Feature: Sync the data directory to a remote
+
+Status: superseded by [Sync the database to the server](#feature-sync-the-database-to-the-server).
+The git transport is retired; the data directory keeps its history as the
+archive of the TOML era.
+
+## Feature: Web view
+
+Status: superseded by [`gym serve`, the local web UI](#feature-gym-serve-the-local-web-ui).

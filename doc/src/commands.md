@@ -1,5 +1,10 @@
 # Commands
 
+> **What this page describes.** The commands of the running build. The rebuild
+keeps their prompts, adds `gym serve` and `gym db`, and changes `gym sync`'s
+transport; see [the overhaul](overhaul.md) and
+[its acceptance criteria](features.md).
+
 ```text
 $ gym
 Expected an act.

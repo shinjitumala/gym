@@ -1,5 +1,9 @@
 # Configuration
 
+> **What this page describes.** The config of the running build. In
+[the overhaul](overhaul.md) the `repo` key becomes `remote`, an `rsync`
+destination; `db` stays the path to the data, which becomes one SQLite file.
+
 One JSON file tells `gym` where the data directory and its git repository
 live. Both directories must already exist: the tool creates files inside them,
 never the directories themselves.
