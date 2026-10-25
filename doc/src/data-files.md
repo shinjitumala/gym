@@ -102,6 +102,13 @@ sets = [9550, 9551, 9552]
 desc = ""
 ```
 
+**The session's `sets` list is the only membership record.** A set also carries
+a `session` field, but no command reads it — every query goes from the session
+to its list. In the log that predates the TOML format it is frequently `0`
+(the old sqlite-to-TOML import fell back to zero when it could not resolve the
+link), and the list still holds the true membership. Treat a set's `session` as
+advisory, and its position in the session's list as the order of the set.
+
 `weight/`, one weigh-in:
 
 ```toml

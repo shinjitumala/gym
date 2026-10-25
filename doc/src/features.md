@@ -197,3 +197,56 @@ Acceptance criteria:
       a linker error, when they are missing.
 - [ ] The documentation build (`mdbook build doc`) is part of the install or
       checked separately, and a broken link fails it.
+
+# Overhaul plan
+Migrate back to sqlite databases. Why? AI had made the cost of CRUD to near zero. The need tonhave human-readable and editable databases has disappeared.
+
+Keep CLI interface as is, add a web UI that runs locally by `gym serve` (leptos)
+
+Theme similar to ~/g/fpr-rp chat3.
+
+Ad hoc migration scripts stay in ~/g/gym_data (current real data)
+
+## UI design
+Have a tab for daily use (most used path for daily use), intervrntion (editing, fixing stuff), and analysis (looking back at progress over long term, trends, for show and analysis) fpr the food and gym (training record) respectively.
+
+Organize them into tabs with six tabs total.
+
+### Food
+#### Daily use
+Record what and how much you ate when (same purpose as gym food today).
+Record weight and bodyfat (same purpose as gym weight today).
+##### New features
+Use presets for a set meal for repetitive ones. Sort by last used. Define in the intervension tab.
+Show weight trend and show if you're meeting goals depending on weather your bulking or cutting. Bulking is generally +1kg / month trend, And cutting is just going below maintenance. Calculate statistically the weight trend accpunting for slight errors in the weight measurer. Estimate maintenance calories and show diff. Identify possibly incorrectly valued food based on recorded calories vs actual weight change. Take into account poasible water weigjt change when switching between vits and bulks.
+
+#### Intervension
+Edit past records.
+Edit food items to change calorie and macro value.
+
+#### Analysis
+Show graph of weight and bf trend overlayed above a bar graph of calorie intake and macros that show which food they came from.
+Favorite food ranking, etc.
+
+### Gym
+#### Daily use
+Record training as we do today. (gym new)
+Add, edit places as we do today.
+
+##### New feature
+Have a preset for recording effort along the optional notes (see ~/g/gym_data for examples)
+Indicate when you get a PR.
+Switch between bulk and cut mode (change to target weight and reps)
+Add deload reminders and target change to half weight and sets during deload.
+Support super sets natively. (see current data to indersfand how we're working arpumd it currently and migrate data.)
+Use lists (set of preset exercises for a session as an ordered checklist. Can perform out of order since a splot may be busy.) Lists are defined in the ontervention tab.
+
+#### Intervention
+Edit past records, body part set count per exercise, exercise name, etc.
+
+##### New feature
+Allow linking a YouTube video to a specific exercise
+
+#### Analysis
+Trend of strength per body part by estimated one rep max.
+Trend of sets per muscle group.
