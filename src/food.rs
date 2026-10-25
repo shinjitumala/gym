@@ -1,7 +1,7 @@
 use crate::com::*;
 
-pub fn reg(db: &mut Db) -> Res<usize> {
-    let foods = db.foods()?;
+pub fn reg(c: &C, db: &Db) -> Res<i64> {
+    let foods = c.block_on(db.foods())?;
 
     #[derive(Clone)]
     struct V {
@@ -22,7 +22,7 @@ pub fn reg(db: &mut Db) -> Res<usize> {
     }
     let name = Text::new("Food name")
         .with_validator(V {
-            foods: foods.iter().map(|(_, e)| e.name.to_owned()).collect(),
+            foods: foods.iter().map(|e| e.name.to_owned()).collect(),
         })
         .prompt()?;
     let calories = CustomType::<f64>::new("calories").prompt()?;
@@ -36,5 +36,5 @@ pub fn reg(db: &mut Db) -> Res<usize> {
         .with_help_message("You can press ESC if unknown")
         .prompt_skippable()?;
     let desc = Text::new("desc").prompt()?;
-    Ok(db.new_food(&name, calories, protein, fat, carbohydrate, &desc)?)
+    c.block_on(db.new_food(&name, calories, protein, fat, carbohydrate, &desc))
 }

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO muscle_group (id, name, note) VALUES (?1, ?2, ?3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "677ba3e2d0f592278281aa9c507db05a2c1cc6b4702277769b5a3b97c163b363"
+}

@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT s.date AS \"date!\", ts.load AS \"load!\", ts.rep AS \"rep!\", ts.note\nFROM training_set ts\nJOIN session s ON s.id = ts.session\nWHERE ts.exercise = ?1 AND s.place = ?2\n  AND ts.session IN (\n      SELECT ts2.session\n      FROM training_set ts2\n      JOIN session s2 ON s2.id = ts2.session\n      WHERE ts2.exercise = ?1 AND s2.place = ?2\n      GROUP BY ts2.session\n      ORDER BY MAX(julianday(s2.date)) DESC\n      LIMIT ?3\n  )\nORDER BY julianday(ts.date) DESC, ts.id DESC\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "date!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "session",
+            "name": "date"
+          }
+        }
+      },
+      {
+        "name": "load!",
+        "ordinal": 1,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "load"
+          }
+        }
+      },
+      {
+        "name": "rep!",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "rep"
+          }
+        }
+      },
+      {
+        "name": "note",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "note"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "18addd5cc130720269fab665bf225a193a0422b76bef1bbf81914fb86f691ea7"
+}

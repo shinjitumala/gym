@@ -1,0 +1,42 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT\n    COALESCE(SUM(m.amount * f.calories), 0.0) AS \"calories!: f64\",\n    COALESCE(SUM(m.amount * f.protein), 0.0) AS \"protein!: f64\",\n    COALESCE(SUM(m.amount * f.fat), 0.0) AS \"fat!: f64\",\n    COALESCE(SUM(m.amount * f.carbohydrate), 0.0) AS \"carbohydrate!: f64\"\nFROM meal m\nJOIN food f ON f.id = m.food\nWHERE julianday(m.date) >= julianday(?1) AND julianday(m.date) < julianday(?2)\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "calories!: f64",
+        "ordinal": 0,
+        "type_info": "Float",
+        "origin": "Expression"
+      },
+      {
+        "name": "protein!: f64",
+        "ordinal": 1,
+        "type_info": "Float",
+        "origin": "Expression"
+      },
+      {
+        "name": "fat!: f64",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": "Expression"
+      },
+      {
+        "name": "carbohydrate!: f64",
+        "ordinal": 3,
+        "type_info": "Float",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b4e084e1538817f551558700ecaa4cd1e13751bfa64724fe090ddc02cd2c2f69"
+}

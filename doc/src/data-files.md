@@ -1,13 +1,15 @@
-# The data files
+# The TOML archive
 
-> **What this page describes.** The TOML store of the running build. The
-rebuild replaces it with one SQLite file and a migration from these
-[directories](sqlite-schema.md#migrating-the-toml-log). This page stays as the
-schema of the archive.
+> **What this page describes.** The TOML directories written by the previous
+version of `gym`, before the move to SQLite. They are still on disk under
+`~/g/gym_data`, still in git, and still the source `gym db import` reads; no
+command writes them any more. The live store is one SQLite file — see
+[the schema](sqlite-schema.md) and the
+[migration](sqlite-schema.md#migrating-the-toml-archive).
 
-The `db` directory is the database. `gym` reads the files it needs on each
-command and appends rows to them; it never creates a directory and never
-deletes a row.
+The archive directory is a set of TOML files with one row per `[e.N]` table.
+The old program read the files it needed on each command and appended rows to
+them; it never created a directory and never deleted a row.
 
 ## Layout
 
@@ -23,15 +25,10 @@ deletes a row.
   meal/YYYY-MM-DD.toml   one file per UTC day
 ```
 
-The four `*.toml` index files and the four sub-directories must all exist
-before the first command runs. A missing sub-directory fails immediately:
-
-```text
-$ HOME=/tmp/gym-try/home CONFIG_PATH=/tmp/gym-try/gym.json gym food
-Failed to run:
-Failed to read '/tmp/gym-try/db/set' because 'No such file or directory (os error 2)'
-Aborting.
-```
+The four `*.toml` index files and the four sub-directories must all exist for
+the importer to read the archive; `gym db import` reports the first one it
+cannot read and stops, and an archive with no `set/` is refused rather than
+imported as an empty log.
 
 ## Row format
 
@@ -173,16 +170,7 @@ empty table `e`:
 [e]
 ```
 
-An empty (0-byte) file or a missing one is read as "no database", and the
-first save then fails, because the tool no longer knows the path it was meant
-to write:
-
-```text
-$ HOME=/tmp/gym-try/home CONFIG_PATH=/tmp/gym-try/gym.json gym food
-Failed to run:
-Failed to write to '' because 'No such file or directory (os error 2)'.
-Aborting.
-```
-
-See [Configuration](configuration.md#a-throwaway-configuration) for a script
-that builds such a directory.
+An empty (0-byte) or missing index file is read as "no entries". The old
+program then failed on its first save with `Failed to write to '' because 'No
+such file or directory (os error 2)'`, because an unreadable file left the path
+it meant to write unset; the importer simply imports it as an empty table.

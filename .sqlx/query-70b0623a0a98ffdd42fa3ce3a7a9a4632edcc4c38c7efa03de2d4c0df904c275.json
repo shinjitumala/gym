@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT position AS \"position!\" FROM training_set WHERE session = ?1 ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "name": "position!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "position"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "70b0623a0a98ffdd42fa3ce3a7a9a4632edcc4c38c7efa03de2d4c0df904c275"
+}

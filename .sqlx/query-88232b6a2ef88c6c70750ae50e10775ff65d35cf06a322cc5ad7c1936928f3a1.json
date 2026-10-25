@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO place (id, name, note) VALUES (?1, ?2, ?3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "88232b6a2ef88c6c70750ae50e10775ff65d35cf06a322cc5ad7c1936928f3a1"
+}

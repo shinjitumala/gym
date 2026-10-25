@@ -180,7 +180,7 @@ Four numbers are policy rather than data:
 | `trend_min_weighins` | `14` | Weigh-ins required in the window before a slope is shown. |
 | `maintenance_min_days` | `10` | Logged days required in the window before maintenance is shown. |
 
-They live in the database's `setting` table, not in `gym.json`, because they
+They live in the database's `setting` table, not in `gym.toml`, because they
 are properties of the analysis rather than of the machine, because changing one
 should not mean editing a file by hand, and because a slope shown in the past can
 then be recomputed with the window that was in force. Everything else is either
@@ -210,17 +210,28 @@ remote is an archive and never a second writer.
 The old git-based sync is retired; the data directory keeps its git history as
 the archive of the TOML era.
 
+## What shipped first
+
+Step 1 is in place: the schema is `migrations/0001_init.sql`, the store is
+`sqlx` with compile-time-checked macros, `gym db init` and `gym db import`
+exist, and `gym weight`, `gym new`, `gym food` and `gym sync` read and write
+the database. `test/` holds the store, importer and command-surface tests.
+The configuration moved from JSON to TOML (`db` is now a file path, `repo`
+became `remote`), and the old `act` crate — the git pull/commit/push scripts —
+was removed with the git transport.
+
 ## Order of work
 
 Each step ships on its own, and each has a gate that must pass before the next
 starts.
 
-1. **Store and importer.** Schema and migrations, `gym db init`, `gym db
-   import`, and the five existing commands on SQLite. Gate is parity, not new
-   features: the same rows, and the same output for three food days, the
-   history block for three exercises, and one weigh-in each way. The `.sqlx`
-   offline cache and `SQLX_OFFLINE=true` in the installer land here, because
-   from this step on no build has a database to point at.
+1. **Store and importer. Done.** Schema and migrations, `gym db init`,
+   `gym db import`, and the five existing commands on SQLite, with parity
+   checked against the real archive: identical ids, membership and totals.
+   The `.sqlx` offline cache and `SQLX_OFFLINE=true` in the installer landed
+   here, because from this step on no build has a database to point at. The
+   retired git sync left with it: the `act` crate is gone, and `gym sync` is
+   the rsync described below.
 2. **`gym web`, read-only.** The Leptos shell in the chat3 look, the embedded
    hydrated assets, and the two analysis tabs reading only. This proves the
    build and install path before any write path exists.

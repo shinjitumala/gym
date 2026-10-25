@@ -1,0 +1,98 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT id AS \"id!\", name, calories AS \"calories!\", protein, fat, carbohydrate, note\nFROM food ORDER BY id\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "calories!",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "calories"
+          }
+        }
+      },
+      {
+        "name": "protein",
+        "ordinal": 3,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "protein"
+          }
+        }
+      },
+      {
+        "name": "fat",
+        "ordinal": 4,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "fat"
+          }
+        }
+      },
+      {
+        "name": "carbohydrate",
+        "ordinal": 5,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "carbohydrate"
+          }
+        }
+      },
+      {
+        "name": "note",
+        "ordinal": 6,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "note"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "daaa3705153320a9f82135ae54877fe9b40f12cc8a62918e2d70622af868e175"
+}

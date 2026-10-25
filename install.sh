@@ -11,7 +11,10 @@ for cmd in cargo jq rsync; do
 done
 
 cargo fmt
-cargo build --release --locked
+# Every query is a `sqlx` macro, checked against `migrations/` when the
+# committed `.sqlx` cache was made. `SQLX_OFFLINE` makes the build read that
+# cache, so installing needs no database.
+SQLX_OFFLINE=true cargo build --release --locked
 
 target=$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)
 dest="${CARGO_HOME:-$HOME/.cargo}/bin"

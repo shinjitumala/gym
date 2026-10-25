@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT exercise AS \"exercise!\", load AS \"load!\", rep AS \"rep!\", superset, inferred AS \"inferred!\" FROM training_set ORDER BY position",
+  "describe": {
+    "columns": [
+      {
+        "name": "exercise!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "exercise"
+          }
+        }
+      },
+      {
+        "name": "load!",
+        "ordinal": 1,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "load"
+          }
+        }
+      },
+      {
+        "name": "rep!",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "rep"
+          }
+        }
+      },
+      {
+        "name": "superset",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "superset"
+          }
+        }
+      },
+      {
+        "name": "inferred!",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "inferred"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b684466a20416748d10df1eed61cbed9352263f6078bafcbde9a94ecb85811ff"
+}

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT bodyfat FROM weight ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "name": "bodyfat",
+        "ordinal": 0,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "weight",
+            "name": "bodyfat"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "33816dbd088a013a4c8acd05bbefe1758a30b65cd61a1f222e5ca0f016a1a57d"
+}

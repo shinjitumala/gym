@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT e.id AS \"id!\", e.name, e.note\nFROM exercise e\nJOIN (\n    SELECT ts.exercise AS ex, MAX(julianday(ts.date)) AS last\n    FROM training_set ts\n    JOIN session s ON s.id = ts.session\n    WHERE s.place = ?1\n    GROUP BY ts.exercise\n) x ON x.ex = e.id\nORDER BY x.last DESC, e.id\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "note",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "note"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1e8e7260e0023fa14c25c2d3ce6d61815693d220ee47739beec7caf5aae564b6"
+}

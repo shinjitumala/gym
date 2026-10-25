@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO exercise (name) VALUES (?1)\nON CONFLICT (name) DO UPDATE SET name = excluded.name\nRETURNING id AS \"id!\", name, note\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "note",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "note"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a8fde3a19e1940812ae8b40b8290b8763d630a3fa1b2a7fb47779424d823e57e"
+}

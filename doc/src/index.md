@@ -1,14 +1,12 @@
 # Overview
 
-> **What this page describes.** The program as it runs today, with a TOML data
-directory. [The overhaul](overhaul.md) replaces that store with SQLite and adds
-a local web UI, keeping the commands; these pages stay accurate for the running
-build and for the archive, and the overhaul's pages are the plan.
+`gym` records a training log, weigh-ins and meals in one local SQLite database.
+There is no server and no account: the file is the database, and it belongs to
+the user, who can copy it, back it up, and open it with `sqlite3`.
 
-`gym` records a training log, weigh-ins and meals in plain TOML files on the
-machine that reads them. There is no server, no account and no database
-engine: the data directory is the database, and it belongs to the user, who can
-read it with `cat`, edit it with an editor, and back it up with `git`.
+The commands are a set of prompts. Each asks a handful of questions, writes a
+row, and exits; nothing runs in the background and nothing is kept in memory
+between commands.
 
 The tool is a set of prompts. Each command asks a handful of questions, appends
 the answers to the data directory, and exits; nothing runs in the background
@@ -23,19 +21,22 @@ and nothing is kept in memory between commands.
   carbohydrate for the current local day are printed before and after logging.
 - **Body weight and body fat over time.** Weigh-ins accumulate in monthly
   files, one row per day.
-- **A local history that a human owns.** Everything is a TOML file inside one
-  directory, which is also a git repository that `gym sync` pulls, commits and
-  pushes.
+- **A local history that a human owns.** Everything is one file that
+  `gym sync` rsyncs to a destination of the user's choosing. The TOML
+  directories of the previous version remain as the archive and as what
+  `gym db import` reads.
 
 ## The invariants worth knowing
 
-- **Append-only.** A command adds rows; no command edits or deletes an existing
-  one. A hand edit of the TOML files is therefore safe from the tool, and the
-  tool's own writes never rewrite rows it did not create in that run.
-- **Directories and files must already exist.** The data directory, its
-  sub-directories and its index files are validated at startup; see
-  [Configuration](configuration.md) and [the data files](data-files.md) for the
-  smallest directory the tool accepts.
+- **Add-only for now.** A command adds rows; no command edits or deletes an
+  existing one. Editing arrives with the intervention tabs on
+  [the overhaul](overhaul.md).
+- **The database file must be created once.** `gym db init` writes the schema;
+  every other command refuses to run against a missing file, and refuses a path
+  that is a directory. See [Configuration](configuration.md).
+- **Integrity is the schema's job.** A set's session and exercise, and a meal's
+  food, are foreign keys enforced by SQLite, so a row cannot point at something
+  that is not there.
 - **Interactive only.** Every command except `gym web` prompts for input on the
   terminal. There is no batch mode.
 - **ESC means "not this one".** At every prompt, ESC cancels the current
@@ -46,13 +47,13 @@ and nothing is kept in memory between commands.
 
 - [Configuration](configuration.md) — the config file, where it is looked up,
   and what is validated.
-- [The data files](data-files.md) — the directory layout and the schema of each
-  TOML file.
 - [Commands](commands.md) — every command, the questions it asks, and a worked
   example with real output.
+- [The TOML archive](data-files.md) — the previous version's file layout, kept
+  as the import source.
 - [Features and acceptance criteria](features.md) — the list of things this
   program is expected to do, each with the criteria that decide it is done.
+- [The SQLite schema](sqlite-schema.md) — the tables, and the migration from the
+  TOML archive.
 - [The overhaul](overhaul.md) — the rebuild onto SQLite and a local web UI: the
 decisions, the six tabs, and the order of work.
-- [The SQLite schema](sqlite-schema.md) — the target tables and the migration
-  from the TOML directories.

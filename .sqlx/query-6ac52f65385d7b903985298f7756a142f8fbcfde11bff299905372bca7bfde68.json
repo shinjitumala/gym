@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO weight (id, date, kg, bodyfat, note) VALUES (?1, ?2, ?3, ?4, ?5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "6ac52f65385d7b903985298f7756a142f8fbcfde11bff299905372bca7bfde68"
+}

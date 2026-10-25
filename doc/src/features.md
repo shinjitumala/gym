@@ -20,63 +20,64 @@ the real log in it.
 
 ## Feature: Log a training session
 
-Status: works. `gym new` asks for place, time, description, then exercises and
-their sets, printing the last three sessions of history for each exercise.
-After the rebuild the prompts stay; the rows go into the database.
+Status: works, on the database. `gym new` asks for place, time, description,
+then exercises and their sets, printing the last three sessions of history for
+each exercise.
 
 Acceptance criteria:
 
-- [ ] A session is written with its place, date, phase and description.
-- [ ] Each set is written immediately, with load, reps, note and its position
+- [x] A session is written with its place, date, phase and description.
+- [x] Each set is written immediately, with load, reps, note and its position
       in the session.
-- [ ] Before the first set of an exercise, the last three sessions of that
+- [x] Before the first set of an exercise, the last three sessions of that
       exercise at that place are printed as `date:` plus `load x rep` rows.
-- [ ] An unknown exercise name is created instead of being refused.
-- [ ] ESC on the `load` prompt ends the exercise; ESC on the exercise prompt
+- [x] An unknown exercise name is created instead of being refused.
+- [x] ESC on the `load` prompt ends the exercise; ESC on the exercise prompt
       ends the session.
-- [ ] A session with no sets is still recorded, and is not printed as history.
+- [x] A session with no sets is still recorded, and is not printed as history.
 - [ ] The previous session's numbers can be read at a glance without scrolling
       past more than three sessions of history.
 
 ## Feature: Log meals and see the day's totals
 
-Status: works. `gym food` prints the current local day's calories, protein,
+Status: works, on the database. `gym food` prints the current local day's calories, protein,
 fat and carbohydrate before and after logging meals.
 
 Acceptance criteria:
 
-- [ ] Totals cover local midnight to local midnight, whatever the machine's
+- [x] Totals cover local midnight to local midnight, whatever the machine's
       timezone offset is.
-- [ ] Each meal is written with food id, amount and description.
-- [ ] The amount is a multiplier of the food's per-unit numbers.
-- [ ] A food may be registered during the flow, with protein, fat and
+- [x] Each meal is written with food id, amount and description.
+- [x] The amount is a multiplier of the food's per-unit numbers.
+- [x] A food may be registered during the flow, with protein, fat and
       carbohydrate optionally unknown, and an unknown value is not stored as
       zero.
-- [ ] Registering a name that already exists is refused with a message saying
+- [x] Registering a name that already exists is refused with a message saying
       so.
-- [ ] `Add more food?` defaults to no, ending the command with the updated
+- [x] `Add more food?` defaults to no, ending the command with the updated
       totals.
-- [ ] The totals are the same, to the cent, as the old binary's on the same
+- [x] The totals are the same, to the cent, as the old binary's on the same
       data.
 
 ## Feature: Log weigh-ins
 
-Status: works. `gym weight` asks for date, kilograms, body fat percentage and a
+Status: works, on the database. `gym weight` asks for date, kilograms, body fat percentage and a
 note.
 
 Acceptance criteria:
 
-- [ ] The weigh-in is written, and read back by the trend exactly once.
-- [ ] Body fat may be left unknown without aborting the command, and unknown is
+- [x] The weigh-in is written, and read back by the trend exactly once.
+- [x] Body fat may be left unknown without aborting the command, and unknown is
       distinguishable from a measured zero.
-- [ ] The note may be empty.
-- [ ] Two weigh-ins on the same day are both kept, in the order they were
+- [x] The note may be empty.
+- [x] Two weigh-ins on the same day are both kept, in the order they were
       entered.
 
 ## Feature: Build and install
 
-Status: works. `./install.sh` formats, builds a release binary and installs it
-into `$CARGO_HOME/bin` atomically; `./deploy.sh` cross-compiles for
+Status: works, and the build is offline: `.sqlx` carries the checked queries.
+`./install.sh` formats, builds a release binary and installs it into
+`$CARGO_HOME/bin` atomically; `./deploy.sh` cross-compiles for
 `aarch64-linux-android`.
 
 Acceptance criteria:
@@ -85,11 +86,11 @@ Acceptance criteria:
 - [ ] The installed binary reports which build it is (`gym --version`).
 - [ ] The hydrated web assets are inside the binary, so installing is still one
       file and the Android build produces something runnable.
-- [ ] Every query is a `sqlx` macro checked at build time; a dynamic SQL string
+- [x] Every query is a `sqlx` macro checked at build time; a dynamic SQL string
       is absent from the source tree.
-- [ ] A build needs no database: the `.sqlx` offline cache is committed and
+- [x] A build needs no database: the `.sqlx` offline cache is committed and
       `install.sh` builds with `SQLX_OFFLINE=true`.
-- [ ] After a migration changes, one documented command sequence refreshes the
+- [x] After a migration changes, one documented command sequence refreshes the
       cache, and a stale cache fails the build instead of failing at runtime.
 - [ ] `./deploy.sh` states its NDK prerequisites and fails with a message, not
       a linker error, when they are missing.
@@ -97,33 +98,34 @@ Acceptance criteria:
 
 ## Feature: The SQLite store and the importer
 
-Status: missing. The log is TOML files sharded by day and month; the rebuild
-puts it in one SQLite database.
+Status: works. The log lives in one SQLite file, and `gym db import` fills it
+from the TOML archive the previous version wrote.
 
 Acceptance criteria:
 
-- [ ] `gym db init` creates an empty database file at the configured path with
+- [x] `gym db init` creates an empty database file at the configured path with
       the schema and the seeded tables, and refuses to touch a file that is
       already a database.
-- [ ] `db` in the config is the path to that file; a path that is a directory is
+- [x] `db` in the config is the path to that file; a path that is a directory is
       refused with a message saying so rather than being opened.
-- [ ] The schema exists only as `migrations/0001_init.sql`, applied by
+- [x] The schema exists only as `migrations/0001_init.sql`, applied by
       `sqlx::migrate!` on open, with no second copy in the source.
-- [ ] `gym db import <toml-dir>` fills a fresh database from the TOML
+- [x] `gym db import --dir <archive>` fills a fresh database from the TOML
       directories and is all-or-nothing.
-- [ ] Every old row arrives with its old id, and every reference — a set's
+- [x] Every old row arrives with its old id, and every reference — a set's
       session, a meal's food, an exercise's muscle groups — points at the row
       with the same content.
-- [ ] A set that no session lists is reported and stops the import, rather than
-      being attached to a guess.
-- [ ] The 226 parseable superset notes become groups of two sets sharing a
-      load, with the partner row marked `inferred`; the unparseable ones are
-      listed for a human.
-- [ ] The row counts and the aggregates listed under *Verifying an import* hold
-      on the real log.
-- [ ] The schema is documented on [the schema page](sqlite-schema.md), and the
-      document matches the migration files.
-- [ ] `setting` is seeded with the four defaults and read through a typed
+- [x] A set that no session lists is reported and stops the import, rather than
+      being attached to a guess; so is a set two sessions both list.
+- [x] The parseable superset notes become groups of two sets sharing a load,
+      with the partner row marked `inferred`; the unparseable ones are listed
+      for a human. With the 2026-05 archive and its mapping: 214 rows from 214
+      notes, 13 reported.
+- [x] The row counts and the aggregates listed under *Verifying an import* hold
+      on the real archive.
+- [x] The schema is documented on [the schema page](sqlite-schema.md), and the
+      document matches the migration file.
+- [x] `setting` is seeded with the four defaults and read through a typed
       accessor, so an absent row means the documented default rather than an
       error.
 
@@ -295,36 +297,36 @@ Acceptance criteria:
 
 ## Feature: Sync the database to the remote
 
-Status: missing. Today's `gym sync` is a git pull, commit and push of the data
-directory.
+Status: works. `gym sync` snapshots the database and rsyncs it to `remote`.
 
 Acceptance criteria:
 
-- [ ] `gym sync` copies the database to `remote` with `rsync`, from a
+- [x] `gym sync` copies the database to `remote` with `rsync`, from a
       consistent snapshot taken with `VACUUM INTO`, never from the live file.
-- [ ] `remote` is one string used verbatim as rsync's destination, and a local
+- [x] `remote` is one string used verbatim as rsync's destination, and a local
       path and a `host:path` both work.
-- [ ] Nothing is ever pulled back: a sync only writes at the destination.
-- [ ] A failed transfer exits non-zero and says what failed; a successful one
+- [x] Nothing is ever pulled back: a sync only writes at the destination.
+- [x] A failed transfer exits non-zero and says what failed; a successful one
       says where the copy went and how big it is.
-- [ ] Running it twice in a row succeeds and leaves one file at the
+- [x] Running it twice in a row succeeds and leaves one file at the
       destination.
-- [ ] The copy opens with `PRAGMA integrity_check` returning `ok`.
+- [x] The copy opens with `PRAGMA integrity_check` returning `ok`.
 - [ ] `gym sync` works while the server and a CLI write are running.
 
 ## Feature: Tests
 
-Status: missing. The program has no tests.
+Status: works for the store, the importer and the command surface;
+`cargo test` runs 26 of them.
 
 Acceptance criteria:
 
-- [ ] `test/` holds a fixture database with a known food day, a known exercise
-      history and a known set of weigh-ins.
-- [ ] The parity checks — totals to the cent, the history block, the weigh-in
-      read-back — are automated against the fixture.
+- [x] `test/` holds fixtures built per test: a known food day, a known exercise
+      history, known weigh-ins, and a small TOML archive for the importer.
+- [x] The parity checks — totals to the cent, the history block, the weigh-in
+      read-back — are automated.
 - [ ] The statistics are tested against synthetic series with a known slope and
       noise, including the "not enough data" cases.
-- [ ] `cargo test` runs them, and a failure names the assertion rather than a
+- [x] `cargo test` runs them, and a failure names the assertion rather than a
       diff of a whole table.
 
 ## Feature: Non-interactive input

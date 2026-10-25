@@ -6,6 +6,7 @@ use crate::com::*;
 
 pub type Res<T> = Result<T, Err>;
 
+#[derive(Debug)]
 pub enum Err {
     Str(String),
 }
@@ -16,9 +17,8 @@ impl From<String> for Err {
 }
 impl From<Err> for String {
     fn from(v: Err) -> String {
-        use Err::*;
         match v {
-            Str(s) => s,
+            Err::Str(s) => s,
         }
     }
 }
@@ -32,11 +32,25 @@ impl From<MyErr> for Err {
         Self::Str(v.into())
     }
 }
+impl From<sqlx::Error> for Err {
+    fn from(v: sqlx::Error) -> Self {
+        Self::Str(v.to_string())
+    }
+}
+impl From<sqlx::migrate::MigrateError> for Err {
+    fn from(v: sqlx::migrate::MigrateError) -> Self {
+        Self::Str(v.to_string())
+    }
+}
+impl From<std::io::Error> for Err {
+    fn from(v: std::io::Error) -> Self {
+        Self::Str(v.to_string())
+    }
+}
 impl Display for Err {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Err::*;
         match self {
-            Str(s) => write!(f, "{s}"),
+            Err::Str(s) => write!(f, "{s}"),
         }
     }
 }
@@ -86,6 +100,24 @@ pub fn input_date2(prompt: &str) -> Res<Date> {
             .prompt()?
             .into(),
     })
+}
+
+pub fn s2t(s: &str) -> Res<DateTime<Local>> {
+    Ok(DateTime::<Local>::from(
+        DateTime::parse_from_rfc3339(s).map_err(|e| e.to_string())?,
+    ))
+}
+pub fn t2s<T: TimeZone>(t: DateTime<T>) -> String {
+    t.to_utc().to_rfc3339()
+}
+
+/// The local day containing `now`, as a half-open pair: midnight to midnight.
+pub fn day_bounds(now: DateTime<Local>) -> (DateTime<Local>, DateTime<Local>) {
+    use chrono::Timelike;
+    let o =
+        chrono::Duration::seconds((now.hour() * 60 * 60 + now.minute() * 60 + now.second()) as i64);
+    let s = now - o;
+    (s, s + chrono::Duration::days(1))
 }
 
 pub fn to_one_rep_max(load: f64, rep: f64) -> Res<f64> {

@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT calories, protein, fat, carbohydrate FROM food WHERE id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "calories",
+        "ordinal": 0,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "calories"
+          }
+        }
+      },
+      {
+        "name": "protein",
+        "ordinal": 1,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "protein"
+          }
+        }
+      },
+      {
+        "name": "fat",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "fat"
+          }
+        }
+      },
+      {
+        "name": "carbohydrate",
+        "ordinal": 3,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "food",
+            "name": "carbohydrate"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "743bf8c30f11b45b3a0a4f0d73efd181c5791890122f0225d054180f2e6d6e56"
+}

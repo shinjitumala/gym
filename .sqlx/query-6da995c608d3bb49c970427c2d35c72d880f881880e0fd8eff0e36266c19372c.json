@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT session AS \"s!\" FROM training_set",
+  "describe": {
+    "columns": [
+      {
+        "name": "s!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "session"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6da995c608d3bb49c970427c2d35c72d880f881880e0fd8eff0e36266c19372c"
+}

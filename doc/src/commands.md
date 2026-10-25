@@ -1,40 +1,84 @@
 # Commands
 
-> **What this page describes.** The commands of the running build. The rebuild
-keeps their prompts, adds `gym db`, turns `gym web` into the UI, and changes
-`gym sync`'s transport; see [the overhaul](overhaul.md) and
-[its acceptance criteria](features.md).
-
 ```text
 $ gym
 Expected an act.
-? Choose an action.  
+? Choose an action.
 > weight Add weight data.
   web    Runs a local web server.
-  sync   Sync with remote.
+  sync   Copy the database to the configured remote.
   new    New session at the gym to the buffer.
   food   Add food data.
+  db     The database.
 [↑↓ to move, enter to select, type to filter]
 ```
 
-Every command is a sequence of prompts, and every prompt accepts ESC: on a
-list it means "none of these", on a text field it skips an optional value, on
-the set and exercise loops it ends that loop. Each command appends rows to the
-data directory ([the data files](data-files.md)) and prints nothing else
-except where noted.
+Every prompt in every command accepts ESC. On a text field it skips an
+optional value; on the set and exercise loops it ends that loop; on the food
+list it opens food registration instead of picking. Each command writes inside
+one transaction per row, and nothing runs in the background.
+
+## `gym db init`
+
+Creates the database at `db` with the schema, the seven seeded effort presets
+and the four settings:
+
+```text
+$ gym db init
+Created '/home/me/g/gym_data/gym.db'.
+Seeded the effort presets and the four settings.
+```
+
+It refuses a file that is already a database and refuses a path whose directory
+is missing, so a second run cannot wipe a log.
+
+## `gym db import`
+
+Fills an **empty** database from the TOML archive the previous version wrote:
+
+```text
+$ gym db init
+$ gym db import --dir ~/g/gym_data/d
+muscle groups    16
+places           6
+exercises        73
+exercise groups  52
+foods            123
+sessions         368
+sets             9878 (214 inferred, 214 supersets)
+weigh-ins        312
+meals            7529
+```
+
+- `--dir` is required: the directory holding `exercise.toml`, `place.toml`,
+  `food.toml`, `muscle_group.toml` and the `set/`, `session/`, `weight/` and
+  `meal/` directories.
+- `--map` takes a TOML table that resolves a superset note's partner name to an
+  exercise name. Without it, every superset note stays a note.
+
+The import is all-or-nothing: it runs in one transaction and rolls back on the
+first inconsistency, so a failure leaves an empty database. It refuses to run
+into a database that already holds log rows, and it stops rather than guessing
+when a set belongs to no session, to two sessions, or to an exercise that does
+not exist. See [the schema page](sqlite-schema.md#migrating-the-toml-archive)
+for what it reconstructs and what it reports instead.
 
 ## `gym weight`
 
 Asks for the date (defaulting to now), the weight in kilograms, the body fat
-percentage and a note, then appends one row to `weight/YYYY-MM.toml`.
+percentage and a note.
 
 ```text
 $ gym weight
 ? When did you measure? 2026-04-01T22:18:45+00:00
 ? Weight (kg) 69.6
-? Bodyfat (%) 13.7
+? Bodyfat (%) 
+[You can press ESC if unknown]
 ? Note
 ```
+
+ESC on `Bodyfat (%)` stores `NULL`, which is different from a measured `0.0`.
+Two weigh-ins in one day are both kept.
 
 ## `gym new`
 
@@ -42,16 +86,16 @@ Logs a training session. It asks for the place, the training time and a
 description, then loops over exercises until ESC:
 
 1. **Exercise.** Types ahead against the exercises already trained at the
-   chosen place. A name that is not in the list is created as a new exercise,
-   with no muscle groups attached.
+   chosen place. A name that is not in the list is created as a new exercise.
 2. **History.** The sets of the last three sessions of that exercise at that
-   place are printed, oldest data first, as `date:` followed by one `load x rep`
-   row per set:
+   place are printed, newest session first, as `date:` followed by one
+   `load x rep note` row per set:
 
    ```text
    ? Exercise bench press
-   2026-10-25T08:54:17+09:00:
-   60 x 8
+   2026-05-12T06:54:37+09:00:
+   97.5 x 6  Fail.
+   125  x 1  Complete. New PR.
    ? load
    [Press ESC if done with exercise]
    ```
@@ -59,9 +103,9 @@ description, then loops over exercises until ESC:
 3. **load → rep → Notes**, repeated. ESC on `load` finishes the exercise and
    returns to the exercise prompt; ESC there finishes the session.
 
-Each set is appended to `set/YYYY-MM-DD.toml` as soon as its notes are
-entered, and the session is written to `session/YYYY-MM.toml` when the command
-ends. A session that logs no sets is still written.
+Each set is written as soon as its note is entered, with a position one past
+the last set of that session, so the order of entry is preserved. A session
+that logs no sets is still recorded.
 
 ## `gym food`
 
@@ -87,41 +131,37 @@ calories kcal protein g fat g carbohydrate g
 - **Picking a food.** The list shows each food with its per-unit numbers. ESC
   opens the registration prompts instead: name (must not already exist),
   calories, then protein, fat and carbohydrate (each may be skipped with ESC
-  and is then `0.0`), and a description. The new food is appended to
-  `food.toml` and used for this meal.
+  and is stored as `NULL`, not `0`), and a description.
 - **Amount** is a multiplier on the food's numbers, defaulting to `1`. `2` of
   an 80 kcal unit is 160 kcal.
-- Each meal is appended to `meal/YYYY-MM-DD.toml`. `Add more food?` defaults to
-  `No`, which ends the command and prints the day's totals again.
+- Each meal is written with the timestamp of the day you answered. `Add more
+  food?` defaults to `No`, which ends the command and prints the totals again.
 
 ## `gym sync`
 
-Commits and publishes the data repository:
+Copies the database to `remote`, from a consistent snapshot:
 
 ```text
 $ gym sync
-+ dir=/home/me/g/gym_data
-+ git -C /home/me/g/gym_data pull
-...
-There is nothing to commit.
-+ mapfile -t a
+Snapshot '/tmp/gym-sync-4242.db' (1810432 bytes).
+gym-sync-4242.db
+         32,768B   1%        0B/s    0:00:00
+      1,810,432B 100%        1.7GB/s  0:00:00 (xfr#1, to-chk=0/1)
+Copied to '/home/me/g/gym_data/gym.db'.
 ```
 
-1. `git -C <repo> pull`.
-2. If `git status --porcelain` reports changes, `git add <repo>` and
-   `git commit -m upd.`; otherwise it prints `There is nothing to commit.`
-3. `git push <remote> --all` for every configured remote, announcing each as
-   `Pushing to '<remote>'...`.
+1. `VACUUM INTO` a temporary file, so the copy is consistent even while the
+   command's own pool or another process is writing.
+2. `rsync -uP` that file to `remote`.
+3. Delete the temporary file, whether or not the transfer succeeded.
 
-The steps run as shell scripts with tracing on, so the `+` lines above are
-normal output. A failing `git pull` prints git's message and does not stop the
-command — the commit and push still run. `gym sync` needs `git` in `PATH` and a
-repository whose remotes and branch tracking are already configured.
+A failed transfer exits non-zero and says so. Nothing is ever pulled back: the
+copy is an archive, never a second writer.
 
 ## `gym web`
 
 Not implemented yet. The command parses an optional address (default
-`0.0.0.0:8080`) and then panics:
+`127.0.0.1:8080`) and then panics:
 
 ```text
 $ gym web
@@ -130,6 +170,5 @@ not yet implemented
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 ```
 
-Exit status 101. Reading the data currently means reading the TOML files
-directly. In [the overhaul](overhaul.md#the-web-ui) this command becomes the
-local web UI, on `127.0.0.1:8080` by default instead of `0.0.0.0`.
+Exit status 101. [The overhaul](overhaul.md#the-web-ui) turns this command into
+the local web UI.

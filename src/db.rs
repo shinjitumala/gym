@@ -1,478 +1,288 @@
-mod util;
+use crate::{com::*, model::*};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::{Pool, Sqlite};
+use std::{path::Path, time::Duration};
 
-use crate::com::*;
-use chrono::{DateTime, Duration, Local, TimeZone, Timelike};
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    path::PathBuf,
-};
-use util::*;
-pub use util::{s2t, t2s};
+pub const MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 pub struct Db {
-    pub exercises: FileDb<Exercise>,
-    pub muscle_groups: FileDb<MuscleGroup>,
-    pub place: FileDb<Place>,
-    pub set: DirDb<Set>,
-    pub session: DirDb<Session>,
-    pub weight: DirDb<Weight>,
-    pub food: FileDb<Food>,
-    pub meal: DirDb<Meal>,
+    pub pool: Pool<Sqlite>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct Exercise {
-    pub name: String,
-    pub desc: String,
-    pub muscle_groups: Vec<Exercise2MuscleGroup>,
+fn options(p: &Path, create: bool) -> SqliteConnectOptions {
+    SqliteConnectOptions::new()
+        .filename(p)
+        .create_if_missing(create)
+        .journal_mode(SqliteJournalMode::Wal)
+        .foreign_keys(true)
+        .busy_timeout(Duration::from_secs(5))
+        .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
 }
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct Exercise2MuscleGroup {
-    group: usize,
-    amount: f64,
-}
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct MuscleGroup {
-    pub name: String,
-    pub desc: String,
-}
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct Place {
-    name: String,
-    desc: String,
-}
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct Set {
-    date: String,
-    session: usize,
-    exercise: usize,
-    load: f64,
-    rep: f64,
-    desc: String,
-}
-impl Timed for Set {
-    fn time(&self) -> &str {
-        &self.date
-    }
-}
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct Session {
-    date: String,
-    place: usize,
-    sets: Vec<usize>,
-    desc: String,
-}
-impl Timed for Session {
-    fn time(&self) -> &str {
-        &self.date
-    }
-}
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct Weight {
-    pub date: String,
-    pub kg: f64,
-    pub bodyfat: f64,
-    pub desc: String,
-}
-impl Timed for Weight {
-    fn time(&self) -> &str {
-        &self.date
-    }
-}
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct Food {
-    pub name: String,
-    pub calories: f64,
-    pub protein: f64,
-    pub fat: f64,
-    pub carbohydrate: f64,
-    pub desc: String,
-}
-#[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub struct Meal {
-    date: String,
-    food: usize,
-    amount: f64,
-    desc: String,
-}
-impl Timed for Meal {
-    fn time(&self) -> &str {
-        &self.date
-    }
+
+async fn pool(o: SqliteConnectOptions) -> Res<Pool<Sqlite>> {
+    Ok(SqlitePoolOptions::new()
+        .max_connections(4)
+        .acquire_timeout(Duration::from_secs(5))
+        .connect_with(o)
+        .await?)
 }
 
 impl Db {
-    const F_EXERCISE: &str = "exercise.toml";
-    const F_MUSCLE_GROUP: &str = "muscle_group.toml";
-    const F_PLACE: &str = "place.toml";
-    const D_SET: &str = "set";
-    const D_SESSION: &str = "session";
-    const D_WEIGHT: &str = "weight";
-    const F_FOOD: &str = "food.toml";
-    const D_MEAL: &str = "meal";
-
-    pub fn new(c: &C) -> Res<Self> {
-        let base = PathBuf::from(&c.cfg.db);
-        let e = base
-            .try_exists()
-            .map_err(|e| format!("Failed to read db directory '{}' because '{e}'.", &c.cfg.db))?;
-        if !e {
-            return Err(format!(
-                "Database directory '{}' does not exist.",
-                &c.cfg.db
+    pub async fn open(p: &str) -> Res<Self> {
+        let p = Path::new(p);
+        if p.is_dir() {
+            Err(format!(
+                "'{}' is a directory; the database is a file (see the configuration page)",
+                p.display()
             ))?;
         }
-
-        Ok(Self {
-            exercises: FileDb::load(base.join(Self::F_EXERCISE)).unwrap_or_default(),
-            muscle_groups: FileDb::load(base.join(Self::F_MUSCLE_GROUP)).unwrap_or_default(),
-            place: FileDb::load(base.join(Self::F_PLACE)).unwrap_or_default(),
-            set: DirDb::load(base.join(Self::D_SET), DirDbType::Day)?,
-            session: DirDb::load(base.join(Self::D_SESSION), DirDbType::Month)?,
-            weight: DirDb::load(base.join(Self::D_WEIGHT), DirDbType::Month)?,
-            food: FileDb::load(base.join(Self::F_FOOD)).unwrap_or_default(),
-            meal: DirDb::load(base.join(Self::D_MEAL), DirDbType::Day)?,
-        })
-    }
-    pub fn load_full(&mut self) -> Res<()> {
-        self.set.load_full()?;
-        self.session.load_full()?;
-        self.weight.load_full()?;
-        self.meal.load_full()?;
-        Ok(())
-    }
-    pub fn save(&self) -> Res<()> {
-        self.exercises.save()?;
-        self.muscle_groups.save()?;
-        self.place.save()?;
-        self.set.save()?;
-        self.session.save()?;
-        self.weight.save()?;
-        self.food.save()?;
-        self.meal.save()?;
-        Ok(())
-    }
-
-    pub fn exercises(&self, place: usize) -> Res<Vec<(&usize, &Exercise)>> {
-        let sids: HashSet<_> = self
-            .session
-            .find(|(_, e)| e.place == place)?
-            .into_iter()
-            .map(|(_, e)| e.sets)
-            .flatten()
-            .collect();
-        let eids: HashMap<_, _> = self
-            .set
-            .find(|(id, _)| sids.contains(id))?
-            .into_iter()
-            .into_group_map_by(|(_, e)| e.exercise)
-            .into_iter()
-            .map(|(id, s)| -> Res<_> {
-                Ok((
-                    id,
-                    s.into_iter()
-                        .map(|(_, s)| s2t(&s.date))
-                        .process_results(|i| i.sorted_by_key(|s| -s.timestamp()))?
-                        .next()
-                        .unwrap_or_default(),
-                ))
-            })
-            .process_results(|i| i.collect())?;
-
-        Ok(self
-            .exercises
-            .e
-            .e
-            .iter()
-            .filter_map(|(id, e)| eids.get(id).map(|d| (id, e, d)))
-            .sorted_by_key(|(_, _, d)| -d.timestamp())
-            .map(|(id, e, _)| (id, e))
-            .collect())
-    }
-
-    pub fn new_session(&mut self, place: usize, d: Date, desc: String) -> Res<usize> {
-        let id = self.session.add(Session {
-            date: d.to_string(),
-            place,
-            sets: Vec::new(),
-            desc,
-        });
-        Ok(id)
-    }
-    pub fn get_exercise(&mut self, exercise: &str) -> Res<(usize, Exercise)> {
-        if let Some((id, e)) = self.exercises.e.e.iter().find(|(_, e)| e.name == exercise) {
-            return Ok((*id, e.clone()));
+        if !p.exists() {
+            Err(format!(
+                "No database at '{}'. Create one with 'gym db init', or import the TOML archive with 'gym db import <dir>'.",
+                p.display()
+            ))?;
         }
-
-        let e = Exercise {
-            name: exercise.to_string(),
-            ..Exercise::default()
-        };
-        let id = self.exercises.e.add(e.clone());
-        Ok((id, e))
+        let pool = pool(options(p, false)).await?;
+        MIGRATOR.run(&pool).await?;
+        Ok(Self { pool })
     }
-    pub fn get_exercise_history(
+
+    pub async fn create(p: &str) -> Res<Self> {
+        let p = Path::new(p);
+        if p.is_dir() {
+            Err(format!(
+                "'{}' is a directory; the database is a file (see the configuration page)",
+                p.display()
+            ))?;
+        }
+        if let Some(d) = p.parent() {
+            if !d.as_os_str().is_empty() && !d.exists() {
+                Err(format!("'{}' does not exist.", d.display()))?;
+            }
+        }
+        if p.exists() {
+            let existing = pool(options(p, false)).await?;
+            let tables: i64 = sqlx::query_scalar!(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '_sqlx_migrations'"
+            )
+            .fetch_one(&existing)
+            .await?;
+            if tables > 0 {
+                Err(format!(
+                    "'{}' is already a database with {tables} table(s); refusing to initialise it.",
+                    p.display()
+                ))?;
+            }
+            existing.close().await;
+        }
+        let pool = pool(options(p, true)).await?;
+        MIGRATOR.run(&pool).await?;
+        Ok(Self { pool })
+    }
+
+    pub async fn places(&self) -> Res<Vec<Place>> {
+        Ok(sqlx::query_as!(
+            Place,
+            r#"
+SELECT p.id AS "id!", p.name, p.note
+FROM place p
+ORDER BY COALESCE((SELECT MAX(julianday(s.date)) FROM session s WHERE s.place = p.id), 0.0) DESC, p.id
+"#
+        )
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    pub async fn exercises(&self, place: i64) -> Res<Vec<Exercise>> {
+        Ok(sqlx::query_as!(
+            Exercise,
+            r#"
+SELECT e.id AS "id!", e.name, e.note
+FROM exercise e
+JOIN (
+    SELECT ts.exercise AS ex, MAX(julianday(ts.date)) AS last
+    FROM training_set ts
+    JOIN session s ON s.id = ts.session
+    WHERE s.place = ?1
+    GROUP BY ts.exercise
+) x ON x.ex = e.id
+ORDER BY x.last DESC, e.id
+"#,
+            place
+        )
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    pub async fn get_or_create_exercise(&self, name: &str) -> Res<Exercise> {
+        Ok(sqlx::query_as!(
+            Exercise,
+            r#"
+INSERT INTO exercise (name) VALUES (?1)
+ON CONFLICT (name) DO UPDATE SET name = excluded.name
+RETURNING id AS "id!", name, note
+"#,
+            name
+        )
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    pub async fn new_session(&self, place: i64, date: &str, note: &str) -> Res<i64> {
+        Ok(sqlx::query_scalar!(
+            r#"INSERT INTO session (date, place, note) VALUES (?1, ?2, ?3) RETURNING id AS "id!""#,
+            date,
+            place,
+            note
+        )
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    pub async fn new_set(
         &self,
-        place: usize,
-        exercise: usize,
-        limit: usize,
-    ) -> Res<Vec<ExerciseHistoryItem>> {
-        let mut s = HashSet::new();
-        Ok(self
-            .set
-            .find(|(_, e)| e.exercise == exercise)?
-            .into_iter()
-            .sorted_by_key(|(_, e)| e.date.to_owned())
-            .rev()
-            .map(|(id, e)| -> Res<_> {
-                let x = self
-                    .session
-                    .find(|(_, e)| e.sets.contains(&id) && e.place == place)?;
-                Ok((e, x))
-            })
-            .filter_map_ok(|(s, e)| e.into_iter().next().map(|(sid, e)| (s, sid, e)))
-            .take_while(|e| {
-                if let Ok((_, sid, _)) = e {
-                    s.insert(*sid);
-                };
-                s.len() <= limit
-            })
-            .map_ok(|(e, _, session)| ExerciseHistoryItem {
-                date: session.date,
-                load: e.load,
-                rep: e.rep,
-                desc: e.desc,
-            })
-            .process_results(|i| i.collect())?)
-    }
-
-    pub fn places(&self) -> Res<Vec<(&usize, &Place)>> {
-        Ok(self
-            .place
-            .e
-            .e
-            .iter()
-            .map(|(id, p)| -> Res<_> {
-                let d = self
-                    .session
-                    .find(|(_, s)| s.place == *id)?
-                    .into_iter()
-                    .map(|(id, s)| -> Res<_> {
-                        let t = s2t(&s.date)?;
-                        Ok((id, s, t))
-                    })
-                    .process_results(|i| {
-                        i.sorted_by_key(|(_, _, d)| -d.timestamp())
-                            .next()
-                            .map(|(_, _, d)| d)
-                            .unwrap_or_default()
-                    })?;
-                Ok((id, p, d))
-            })
-            .process_results(|i| {
-                i.sorted_by_key(|(_, _, d)| -d.timestamp())
-                    .map(|(id, p, _)| (id, p))
-                    .collect()
-            })?)
-    }
-
-    pub fn new_set<T: TimeZone>(
-        &mut self,
-        date: DateTime<T>,
-        session: usize,
-        exercise: usize,
+        session: i64,
+        exercise: i64,
+        date: &str,
         load: f64,
         rep: f64,
-        desc: String,
-    ) -> Res<()> {
-        let sid = self.set.add(Set {
-            date: t2s(date),
+        note: &str,
+    ) -> Res<i64> {
+        Ok(sqlx::query_scalar!(
+            r#"
+INSERT INTO training_set (session, exercise, position, date, load, rep, note)
+SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1, ?3, ?4, ?5, ?6 FROM training_set WHERE session = ?1
+RETURNING id AS "id!"
+"#,
             session,
             exercise,
+            date,
             load,
             rep,
-            desc,
-        });
-        let (_, s) = self
-            .session
-            .find_mut(|(id, _)| *id == session)?
-            .into_iter()
-            .exactly_one()
-            .map_err(|e| format!("Could not find session with id = '{session}' because '{e}'"))?;
-        s.sets.push(sid);
-        s.sets.sort();
-        Ok(())
+            note
+        )
+        .fetch_one(&self.pool)
+        .await?)
     }
 
-    pub fn add_weight(&mut self, date: Date, kg: f64, bodyfat: f64, note: String) -> Res<()> {
-        self.weight.add(Weight {
-            date: date.to_string(),
+    pub async fn history(&self, place: i64, exercise: i64, limit: i64) -> Res<Vec<HistoryItem>> {
+        Ok(sqlx::query_as!(
+            HistoryItem,
+            r#"
+SELECT s.date AS "date!", ts.load AS "load!", ts.rep AS "rep!", ts.note
+FROM training_set ts
+JOIN session s ON s.id = ts.session
+WHERE ts.exercise = ?1 AND s.place = ?2
+  AND ts.session IN (
+      SELECT ts2.session
+      FROM training_set ts2
+      JOIN session s2 ON s2.id = ts2.session
+      WHERE ts2.exercise = ?1 AND s2.place = ?2
+      GROUP BY ts2.session
+      ORDER BY MAX(julianday(s2.date)) DESC
+      LIMIT ?3
+  )
+ORDER BY julianday(ts.date) DESC, ts.id DESC
+"#,
+            exercise,
+            place,
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    pub async fn add_weight(
+        &self,
+        date: &str,
+        kg: f64,
+        bodyfat: Option<f64>,
+        note: &str,
+    ) -> Res<()> {
+        sqlx::query!(
+            "INSERT INTO weight (date, kg, bodyfat, note) VALUES (?1, ?2, ?3, ?4)",
+            date,
             kg,
             bodyfat,
-            desc: note,
-        });
+            note
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    pub fn calories_today(&mut self) -> Res<MealsDaily> {
-        let n = Local::now();
-        let o = Duration::seconds((n.hour() * 60 * 60 + n.minute() * 60 + n.second()) as i64);
-        let s = n - o;
-        let e = s + Duration::days(1);
-        println!("{} {}", s.to_rfc3339(), e.to_rfc3339());
-
-        let e = self
-            .meal
-            .find(|(_, m)| s2t(&m.date).map(|t| s <= t && t < e).unwrap_or(false))?
-            .iter()
-            .map(|(_, m)| -> Res<_> {
-                let f = self
-                    .food
-                    .e
-                    .e
-                    .get(&m.food)
-                    .ok_or(Err::Str(format!("No food with id '{}'.", m.food)))?;
-                Ok((m, f))
-            })
-            .process_results(|i| {
-                i.fold(MealsDaily::default(), |mut c, (m, f)| {
-                    c.calories += m.amount * f.calories;
-                    c.protein += m.amount * f.protein;
-                    c.fat += m.amount * f.fat;
-                    c.carbohydrate += m.amount * f.carbohydrate;
-                    c
-                })
-            })?;
-        Ok(e)
+    pub async fn day_totals(&self, from: &str, to: &str) -> Res<Totals> {
+        let r = sqlx::query!(
+            r#"
+SELECT
+    COALESCE(SUM(m.amount * f.calories), 0.0) AS "calories!: f64",
+    COALESCE(SUM(m.amount * f.protein), 0.0) AS "protein!: f64",
+    COALESCE(SUM(m.amount * f.fat), 0.0) AS "fat!: f64",
+    COALESCE(SUM(m.amount * f.carbohydrate), 0.0) AS "carbohydrate!: f64"
+FROM meal m
+JOIN food f ON f.id = m.food
+WHERE julianday(m.date) >= julianday(?1) AND julianday(m.date) < julianday(?2)
+"#,
+            from,
+            to
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(Totals {
+            calories: r.calories,
+            protein: r.protein,
+            fat: r.fat,
+            carbohydrate: r.carbohydrate,
+        })
     }
 
-    pub fn foods(&mut self) -> Res<Vec<(&usize, &Food)>> {
-        Ok(self.food.e.e.iter().collect())
+    pub async fn foods(&self) -> Res<Vec<Food>> {
+        Ok(sqlx::query_as!(
+            Food,
+            r#"
+SELECT id AS "id!", name, calories AS "calories!", protein, fat, carbohydrate, note
+FROM food ORDER BY id
+"#
+        )
+        .fetch_all(&self.pool)
+        .await?)
     }
-    pub fn new_food(
-        &mut self,
+
+    pub async fn new_food(
+        &self,
         name: &str,
         calories: f64,
         protein: Option<f64>,
         fat: Option<f64>,
         carbohydrate: Option<f64>,
-        desc: &str,
-    ) -> Res<usize> {
-        let id = self.food.e.add(Food {
-            name: name.to_owned(),
+        note: &str,
+    ) -> Res<i64> {
+        Ok(sqlx::query_scalar!(
+            r#"
+INSERT INTO food (name, calories, protein, fat, carbohydrate, note)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id
+"#,
+            name,
             calories,
-            protein: protein.unwrap_or_default(),
-            fat: fat.unwrap_or_default(),
-            carbohydrate: carbohydrate.unwrap_or_default(),
-            desc: desc.to_owned(),
-        });
-        Ok(id)
+            protein,
+            fat,
+            carbohydrate,
+            note
+        )
+        .fetch_one(&self.pool)
+        .await?)
     }
-    pub fn new_meal<T: TimeZone>(
-        &mut self,
-        date: DateTime<T>,
-        food: usize,
-        amount: f64,
-        desc: &str,
-    ) -> Res<()> {
-        self.meal.add(Meal {
-            date: t2s(date),
+
+    pub async fn new_meal(&self, date: &str, food: i64, amount: f64, note: &str) -> Res<()> {
+        sqlx::query!(
+            "INSERT INTO meal (date, food, amount, note) VALUES (?1, ?2, ?3, ?4)",
+            date,
             food,
             amount,
-            desc: desc.to_owned(),
-        });
+            note
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ExerciseHistoryItem {
-    pub date: String,
-    pub load: f64,
-    pub rep: f64,
-    pub desc: String,
-}
-#[derive(Clone, Debug, Serialize)]
-pub struct BestSet {
-    pub date: Date,
-    pub load: f64,
-    pub rep: f64,
-    pub max: f64,
-    pub desc: String,
-}
-
-impl Place {
-    pub fn to_line(&self) -> [&str; 2] {
-        [&self.name, &self.desc]
-    }
-}
-pub type Prog = HashMap<String, Vec<BestSet>>;
-impl Exercise {
-    pub fn to_line(&self) -> [&str; 2] {
-        [&self.name, &self.desc]
-    }
-}
-impl Food {
-    pub fn to_line(&self) -> [String; 6] {
-        [
-            self.name.to_owned(),
-            format!("{:.1}", self.calories),
-            format!("{:.1}", self.protein),
-            format!("{:.1}", self.fat),
-            format!("{:.1}", self.carbohydrate),
-            format!("{}", self.desc),
-        ]
-    }
-    pub fn head() -> [String; 6] {
-        [
-            format!("name"),
-            format!("calorie"),
-            format!("protein"),
-            format!("fat"),
-            format!("carbohydrate"),
-            format!("desc"),
-        ]
-    }
-
-    pub fn to_line2(&self) -> [String; 3] {
-        [
-            self.name.to_owned(),
-            format!("{:.1}", self.calories),
-            format!("{:.1}", self.desc),
-        ]
-    }
-    pub fn head2() -> [String; 3] {
-        [format!("name"), format!("calorie"), format!("desc")]
-    }
-    pub fn print(&self) -> String {
-        let x = [Food::head(), self.to_line()];
-        format!("{}", to_table(&x))
-    }
-}
-#[derive(Serialize, Clone, Default)]
-pub struct MealsDaily {
-    pub calories: f64,
-    pub protein: f64,
-    pub fat: f64,
-    pub carbohydrate: f64,
-}
-impl MealsDaily {
-    pub fn to_lines_today(&self) -> [[String; 4]; 2] {
-        [
-            [
-                format!("calories kcal"),
-                format!("protein g"),
-                format!("fat g"),
-                format!("carbohydrate g"),
-            ],
-            [
-                format!("{:.2}", self.calories),
-                format!("{:.2}", self.protein),
-                format!("{:.2}", self.fat),
-                format!("{:.2}", self.carbohydrate),
-            ],
-        ]
     }
 }
