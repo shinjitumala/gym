@@ -45,7 +45,7 @@ the current data directory as the archive.
 | 7 | The importer ships in this repository as `gym db import`. | It is tested like the rest of the program, and it doubles as the executable record of the old schema. One-off analysis scripts stay in the data directory. |
 | 8 | `sqlx` against SQLite, **with the compile-time macros only**. | `sqlx::query!`, `query_as!` and `query_scalar!` check every statement against the migrated schema at build time, so a column rename is a compile error. The `.sqlx` offline cache is committed and builds run with `SQLX_OFFLINE=true`, so neither the installer nor a cross-build needs a database. Hand-built SQL strings (`sqlx::query(&format!(...))`) are not permitted; a filter that varies is written as one statement with optional parameters (`WHERE (?1 IS NULL OR date >= ?1)`). |
 | 9 | Supersets are represented as a group with ordered members, not as a pair. | A three-exercise circuit is the same shape as a pair, and the analysis can count the group once. |
-| 10 | A deload halves the weight and halves the sets, and the analysis marks deload weeks on the chart rather than dropping them. | `session.deload`; the trend keeps the points and shades the week. |
+| 10 | A deload is opted into, never entered automatically. A reminder appears once the configured number of weeks has passed since the last deload, and a deload session halves the weight and halves the sets. The analysis marks deload weeks on the chart rather than dropping them. | `session.deload` is only ever set by the person logging the session; `setting.deload_weeks` (default 6) decides when the reminder appears; the trend keeps the points and shades the week. |
 | 11 | A PR is a better estimated 1RM than any earlier session of the exercise, by more than rounding. | Badge on the set; nothing stored, so a corrected set re-derives it. |
 | 12 | Bulk/cut is one phase with a start date, shared by food and training. | `phase` row with kind, start, target weight and target rate; a session records the phase that was active, so history does not shift when a new phase starts. |
 | 13 | Weight and intake statistics are computed over a trailing window with an uncertainty band, and the app reports "not enough data" rather than a number it cannot support. | See [weight and intake statistics](#weight-and-intake-statistics). |
@@ -62,7 +62,7 @@ terminal. Six tabs, two domains × three intents:
 | `/food` | Food · daily | Record meals; record weight and body fat; today's totals; meal presets sorted by last use; the weight trend against the phase goal. |
 | `/food/edit` | Food · intervention | Edit past meals and weigh-ins; edit a food's calories and macros; define and edit meal presets. |
 | `/food/analysis` | Food · analysis | Weight and body fat trend overlaid on a stacked bar of intake, split by the food it came from; favourite foods ranked by frequency and by calories contributed. |
-| `/gym` | Gym · daily | Record a session as today: place, exercises, load × reps. Effort presets beside the free-text note; a PR badge; the phase's target; the deload prompt when one is due; supersets; lists as a checklist. |
+| `/gym` | Gym · daily | Record a session as today: place, exercises, load × reps. Effort presets beside the free-text note; a PR badge; the phase's target; the deload reminder and its opt-in; supersets; lists as a checklist. |
 | `/gym/edit` | Gym · intervention | Edit past sessions and sets; exercise metadata (name, muscle groups and their amounts, an optional video link); places; muscle groups; rename and merge exercises; define lists. |
 | `/gym/analysis` | Gym · analysis | Strength trend per body part by estimated 1RM; sets per muscle group over time; deload weeks shaded. |
 
@@ -132,8 +132,14 @@ Two hazards come with hydration, and both are already solved in that app:
   text still available beside them. The presets are a table, so they are
   editable.
 - **Phase and deload targets.** In a bulk the suggested target is more load at
-  the phase's rep target; in a cut, the same load at more reps. A deload week
+  the phase's rep target; in a cut, the same load at more reps. A deload session
   suggests half the load and half the sets.
+- **The deload reminder.** When `deload_weeks` (default 6) has passed since the
+  last deload session, the daily screen says so and offers to enter deload mode.
+  Nothing switches by itself: the person opts in, the session is flagged, and the
+  suggested targets become half the load and half the sets for that session only.
+  Declining leaves the reminder in place; the week count starts again from the
+  deload that is actually logged.
 - **Supersets.** Mark two or more exercises as one group in the session; the
   members keep their own load and reps, and the group is recorded once.
 - **Lists.** An ordered set of exercises to work through, usable in any order
@@ -147,18 +153,38 @@ The numbers are small against the noise: a `+1 kg/month` bulk is about
 mornings. So:
 
 - **Trend** is a least-squares slope (equivalently a smoothed series) over a
-  trailing window, default 21 days, requiring at least 14 weigh-ins in it.
-  Below that the screen shows "not enough data" and the days it still needs.
+  trailing window, requiring a minimum number of weigh-ins in it. Below that the
+  screen shows "not enough data" and how many are still needed.
 - **Band** is the standard error of the slope, drawn with the trend. A goal is
   met when the whole band is inside the goal range, not when the point estimate
   is.
 - **Maintenance** is computed only from days with real logging (a day with a
-  single snack is not a day's intake) and only when at least 10 such days are in
-  the window; otherwise it is withheld, because an unlogged dinner biases it
+  single snack is not a day's intake) and only once enough such days are in the
+  window; otherwise it is withheld, because an unlogged dinner biases it
   downwards and the bias is indistinguishable from a slow metabolism.
 - **Water weight** is handled by the window, not by a model: a switch between
   bulk and cut is excluded from the window for the first week of the new phase,
   and the phase's start date is what the analysis uses to know that.
+
+The window and its thresholds are settings, not constants, so they can be
+changed without a rebuild; they are listed below.
+
+### Settings
+
+Four numbers are policy rather than data:
+
+| Key | Default | Decides |
+|-----|---------|---------|
+| `deload_weeks` | `6` | When the deload reminder appears. |
+| `trend_window_days` | `21` | The trailing window for the weight trend and maintenance. |
+| `trend_min_weighins` | `14` | Weigh-ins required in the window before a slope is shown. |
+| `maintenance_min_days` | `10` | Logged days required in the window before maintenance is shown. |
+
+They live in the database's `setting` table, not in `gym.json`, because they
+are properties of the analysis rather than of the machine, because changing one
+should not mean editing a file by hand, and because a slope shown in the past can
+then be recomputed with the window that was in force. Everything else is either
+derived or a row.
 
 ## Sync
 
@@ -225,9 +251,9 @@ and so does the Android cross-build.
 
 ## Open
 
-Nothing is outstanding from the design decisions. The two items that were open
-are settled: the sync configuration is the `remote` path, and the look is
-written down above. What remains undecided belongs to implementation, not
-design: whether `gym web` also serves over the LAN (it can, by passing an
-address, and the docs say what that exposes), and whether the deload trigger is
-a fixed week count or a stalled estimated 1RM.
+Nothing is outstanding from the design decisions. The three items that were open
+are settled: the sync configuration is the `remote` path, the look is written
+down above, and the deload trigger is the configured number of weeks, with deload
+mode entered by opting into it. What remains undecided belongs to implementation,
+not design: whether `gym web` also serves over the LAN (it can, by passing an
+address, and the docs say what that exposes).

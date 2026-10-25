@@ -95,6 +95,11 @@ CREATE TABLE effort (
     sort  INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE setting (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+);
+
 CREATE TABLE training_set (
     id        INTEGER PRIMARY KEY,
     session   INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
@@ -199,6 +204,17 @@ CREATE INDEX weight_date ON weight (date);
   first without a separate frequency table.
 - **Nothing about a PR or an estimated 1RM is stored.** Both are computed from
   `training_set`, so correcting a set re-derives the badge.
+- **`setting` holds the numbers that are policy, not data.** They are stored so
+  they can be changed without a rebuild, and so a past analysis can be explained
+  by the values that were in force. Each is read through a typed accessor in the
+  code, with the default applied when the row is absent:
+
+  | Key | Default | Meaning |
+  |-----|---------|---------|
+  | `deload_weeks` | `6` | Weeks after the last deload before the reminder appears. |
+  | `trend_window_days` | `21` | Trailing window for the weight trend and the maintenance estimate. |
+  | `trend_min_weighins` | `14` | Weigh-ins needed inside the window before a slope is shown. |
+  | `maintenance_min_days` | `10` | Logged days needed inside the window before maintenance is shown. |
 
 ### Constraints worth knowing
 
@@ -216,6 +232,16 @@ CREATE INDEX weight_date ON weight (date);
 fills an empty database. It is idempotent against an empty target: failing
 part-way leaves nothing behind, so it is run into a fresh file.
 
+The real run is:
+
+```bash
+$ gym db init
+$ gym db import ~/g/gym_data/d
+```
+
+with `db` in the config pointing at the new database file and `~/g/gym_data`
+kept as the git archive of the TOML era — the importer only reads from it.
+
 | Old | New | Note |
 |-----|-----|------|
 | `muscle_group.toml` | `muscle_group` | 16 rows today. |
@@ -227,6 +253,7 @@ part-way leaves nothing behind, so it is run into a fresh file.
 | `weight/*.toml` | `weight` | 312 rows today. `bodyfat = 0.0` is imported as `0.0`, not `NULL`, for the same reason as food. |
 | `meal/*.toml` | `meal` | 7 529 rows today. |
 | — | `effort` | Seeded with the vocabulary the notes already use: `fail`, `form fail`, `very hard`, `hard`, `incomplete`, `deload`, `easy`. |
+| — | `setting` | Seeded with the four defaults above (`deload_weeks = 6`, `trend_window_days = 21`, `trend_min_weighins = 14`, `maintenance_min_days = 10`). |
 | — | `phase`, `meal_preset`, `meal_preset_item`, `exercise_list`, `exercise_list_item`, `session_list_item`, `superset` | Empty except for the supersets below. |
 
 Old ids are preserved. Each old directory had its own id space, and so does

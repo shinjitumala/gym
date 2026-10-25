@@ -102,9 +102,11 @@ puts it in one SQLite database.
 
 Acceptance criteria:
 
-- [ ] `gym db init` creates an empty database at the configured path with the
-      schema and the seeded effort vocabulary, and refuses to touch a file that
-      is already a database.
+- [ ] `gym db init` creates an empty database file at the configured path with
+      the schema and the seeded tables, and refuses to touch a file that is
+      already a database.
+- [ ] `db` in the config is the path to that file; a path that is a directory is
+      refused with a message saying so rather than being opened.
 - [ ] The schema exists only as `migrations/0001_init.sql`, applied by
       `sqlx::migrate!` on open, with no second copy in the source.
 - [ ] `gym db import <toml-dir>` fills a fresh database from the TOML
@@ -121,6 +123,9 @@ Acceptance criteria:
       on the real log.
 - [ ] The schema is documented on [the schema page](sqlite-schema.md), and the
       document matches the migration files.
+- [ ] `setting` is seeded with the four defaults and read through a typed
+      accessor, so an absent row means the documented default rather than an
+      error.
 
 ## Feature: `gym web`, the local web UI
 
@@ -173,14 +178,17 @@ the exercise history.
 
 Acceptance criteria:
 
-- [ ] The trend is a least-squares slope over a trailing window (21 days by
-      default) that requires at least 14 weigh-ins, and the screen shows how
-      many are missing when there are fewer.
+- [ ] The trend is a least-squares slope over a trailing window whose length,
+      the weigh-in minimum and the logged-day minimum all come from the
+      `setting` table, and the screen shows how many weigh-ins are missing when
+      there are too few.
 - [ ] The trend is drawn with its uncertainty band, and a goal is met only when
       the whole band is inside the goal range.
 - [ ] The maintenance estimate uses intake and weight change over the same
-      window, counts only days with real logging, and is withheld below 10 such
-      days.
+      window, counts only days with real logging, and is withheld below the
+      configured minimum.
+- [ ] Changing a setting takes effect on the next request, with no restart and
+      no rebuild.
 - [ ] A bulk's default goal is `+1 kg/month`; a cut's is at or below zero; both
       come from the phase, not from a second setting.
 - [ ] Days inconsistent with the weight-implied trend are listed; no food is
@@ -236,8 +244,12 @@ Acceptance criteria:
       sets above 30 reps.
 - [ ] The phase's target is shown beside the last performance: more load in a
       bulk, the same load at more reps in a cut.
-- [ ] A deload is prompted when one is due, and a deload session's suggested
-      target is half the load and half the sets.
+- [ ] A deload reminder appears once `deload_weeks` has passed since the last
+      deload session, and the week count and the reminder are both visible.
+- [ ] Entering deload mode is an explicit opt-in on the session; nothing switches
+      by itself, and declining leaves the reminder in place.
+- [ ] A deload session's suggested target is half the load and half the sets, for
+      that session only.
 - [ ] Two or more exercises can be recorded as one superset group, each with
       its own reps, sharing the load.
 - [ ] A list can be started as the session's checklist, items can be completed
