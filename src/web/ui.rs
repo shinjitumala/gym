@@ -57,6 +57,13 @@ pub fn day_label(day: i64) -> String {
         .unwrap_or_default()
 }
 
+/// The same day with its year, for an axis whose labels are far apart.
+pub fn day_full(day: i64) -> String {
+    chrono::NaiveDate::from_num_days_from_ce_opt(day as i32)
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_default()
+}
+
 pub fn kg(v: f64) -> String {
     format!("{v:.1}")
 }
@@ -131,6 +138,7 @@ pub fn Kpi(
 /// Descendant selectors set the defaults once, so markup only says what is
 /// different about a given control.
 const APP_CLASS: &str = "relative bg-black h-dvh flex flex-col overflow-hidden text-gray-400 text-sm accent-green-500 max-w-[100vw] \
+    scrollbar-thin scrollbar-thumb-green-900 scrollbar-track-black \
     [&_button]:rounded-none [&_button]:border-2 [&_button]:border-green-900 [&_button]:bg-black [&_button]:text-green-400 [&_button]:px-2 [&_button]:font-bold \
     [&_button:hover]:border-green-500 [&_button:hover]:bg-green-950 [&_button:disabled]:opacity-30 [&_button:disabled]:cursor-not-allowed \
     [&_input]:rounded-none [&_input]:bg-black [&_input]:border-2 [&_input]:border-green-900 [&_input]:text-green-300 [&_input]:px-1 [&_input]:min-w-0 [&_input]:max-w-full \
@@ -140,6 +148,7 @@ const APP_CLASS: &str = "relative bg-black h-dvh flex flex-col overflow-hidden t
     [&_table]:w-full [&_table]:tabular-nums [&_th]:text-left [&_th]:text-green-500 [&_th]:font-bold [&_th]:whitespace-nowrap \
     [&_th]:border-b [&_th]:border-green-900 [&_th]:pr-2 [&_td]:text-left [&_td]:border-b [&_td]:border-green-900 [&_td]:pr-2 [&_td]:whitespace-nowrap \
     [&_h2]:text-green-500 [&_h2]:font-bold [&_h2]:text-sm [&_form]:flex [&_form]:flex-col [&_form]:gap-2 [&_main]:flex-1 [&_main]:overflow-auto [&_main]:min-w-0 \
+    [&_main]:scrollbar-gutter-stable \
     [&_select]:w-full [&_input]:w-full";
 
 const TABS: &str =

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM exercise_list_item WHERE list = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "a04dc0c5f4454e3ef1bea195e1aee9742c174cf7624a9b150869ef678a852ccd"
+}

@@ -29,8 +29,8 @@ phone never gets a menu:
 
 | Tab | Daily | Edit (bottom) | Analyse (bottom) |
 |-----|-------|---------------|------------------|
-| gym | Start a session, the checklist, the exercise window, the superset form, the phase switch, recent sessions. | Sessions and sets, exercises and muscle groups, gym presets, places. | One exercise's strength, overlaid with sets per week for it and its muscle group, and the deload weeks shaded. |
-| food | Today's totals against maintenance, the meal being entered, the day's meals. | Meals, foods, meal presets. | — the intake chart lives under weight, beside the trend it is read against. |
+| gym | The phase switch and the start form, or — once a session is open — the session itself, full screen. | Sessions and sets, exercises and muscle groups, gym presets, places. | One exercise's strength, overlaid with sets per week for it and its muscle group, and the deload weeks shaded. |
+| food | Today's totals against maintenance, the meal being entered with its projected day, the day's meals. | Meals, foods, meal presets. | — the intake chart lives under weight, beside the trend it is read against. |
 | weight | The trend and the last weigh-in, the weigh-in form, recent weigh-ins. | Past weigh-ins. | Weight and body fat by phase, with the intake bars underneath and the range's foods ranked beside them. |
 
 `/status` shows the database file, the remote, and the row counts.
@@ -50,14 +50,30 @@ not for the message.
   the sets of each exercise are appended to it as they are saved, each stamped
   with the minute it was saved. `end session` closes it, and a session with no
   sets is discarded instead of stored as an empty one.
-- **The checklist is the session's plan.** Applying a gym preset puts its
-  exercises on the checklist in the preset's order; picking an exercise from the
-  list adds it. ☐ and ☑ say what still has to be done, so the next exercise is a
-  tap away rather than a search.
+- **An open session takes the whole screen.** The phase switch and the start
+  form are behind it rather than beside it, so a session has one exit — `end
+  session`, in the row that never scrolls away — and nothing else on the page
+  can be clicked by mistake. The screen is not a route: leaving the page and
+  coming back finds the same open session, because what makes a session open is
+  its row, not the view. `✕` inside the exercise window goes back to the
+  session's list; it does not end the session.
+- **The list comes first, then `start sets`.** Applying a gym preset puts its
+  exercises on the list in the preset's order, and picking an exercise from the
+  picker adds it; picking one does *not* open its window. `start sets` opens the
+  window on the first exercise still to do. ☐ and ☑ say what is left.
 - **The exercise window is where a set is recorded.** It opens on the last load
   used for that exercise, offers the three efforts with what each means, and
   prints the advice for the next set beside the last three sessions of that
-  exercise. `✕` goes back to the checklist.
+  exercise.
+- **The window says which exercise is next, and lets it be changed.** By default
+  that is the next one on the list, wrapping round — which is what makes a
+  superset alternate between its exercises — and the dropdown beside it opens
+  the window on any exercise on the list instead. The sets keep the session-wide
+  `position` they were saved in, so the alternation is recorded, not just shown.
+- **A saved set is corrected where it is.** A typo is found the moment the row
+  is saved, so the row folds out in the session's table with its load, reps,
+  effort and note; saving writes that row only. Nothing has to be ended and
+  re-entered to fix a number.
 - **A superset is one unit.** Two or more checklist exercises are given one
   load and a rep count each, and saved together: the sets share the group's id,
   so the log can say they were done back to back. A blank rep row keeps that
@@ -74,8 +90,14 @@ not for the message.
   recommendation compares before load and reps. See
   [effort before weight](requirements.md#effort-is-compared-before-weight).
 - **A meal is a draft until it is saved.** Rows are added from a food list and
-  previewed as they are typed; `save` writes them in one transaction. A preset is
-  one button and records all of its foods at once.
+  previewed as they are typed; `save` writes them in one transaction. A preset
+  loads its foods and amounts into the draft, and nothing is written by that: the
+  reader edits the rows it filled, then saves. Loading a preset stamps it as
+  used, so the list keeps sorting by the preset reached for first.
+- **The draft says what the day would come to.** Under the rows, the projected
+  day repeats the four figures at the top of the page — calories, protein, fat
+  and carbohydrate — with the draft added, so the meal is judged before it is
+  saved rather than after.
 - **A weigh-in is separate from a meal**, and body fat left blank is stored as
   `NULL`, which is not the same as a measured `0`.
 - **The phase switch is on the gym daily page.** Starting a phase ends the old
@@ -92,16 +114,72 @@ the refusal says how many rows use it.
 - **Merging an exercise** moves every set and list item to the survivor, unions
   the muscle groups, and deletes the other. There is no undo, so the button
   says so.
+- **A gym preset is edited in place.** Its row folds out into a name and a list
+  of exercises, one row each, with `add exercise` growing the list and `remove`
+  dropping a row; saving rewrites the preset in one transaction. A new preset
+  starts with the one exercise it must have and grows from there. Finished
+  sessions store the exercises they recorded, not the preset, so rewriting one
+  never rewrites history.
 - **A deload is a session's flag**, not a set's: the toggle sits on the session
   row, because a deload is a week's plan.
 
 ## Charts
 
-Both analysis pages draw with inline SVG, and both say what their range is. A
-deload week is a band behind the line rather than a gap in it: the session still
-has its point and the band says why the load dipped. The weight line's colour
-comes from the phase each weigh-in was taken in, so a phase boundary is visible
-without a second mark.
+Both analysis pages draw with inline SVG, and both say what their range is. Every
+chart labels its axes: four dates along the bottom, `YYYY-MM-DD`, spread over the
+window, and round numbers up the side — whole kilograms, whole calories, sets per
+week to one decimal — with a dashed gridline at each. The numbers are picked at a
+1/2/5 step, so an axis reads `80, 82, 84` rather than `80.37`, and the date labels
+are the days the data actually spans, not the range the reader asked for.
+
+An SVG `text` fills **black** unless it is told otherwise, and this page's
+background is black: the colour class on the `<svg>` colours the element, not the
+glyphs. Every axis label therefore carries an explicit `fill`, and a scenario in
+`test/web/drive.py` asserts the computed fill is not the background.
+
+**The line is the range, not the slope's window.** The weight chart draws every
+weigh-in in the chosen range; the trailing window is what the *slope* needs, and
+`trend.points` is only that window. A log whose last weigh-in is older than the
+window used to draw body fat — built from the whole range — and a blank weight
+line beside it, saying "0 weigh-ins in the window". The line now comes from the
+range's own observations, so that page cannot contradict itself.
+
+A deload week is a band behind the line rather than a gap in it: the session
+still has its point and the band says why the load dipped. The weight line's
+colour comes from the phase each weigh-in was taken in, so a phase boundary is
+visible without a second mark.
+
+**No chart library.** `leptos-chartistry` was evaluated and not adopted: it would
+put a chart crate and its `leptos-use`/`web-sys` dependencies into both halves of
+the render path, to draw a polyline, a stack of rectangles and a handful of
+labels — which are already written here in about four hundred lines, in the same
+look as the rest of the app, with the threshold rules (no line from two
+weigh-ins) expressed in the same place as the drawing. The four charts do not
+justify a dependency; the axes above were the whole of what was missing.
+
+## Where body weight is read
+
+Weight and body fat are recorded on **weight · daily** and charted on
+**weight · analyse**; food keeps no weight of its own, and its analysis page was
+retired with the redesign. So "the weight is missing" is a question about the
+analysis window, and the page answers it two ways:
+
+- The range opens on **365 days**, not a quarter, because body weight is read
+  over months and a log with a gap of a few weeks would otherwise open on an
+  empty chart. The line is drawn from the range's weigh-ins, whatever the
+  slope's own trailing window holds.
+- When the window still holds fewer than two weigh-ins, the page says how many
+  it has and when the last one was, so a narrow range reads as a narrow range
+  rather than as a log with no weight in it. The same sentence covers body fat,
+  which is drawn only when at least two weigh-ins in the window measured it.
+
+```text
+0 weigh-in(s) in the last 90 days, and a line needs two. The last weigh-in is
+dated 2026-04-14: widen the range to reach it, or log a new one.
+```
+
+The intake bars live on the same page for the same reason: a window with no
+meals in it is a fact about the window, and the statement above it says so.
 
 Under the weight line, the intake bars show one day at a time. Beneath them, the
 foods in the whole range are ranked by the metric the bars are showing, with each
@@ -128,6 +206,21 @@ classes on the markup, with no theme file. The base look (black, a green ramp,
 blocky controls, 2px borders, no rounded corners) is one `APP_CLASS` string on
 the app root, whose descendant selectors set the defaults; markup then says only
 what is different about a control.
+
+The scrollbar is part of that look: `scrollbar-thin scrollbar-thumb-green-900
+scrollbar-track-black` on the app root — a thin bar, a green-900 thumb on black —
+and `scrollbar-gutter-stable` on the scrolling column, so a page that grows a
+scrollbar does not shift its controls sideways. Those utilities are first-party
+from **Tailwind v4.3**; the build pins that release rather than whatever version
+the tool happens to have cached:
+
+```bash
+$ LEPTOS_TAILWIND_VERSION=v4.3.3 cargo leptos build --release
+```
+
+cargo-leptos reads `LEPTOS_TAILWIND_VERSION`, and `test/web/drive.py` sets it, so
+a build that reassembles the stylesheet gets the same release. On v4.2 the three
+`scrollbar-*` classes generate nothing, and the browser falls back to its own bar.
 
 The hydrated bundle is **inside the binary**, so installing stays one file:
 

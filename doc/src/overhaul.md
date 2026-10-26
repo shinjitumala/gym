@@ -53,18 +53,27 @@ the current data directory as the archive.
 
 ## The web UI
 
-`gym web` starts the server — the command exists today and panics, so the name
-and the address flag are already there to fill in. The CLI prompts stay for the
-terminal. Six tabs, two domains × three intents:
+`gym web` serves the log on loopback; the CLI prompts stay for the terminal.
+The design first drew six tabs, two domains × three intents, and shipping settled
+it at three tabs — one per thing the log records — with a mode's **edit** and
+**analyse** pages reached from the bottom of its daily page. The two decisions
+that moved are recorded with them: weight and body fat belong to the body's own
+mode rather than to food, and food therefore has no analysis page of its own —
+the intake chart is read against the weight trend, so it is drawn under it.
 
 | Route | Tab | Contents |
 |-------|-----|----------|
-| `/food` | Food · daily | Record meals; record weight and body fat; today's totals; meal presets sorted by last use; the weight trend against the phase goal. |
-| `/food/edit` | Food · intervention | Edit past meals and weigh-ins; edit a food's calories and macros; define and edit meal presets. |
-| `/food/analysis` | Food · analysis | Weight and body fat trend overlaid on a stacked bar of intake, split by the food it came from; favourite foods ranked by frequency and by calories contributed. |
-| `/gym` | Gym · daily | Record a session as today: place, exercises, load × reps. Effort presets beside the free-text note; a PR badge; the phase's target; the deload reminder and its opt-in; supersets; lists as a checklist. |
-| `/gym/edit` | Gym · intervention | Edit past sessions and sets; exercise metadata (name, muscle groups and their amounts, an optional video link); places; muscle groups; rename and merge exercises; define lists. |
-| `/gym/analysis` | Gym · analysis | Strength trend per body part by estimated 1RM; sets per muscle group over time; deload weeks shaded. |
+| `/gym` | Gym · daily | A session as today: place, a list of exercises, load × reps. Effort presets beside the free-text note; a PR badge; the phase's target; the deload reminder and its opt-in; supersets. |
+| `/gym/edit` | Gym · intervention | Edit past sessions and sets; exercise metadata (name, muscle groups and their amounts, an optional video link); places; muscle groups; rename and merge exercises; define presets. |
+| `/gym/analyse` | Gym · analysis | Strength trend per body part by estimated 1RM; sets per muscle group over time; deload weeks shaded. |
+| `/food` | Food · daily | Record meals; today's totals against maintenance; meal presets sorted by last use. |
+| `/food/edit` | Food · intervention | Edit past meals; edit a food's calories and macros; define and edit meal presets. |
+| `/weight` | Weight · daily | Record weight and body fat; the last weigh-in; the trend against the phase goal; recent weigh-ins. |
+| `/weight/edit` | Weight · intervention | Edit past weigh-ins. |
+| `/weight/analyse` | Weight · analysis | Weight, coloured by phase, and body fat over a chosen range, overlaid on a stacked bar of intake split by the food it came from; the range's foods ranked beside them; deload weeks shaded. |
+
+There is no `/food/analysis`: the ranking that was drawn there is the range's
+foods under the intake bars, which is on `/weight/analyse`.
 
 ### The look
 
@@ -97,7 +106,11 @@ Geometry and structure:
   `first:border-t-0`) — the two idioms the tabs are built from.
 - Control rows collapse to one column below `md`, two above (`md:grid-cols-2`).
 - Native controls keep the palette: `accent-green-500` on checkboxes and radios,
-  and a thin scrollbar (`scrollbar-thin`, green-900 thumb on black).
+  and a thin scrollbar — `scrollbar-thin scrollbar-thumb-green-900
+  scrollbar-track-black` on the app root, with `scrollbar-gutter-stable` on the
+  scrolling column so a page that grows a scrollbar does not shift sideways.
+  Those utilities are Tailwind v4.3's, so the build pins v4.3 (see
+  [the web page](web.md#building-it)).
 - Fonts are Tailwind's defaults; nothing is imported.
 
 Two hazards come with hydration, and both are already solved in that app:

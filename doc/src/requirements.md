@@ -59,9 +59,9 @@ the sentence it returns.
 
 ## Daily · gym
 
-The user starts a session, picks a place, then either applies a preset or picks
-an exercise, records the sets of that exercise, and moves on until the session
-is ended.
+The user starts a session, picks a place, builds the session's list — from a
+preset or an exercise at a time — then presses `start sets` and records the sets
+of that exercise, moving to the next one until the session is ended.
 
 Acceptance criteria:
 
@@ -73,8 +73,21 @@ Acceptance criteria:
 - [x] **A preset fills the checklist** with its exercises in the preset's own
       order, and a preset with no exercises is refused rather than applied
       silently.
-- [x] **The checklist shows progress** — what is not started, and how many sets
-      each exercise has — and any exercise on it opens the exercise window.
+- [x] **The list shows progress** — what is not started, and how many sets each
+      exercise has — and any exercise on it opens the exercise window.
+- [x] **Picking an exercise adds it to the list and does not start recording.**
+      `start sets` opens the window on the first exercise still to do, so the
+      list can be assembled first and recorded afterwards.
+- [x] **An open session is the whole screen**, and `end session` is its exit:
+      the start form and the phase switch are not on the page behind it, so a
+      mis-click cannot start a second session or lose the open one, and the
+      session is still open until it is ended.
+- [x] **A saved set is corrected in place** — `edit` on the row folds out its
+      load, reps, effort and note, and saving writes that row alone, so a typo
+      does not mean ending the session.
+- [x] **The window names the next exercise and lets it be changed**: the default
+      is the next one on the list, wrapping round, which is the alternation a
+      superset needs; the dropdown opens any exercise on the list instead.
 - [x] **The exercise window opens on the numbers to beat**: this session's sets
       with the time each was saved, the advice from
       [effort before weight](#effort-is-compared-before-weight), and the last
@@ -88,7 +101,9 @@ Acceptance criteria:
 - [x] **X returns to the checklist**, where the exercise now reads as done.
 - [x] **End session closes it.** A session with no sets is discarded rather than
       stored as an empty one, and either way the daily page goes back to
-      offering a new session.
+      offering a new session. The daily page lists no recent sessions: the log
+      is read on the edit page and in the analysis, so the daily page holds the
+      day.
 - [x] **The cut/bulk switch is on this page**, and starting a phase records it
       from that date; past sessions keep the phase they were trained in.
 - [x] **A session can be marked as a deload after it starts**, on the session
@@ -102,7 +117,10 @@ Acceptance criteria:
 - [x] **A superset records two or more exercises as one unit**: one load for the
       group, a rep count for each exercise, saved in one action. A blank rep row
       keeps that exercise out, so the group is exactly the exercises that were
-      given reps, and the checklist marks each of them done.
+      given reps, and the list marks each of them done.
+- [x] **The order a superset was performed in is recorded**, not inferred: every
+      set carries the session-wide position it was saved at, so two sets of one
+      group at positions 3 and 4 say which exercise came first.
 
 ## Daily · food
 
@@ -113,8 +131,11 @@ Acceptance criteria:
 
 - [x] **The meal's time defaults to now**, and `now` fills the date and time
       from the server's clock.
-- [x] **A preset records every food in it at once**, at the current date and
-      time, and moves to the top of the preset list.
+- [x] **A preset loads its foods into the meal being entered** rather than
+      recording them: the rows land in the draft, can be changed or removed, and
+      nothing is written before `save`. Loading one still moves it to the top of
+      the preset list, because that list is ordered by what the reader reaches
+      for.
 - [x] **A row is added from a food list** sorted by the last time that food was
       eaten, searchable by name.
 - [x] **A row previews its own calories and macros** while its amount is typed,
@@ -126,6 +147,9 @@ Acceptance criteria:
       estimate is available, and what is still missing when it is not.
 - [x] **The saved rows appear in the day's table immediately**, with their time,
       amount and macros.
+- [x] **The form projects the day**: under the draft, the same four figures the
+      top of the page shows — calories, protein, fat and carbohydrate — are
+      shown with the draft added, so the meal is judged before it is saved.
 
 ## Daily · weight
 
@@ -137,6 +161,17 @@ Acceptance criteria:
 - [x] **The last weigh-in and the trend** are shown with the phase's goal or a
       statement of what data is missing.
 - [x] **The recent weigh-ins are listed newest first** with their body fat.
+
+## The look
+
+Acceptance criteria:
+
+- [x] **The scrollbar is styled**: thin, a green-900 thumb on a black track, from
+      Tailwind v4.3's `scrollbar-*` utilities, and the scrolling column reserves
+      its room so a page that grows a bar does not shift sideways.
+- [x] **Every chart has its axes**: dates along the bottom and round numbers up
+      the side, with the deload bands and the phase colours still readable
+      behind them.
 
 ## Edit
 
@@ -150,6 +185,10 @@ Acceptance criteria:
 - [x] **Gym · edit** manages sessions and sets (load, reps, effort, note), the
       deload flag, exercises with their muscle groups and video link, gym
       presets (a named list of exercises), places and muscle groups.
+- [x] **A gym preset starts with one exercise and grows a row at a time**, and an
+      existing preset is edited where it is: its name and its exercise rows are
+      rewritten in one transaction, and a finished session keeps the exercises it
+      recorded.
 - [x] **Food · edit** manages meals, foods and meal presets.
 - [x] **Weight · edit** manages past weigh-ins.
 - [x] **A row is edited in place**, and a delete that the log still depends on
@@ -161,15 +200,28 @@ Acceptance criteria:
 
 Acceptance criteria:
 
+- [x] **The chart's labels are readable**: the dates and numbers are painted in a
+      colour other than the background, and the numbers sit in the chart's margin
+      rather than over the plot.
 - [x] **Gym · analyse** plots one chosen exercise's estimated 1RM, overlaid with
       sets per week for that exercise and for the exercises that share its main
       muscle group on a second scale, and the time range can be changed.
+- [x] **The exercise list is searchable**: a filter over the list that has a
+      trend, narrowing by name or muscle group, and picking one draws it. The
+      list, not a select, is what makes a log of two hundred exercises usable.
 - [x] **Gym · analyse shades the deload weeks** behind the strength line rather
       than dropping them, so the trend keeps every session's point, and the
       legend names the band.
 - [x] **Weight · analyse** plots weight and body fat over a chosen range, with
       the weight line coloured by the phase each weigh-in was taken in, and the
       deload weeks shaded behind it.
+- [x] **The range opens on the data**: a year by default, and when the window
+      still holds fewer than two weigh-ins the page says how many it holds and
+      when the last weigh-in was, so an empty chart is explained rather than
+      mistaken for a missing log.
+- [x] **The weight line is the range's weigh-ins**, not the slope's trailing
+      window: a log whose latest weigh-in is older than the window still draws a
+      line, and only the slope is withheld.
 - [x] **Under the weight line, the intake bars** are drawn per day, switchable
       between calories and each macro, and pressing or hovering a bar names the
       foods that made that day.
@@ -178,6 +230,8 @@ Acceptance criteria:
       each food's share of the range beside it. The ranking covers the whole
       chosen range, not the picked day.
 - [x] **The analysis pages write nothing**: every request from them is a read.
+- [x] **The food ranking has no page**: the range's foods are ranked under the
+      bars, and `/food/analyse` is not a route.
 
 ### The per-food ranking has no page of its own
 

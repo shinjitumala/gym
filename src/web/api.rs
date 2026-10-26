@@ -229,18 +229,12 @@ pub async fn act_delete_food(id: i64) -> Result<String, ServerFnError> {
 }
 
 #[server(input = Json)]
-pub async fn act_apply_preset(
-    preset: i64,
-    date: String,
-    time: String,
-    multiplier: String,
-) -> Result<String, ServerFnError> {
+pub async fn act_touch_preset(preset: i64) -> Result<String, ServerFnError> {
     let db = open().await?;
-    let multiplier = crate::web::actions::num(&multiplier, "multiplier").map_err(error)?;
-    let n = crate::web::actions::apply_preset(&db, preset, &date, &time, multiplier)
+    crate::web::actions::touch_preset(&db, preset)
         .await
         .map_err(error)?;
-    Ok(format!("Recorded preset #{preset}: {n} item(s)."))
+    Ok(format!("Loaded preset #{preset}."))
 }
 
 #[server(input = Json)]
@@ -493,6 +487,19 @@ pub async fn act_add_exercise_preset(
         .await
         .map_err(error)?;
     Ok(format!("Added gym preset #{id}."))
+}
+
+#[server(input = Json)]
+pub async fn act_edit_exercise_preset(
+    id: i64,
+    name: String,
+    exercises: Vec<i64>,
+) -> Result<String, ServerFnError> {
+    let db = open().await?;
+    crate::web::actions::edit_exercise_preset(&db, id, &name, exercises)
+        .await
+        .map_err(error)?;
+    Ok(format!("Saved gym preset #{id}."))
 }
 
 #[server(input = Json)]

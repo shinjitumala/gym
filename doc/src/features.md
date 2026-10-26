@@ -148,7 +148,10 @@ Acceptance criteria:
       daily page.
 - [x] Every page writes what it is for; no page is read-only by omission.
 - [x] The look is the one on [the overhaul](overhaul.md#the-look) page: black
-      background, green ramp, blocky 2px borders, no rounded corners.
+      background, green ramp, blocky 2px borders, no rounded corners, and a thin
+      green-900 scrollbar from Tailwind v4.3's utilities.
+- [x] Both analysis pages draw charts with dates along the bottom and numbers up
+      the side, at round steps rather than raw data values.
 - [x] The analysis pages are read-only: no request from them writes a row.
 - [x] The server and a CLI write can run at the same time without a lock
       failure under normal use (WAL, a busy timeout, one short transaction per
@@ -158,8 +161,8 @@ Acceptance criteria:
 
 ## Feature: Food · daily
 
-Status: works. The meal being entered, today's totals against maintenance, and
-the day's meals.
+Status: works. The meal being entered, today's totals against maintenance, the
+meal's projection, and the day's meals.
 
 Acceptance criteria:
 
@@ -168,8 +171,11 @@ Acceptance criteria:
       saved in one transaction; nothing is written before `save`.
 - [x] A food can be registered from the edit tab, and its macros may be
       unknown.
-- [x] A meal preset records all of its foods in one action, and the preset list
-      is ordered by last use.
+- [x] A meal preset loads its foods and amounts into the meal being entered,
+      where they can be edited before saving, and the preset list is ordered by
+      last use.
+- [x] The form shows the projected day — today's totals with the draft added —
+      under the rows, so the meal is judged before it is saved.
 - [x] A weigh-in has its own tab, with the time defaulting to now and body fat
       optional.
 - [x] The screen shows today's intake against the estimated maintenance, with
@@ -239,12 +245,22 @@ food keeps no analysis page, so the ranking moved beside the bars instead of
 returning as one. What that decision buys is on
 [the requirements page](requirements.md#the-per-food-ranking-has-no-page-of-its-own).
 
+Body weight went with it: weight and body fat are recorded on **weight · daily**
+and charted on [Weight · analysis](#feature-weight--analysis), so a page that
+answers "my body weight is missing" is that one, and the answer is its range —
+which now opens on a year and names the last weigh-in when the window holds none.
+
 ## Feature: Weight · analysis
 
 Status: works. Weight and body fat over a chosen range, with the intake bars
 underneath, the range's foods ranked beside them, and the deload weeks shaded.
 
 Acceptance criteria:
+
+- [x] The range opens on the last year, a window with fewer than two weigh-ins
+      says how many it holds and when the last weigh-in was, and the line is the
+      range's weigh-ins rather than the slope's trailing window, so an empty
+      chart is explained rather than taken for missing data.
 
 - [x] The weight line is coloured by the phase each weigh-in was taken in, with
       bulk and cut in different colours and a legend saying which is which.
@@ -260,10 +276,12 @@ Acceptance criteria:
 
 ## Feature: Gym · daily
 
-Status: works. A session is started from a place, filled from a preset or from
-the exercise list, recorded one exercise at a time through the exercise window,
-and ended; a deload is marked on the session and a superset is recorded as one
-group. Inferred rows from the migration are still missing from the analysis.
+Status: works. A session is started from a place, its list is built from a preset
+or an exercise at a time, `start sets` records it one exercise at a time through
+the exercise window, and `end session` closes it; a deload is marked on the
+session, a superset is recorded as one group, and a set saved by mistake is
+corrected in place. Inferred rows from the migration are still missing from the
+analysis.
 
 Acceptance criteria:
 
@@ -274,8 +292,16 @@ Acceptance criteria:
 - [x] The exercise window defaults the load to the last used and the effort to
       the last recorded, offers `fail`, `form fail` and `hard` with what each
       means, shows the last three sessions, and prints what to attempt next.
-- [x] Saving a row stamps the time it was saved, and X returns to the checklist
-      with the exercise marked done.
+- [x] Saving a row stamps the time it was saved, and X returns to the list with
+      the exercise marked done.
+- [x] An open session fills the screen and is left through `end session` alone,
+      while staying open until it is ended.
+- [x] Picking an exercise adds it to the list; `start sets` opens the window on
+      the first exercise still to do.
+- [x] The window names the next exercise on the list, wrapping round, and the
+      dropdown opens any exercise on the list instead — the alternation a
+      superset is performed in.
+- [x] A saved set is edited where it is, without leaving the session.
 - [x] End session closes it, and a session with no sets is discarded.
 - [x] The effort of a set is stored as a row and compared before load and reps
       when the next set is advised; `src/train.rs` holds that rule and its tests.
@@ -315,8 +341,9 @@ Acceptance criteria:
 - [ ] A merge of two exercises that share a muscle group keeps one amount, and
       the surviving value is visible before the merge is confirmed.
 - [x] An exercise can carry a video link, and it is validated on save.
-- [x] Gym presets (a named list of exercises) can be created and deleted, and
-      applying one fills a session's checklist.
+- [x] Gym presets (a named list of exercises) can be created, edited and
+      deleted, a preset starts with one exercise and grows a row at a time, and
+      applying one fills a session's list.
 
 ## Feature: Gym · analysis
 
@@ -332,6 +359,8 @@ Acceptance criteria:
       strength line, so the question "did strength move when the volume did" is
       one chart.
 - [x] The time range can be changed.
+- [x] The exercise list is searchable by name or muscle group, and picking one
+      draws its chart.
 - [x] Deload weeks are shaded rather than dropped, so the trend keeps its
       points.
 - [ ] Inferred rows from the migration are included and marked as inferred.

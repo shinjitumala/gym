@@ -230,6 +230,7 @@ fn trend_view(
     };
     let first = window.first().map(|(d, _)| *d);
     TrendView {
+        window_days: s.trend_window_days,
         points: t
             .points
             .iter()
@@ -616,14 +617,18 @@ pub async fn weight_analysis(db: &Db, span_days: i64) -> Res<WeightAnalysis> {
     let meals = meals_between(db, from, today).await?;
     let weights = weights_between(db, from, today).await?;
     let flat: Vec<(NaiveDate, f64)> = weights.iter().map(|(d, kg, _)| (*d, *kg)).collect();
-    let mut trend = trend_view(&flat, &s, &p, today);
-    if span_days > s.trend_window_days {
-        trend.points.retain(|q| q.day >= days(from));
-        trend.fit.retain(|q| q.day >= days(from));
-    }
+    let trend = trend_view(&flat, &s, &p, today);
     let (maintenance, _, _, _) = intake_health(&meals, &flat, &s, today);
     Ok(WeightAnalysis {
+        line: flat
+            .iter()
+            .map(|(d, kg)| PointRow {
+                day: days(*d),
+                kg: *kg,
+            })
+            .collect(),
         phases: phase_spans(db, today).await?,
+        last_weight: recent_weights(db, 1).await?.into_iter().next(),
         bodyfat: weights
             .iter()
             .filter_map(|(d, _, w)| {
@@ -1009,12 +1014,16 @@ pub async fn gym_daily(db: &Db) -> Res<GymDaily> {
     let p = phase(db).await?;
     let (index, exercises) = exercise_index(db).await?;
     let open = live_session(db, &index).await?;
-    let sessions = sessions_with_sets(db, Some(8)).await?;
-    let last_deload = sessions
-        .rows
-        .iter()
-        .find(|s| s.deload)
-        .map(|s| s.date.clone());
+    // The reminder counts from the last deload anywhere in the log, not from
+    // the last few sessions: a deload 30 sessions ago is still the last one.
+    // The row stores an instant, so its date is the local day it fell on, the
+    // same way every other date on the page is derived.
+    let last_deload: Option<String> = sqlx::query_scalar!(
+        r#"SELECT date FROM session WHERE deload = 1 ORDER BY date DESC LIMIT 1"#
+    )
+    .fetch_optional(&db.pool)
+    .await?
+    .and_then(|at| local_date(&at).map(iso));
     let today = Local::now().date_naive();
     let weeks_since = last_deload
         .as_ref()
@@ -1028,7 +1037,6 @@ pub async fn gym_daily(db: &Db) -> Res<GymDaily> {
         presets: gym_presets(db).await?,
         efforts: efforts(db).await?,
         open,
-        sessions: sessions.rows,
         last_deload,
         deload_weeks: s.deload_weeks,
         weeks_since_deload: weeks_since,

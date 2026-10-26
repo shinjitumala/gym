@@ -2,22 +2,34 @@
 //!
 //! No chart library: the shapes are a polyline and a stack of rectangles, and
 //! writing them directly keeps the bundle small and the axes honest — every
-//! chart here says what its range is, and the ones that must not draw a line
-//! (too few weigh-ins) simply do not.
+//! chart here says what its range is, its dates are on the horizontal axis and
+//! its numbers on the vertical one, and the ones that must not draw a line (too
+//! few weigh-ins) simply do not.
 
 use crate::web::dto::{PhaseSpan, Span};
-use crate::web::ui::{day_label, DIM, OK, ROW, WARN};
+use crate::web::ui::{day_full, day_label, DIM, OK, ROW, WARN};
 use leptos::prelude::*;
 
+/// The label colour. An SVG `text` fills black unless told otherwise, so every
+/// axis label says so; the class's `text-gray-500` colours the element, not the
+/// glyphs.
+const LABEL: &str = "#6b7280";
+
 const W: f64 = 720.0;
-const H: f64 = 200.0;
-const PAD: f64 = 28.0;
+const H: f64 = 220.0;
+/// Room for the axis numbers on the left, the day labels underneath, and the
+/// line's own headroom at the top. The left margin holds a label like
+/// `70.0 kg` right-aligned against the axis, so it never crosses the plot.
+const LEFT: f64 = 58.0;
+const RIGHT: f64 = 14.0;
+const TOP: f64 = 10.0;
+const BOTTOM: f64 = 24.0;
 
 fn px(x: f64, min: f64, max: f64) -> f64 {
     if (max - min).abs() < f64::EPSILON {
-        PAD
+        LEFT
     } else {
-        PAD + (x - min) / (max - min) * (W - 2.0 * PAD)
+        LEFT + (x - min) / (max - min) * (W - LEFT - RIGHT)
     }
 }
 
@@ -25,7 +37,7 @@ fn py(y: f64, min: f64, max: f64) -> f64 {
     if (max - min).abs() < f64::EPSILON {
         H / 2.0
     } else {
-        H - PAD - (y - min) / (max - min) * (H - 2.0 * PAD)
+        H - BOTTOM - (y - min) / (max - min) * (H - TOP - BOTTOM)
     }
 }
 
@@ -51,6 +63,112 @@ fn path(points: &[(i64, f64)], x0: f64, x1: f64, y0: f64, y1: f64) -> String {
         .join(" ")
 }
 
+/// Round tick values covering `min..max`, about `want` of them, at a
+/// 1/2/5 × 10ⁿ step: a chart whose labels read 80, 82, 84 is read at a glance,
+/// one whose labels read 80.37 is not.
+fn ticks(min: f64, max: f64, want: usize) -> Vec<f64> {
+    let span = max - min;
+    if span <= 0.0 || want == 0 {
+        return vec![min];
+    }
+    let raw = span / want as f64;
+    let magnitude = 10f64.powf(raw.log10().floor());
+    let normal = raw / magnitude;
+    let multiplier = if normal <= 1.0 {
+        1.0
+    } else if normal <= 2.0 {
+        2.0
+    } else if normal <= 5.0 {
+        5.0
+    } else {
+        10.0
+    };
+    let step = multiplier * magnitude;
+    let mut out = Vec::new();
+    let mut v = (min / step).ceil() * step;
+    while v <= max + step * 1e-9 {
+        out.push(v);
+        v += step;
+    }
+    if out.is_empty() {
+        out.push(min);
+    }
+    out
+}
+
+/// The vertical axis: a gridline and its number per tick. `decimals` is what the
+/// numbers are rounded to, so a weight axis says `80.5 kg` and a sets axis says
+/// `12 sets/wk`.
+fn y_axis(y0: f64, y1: f64, unit: &str, decimals: usize, anchor_right: bool) -> Vec<AnyView> {
+    // The left scale's numbers sit in the margin, right-aligned against the axis;
+    // the right scale's sit inside, left-aligned against its own.
+    let (x_text, anchor) = if anchor_right {
+        (W - RIGHT - 4.0, "end")
+    } else {
+        (LEFT - 4.0, "end")
+    };
+    let label = |v: f64| {
+        let number = format!("{v:.decimals$}");
+        if unit.is_empty() {
+            number
+        } else {
+            format!("{number} {unit}")
+        }
+    };
+    ticks(y0, y1, 4)
+        .into_iter()
+        .map(|v| {
+            let y = py(v, y0, y1);
+            view! {
+                <line
+                    class="axis-grid"
+                    stroke="#14532d"
+                    stroke-width="1"
+                    stroke-dasharray="2 3"
+                    x1=LEFT
+                    y1=y
+                    x2=W - RIGHT
+                    y2=y
+                />
+                <text
+                    class="y-tick"
+                    fill=LABEL
+                    x=x_text
+                    y=y + 3.0
+                    text-anchor=anchor
+                >
+                    {label(v)}
+                </text>
+            }
+            .into_any()
+        })
+        .collect()
+}
+
+/// The horizontal axis: four dates spread across the range, oldest first.
+fn x_axis(x0: i64, x1: i64) -> Vec<AnyView> {
+    let steps = 3;
+    (0..=steps)
+        .map(|i| {
+            let day = x0 + (x1 - x0) * i / steps;
+            let x = px(day as f64, x0 as f64, x1 as f64);
+            let anchor = if i == 0 {
+                "start"
+            } else if i == steps {
+                "end"
+            } else {
+                "middle"
+            };
+            view! {
+                <text class="x-tick" fill=LABEL x=x y=H - 6.0 text-anchor=anchor>
+                    {day_full(day)}
+                </text>
+            }
+            .into_any()
+        })
+        .collect()
+}
+
 /// The deload weeks, as bands behind a chart's line.
 ///
 /// Shading rather than dropping: the deload's points stay on the line, and the
@@ -61,15 +179,15 @@ fn Shade(#[prop(into)] spans: Vec<Span>, x0: f64, x1: f64) -> impl IntoView {
     spans
         .into_iter()
         .map(|s| {
-            let left = px(s.from as f64, x0, x1).max(PAD);
-            let right = px((s.to + 1) as f64, x0, x1).min(W - PAD);
+            let left = px(s.from as f64, x0, x1).max(LEFT);
+            let right = px((s.to + 1) as f64, x0, x1).min(W - RIGHT);
             view! {
                 <rect
                     class="deload-week"
                     x=left
-                    y=PAD
+                    y=TOP
                     width=(right - left).max(2.0)
-                    height=H - 2.0 * PAD
+                    height=H - TOP - BOTTOM
                     fill="#3f2f0a"
                 >
                     <title>{format!("deload week from {}", day_label(s.from))}</title>
@@ -99,20 +217,16 @@ pub fn Line(
         .iter()
         .map(|(x, y)| (px(*x as f64, x0, x1), py(*y, y0, y1)))
         .collect();
-    let first = x0 as i64;
-    let last = x1 as i64;
     view! {
         <svg
             class="w-full h-auto block border border-green-900 bg-black text-gray-500 text-[9px]"
             viewBox=format!("0 0 {W} {H}")
             preserveAspectRatio="none"
         >
-            <line stroke="#14532d" stroke-width="1" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
-            <line stroke="#14532d" stroke-width="1" x1=PAD y1=PAD x2=PAD y2=H - PAD />
-            <text x=PAD y=14.0>{format!("{:.1} {unit}", high(&points))}</text>
-            <text x=PAD y=H - 8.0>{format!("{:.1} {unit}", low(&points))}</text>
-            <text x=W / 2.0 - 20.0 y=H - 8.0>{day_label(first)}</text>
-            <text x=W - PAD - 30.0 y=H - 8.0>{day_label(last)}</text>
+            <line stroke="#14532d" stroke-width="1" x1=LEFT y1=H - BOTTOM x2=W - RIGHT y2=H - BOTTOM />
+            <line stroke="#14532d" stroke-width="1" x1=LEFT y1=TOP x2=LEFT y2=H - BOTTOM />
+            {y_axis(y0, y1, &unit, 1, false)}
+            {x_axis(x0 as i64, x1 as i64)}
             {fitted
                 .map(|f| {
                     view! {
@@ -203,8 +317,6 @@ pub fn PhaseLine(
             .into_any()
         })
         .collect();
-    let first = x0 as i64;
-    let last = x1 as i64;
     let shaded = !deloads.is_empty();
     let spells = deloads.clone();
     view! {
@@ -214,12 +326,10 @@ pub fn PhaseLine(
             preserveAspectRatio="none"
         >
             <Shade spans=spells x0=x0 x1=x1 />
-            <line stroke="#14532d" stroke-width="1" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
-            <line stroke="#14532d" stroke-width="1" x1=PAD y1=PAD x2=PAD y2=H - PAD />
-            <text x=PAD y=14.0>{format!("{:.1} {unit}", high(&points))}</text>
-            <text x=PAD y=H - 8.0>{format!("{:.1} {unit}", low(&points))}</text>
-            <text x=W / 2.0 - 20.0 y=H - 8.0>{day_label(first)}</text>
-            <text x=W - PAD - 30.0 y=H - 8.0>{day_label(last)}</text>
+            <line stroke="#14532d" stroke-width="1" x1=LEFT y1=H - BOTTOM x2=W - RIGHT y2=H - BOTTOM />
+            <line stroke="#14532d" stroke-width="1" x1=LEFT y1=TOP x2=LEFT y2=H - BOTTOM />
+            {y_axis(y0, y1, &unit, 1, false)}
+            {x_axis(x0 as i64, x1 as i64)}
             {paths}
             {dots}
         </svg>
@@ -288,8 +398,6 @@ pub fn Overlay(
         .max(1.0);
     let vy0 = 0.0;
     let vy1 = vmax * 1.1;
-    let first = x0 as i64;
-    let last = x1 as i64;
     let shaded = !deloads.is_empty();
     let spells = deloads.clone();
     view! {
@@ -299,14 +407,12 @@ pub fn Overlay(
             preserveAspectRatio="none"
         >
             <Shade spans=spells x0=x0 x1=x1 />
-            <line stroke="#14532d" stroke-width="1" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
-            <line stroke="#14532d" stroke-width="1" x1=PAD y1=PAD x2=PAD y2=H - PAD />
-            <line stroke="#14532d" stroke-width="1" x1=W - PAD y1=PAD x2=W - PAD y2=H - PAD />
-            <text x=PAD y=14.0>{format!("{:.0} {strength_unit}", sy1)}</text>
-            <text x=PAD y=H - 8.0>{format!("{:.0} {strength_unit}", sy0)}</text>
-            <text x=W - PAD - 44.0 y=14.0>{format!("{vmax:.0} {volume_unit}")}</text>
-            <text x=W / 2.0 - 20.0 y=H - 8.0>{day_label(first)}</text>
-            <text x=W - PAD - 30.0 y=H - 8.0>{day_label(last)}</text>
+            <line stroke="#14532d" stroke-width="1" x1=LEFT y1=H - BOTTOM x2=W - RIGHT y2=H - BOTTOM />
+            <line stroke="#14532d" stroke-width="1" x1=LEFT y1=TOP x2=LEFT y2=H - BOTTOM />
+            <line stroke="#14532d" stroke-width="1" x1=W - RIGHT y1=TOP x2=W - RIGHT y2=H - BOTTOM />
+            {y_axis(sy0, sy1, &strength_unit, 0, false)}
+            {y_axis(vy0, vy1, &volume_unit, 0, true)}
+            {x_axis(x0 as i64, x1 as i64)}
             {volume
                 .iter()
                 .map(|s| {
@@ -386,8 +492,8 @@ pub fn Intake(
         .map(|b| b.parts.iter().map(|(_, v)| *v).sum::<f64>())
         .collect();
     let top = totals.iter().copied().fold(0.0, f64::max).max(1.0);
-    let bw = (W - 2.0 * PAD) / n as f64;
-    let offset = (W - 2.0 * PAD - bw * bars.len() as f64) / 2.0;
+    let bw = (W - LEFT - RIGHT) / n as f64;
+    let offset = (W - LEFT - RIGHT - bw * bars.len() as f64) / 2.0;
     let mut names: Vec<String> = Vec::new();
     for b in &bars {
         for (name, _) in &b.parts {
@@ -400,10 +506,10 @@ pub fn Intake(
         .iter()
         .enumerate()
         .map(|(i, bar)| {
-            let mut y = H - PAD;
+            let mut y = H - BOTTOM;
             let mut segs: Vec<AnyView> = Vec::new();
             for (name, v) in &bar.parts {
-                let h = (v / top) * (H - 2.0 * PAD);
+                let h = (v / top) * (H - TOP - BOTTOM);
                 y -= h;
                 let colour =
                     PALETTE[names.iter().position(|n| n == name).unwrap_or(0) % PALETTE.len()];
@@ -412,7 +518,7 @@ pub fn Intake(
                 segs.push(
                     view! {
                         <rect
-                            x=PAD + offset + i as f64 * bw
+                            x=LEFT + offset + i as f64 * bw
                             y=y
                             width=(bw - 1.0).max(1.0)
                             height=h.max(0.5)
@@ -430,18 +536,37 @@ pub fn Intake(
             view! { <g>{segs.collect_view()}</g> }.into_any()
         })
         .collect();
-    let first = bars.first().map(|b| b.label.clone()).unwrap_or_default();
-    let last = bars.last().map(|b| b.label.clone()).unwrap_or_default();
+    // Three day labels spread over the bars, so the chart says when each end is
+    // rather than only naming the first and the last.
+    let marks: Vec<AnyView> = [0usize, bars.len() / 2, bars.len().saturating_sub(1)]
+        .into_iter()
+        .filter(|i| *i < bars.len())
+        .map(|i| {
+            let x = LEFT + offset + (i as f64 + 0.5) * bw;
+            let anchor = if i == 0 {
+                "start"
+            } else if i + 1 == bars.len() {
+                "end"
+            } else {
+                "middle"
+            };
+            view! {
+                <text class="x-tick" fill=LABEL x=x y=H - 6.0 text-anchor=anchor>
+                    {bars[i].label.clone()}
+                </text>
+            }
+            .into_any()
+        })
+        .collect();
     view! {
         <svg
             class="w-full h-auto block border border-green-900 bg-black text-gray-500 text-[9px]"
             viewBox=format!("0 0 {W} {H}")
             preserveAspectRatio="none"
         >
-            <line stroke="#14532d" stroke-width="1" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
-            <text x=PAD y=14.0>{format!("{:.0} {unit}", top)}</text>
-            <text x=W / 2.0 - 20.0 y=H - 8.0>{first}</text>
-            <text x=W - PAD - 30.0 y=H - 8.0>{last}</text>
+            <line stroke="#14532d" stroke-width="1" x1=LEFT y1=H - BOTTOM x2=W - RIGHT y2=H - BOTTOM />
+            {y_axis(0.0, top, &unit, 0, false)}
+            {marks}
             {rects}
         </svg>
         <div class=ROW>

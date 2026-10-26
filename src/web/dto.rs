@@ -93,8 +93,10 @@ pub struct SplitRow {
 /// The trend, ready to display.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct TrendView {
-    /// Oldest first.
+    /// Oldest first: the weigh-ins inside the slope's trailing window.
     pub points: Vec<PointRow>,
+    /// How many days that window is, so the page can say which window it means.
+    pub window_days: i64,
     /// The fitted line, at the same x values as `points`.
     pub fit: Vec<PointRow>,
     pub per_week: Option<f64>,
@@ -290,7 +292,17 @@ pub struct WeightEdit {
 /// underneath it.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WeightAnalysis {
+    /// Every weigh-in in the chosen range, oldest first.
+    ///
+    /// The line is the range's observations, not the trend's trailing window:
+    /// the slope is judged over the last few weeks, but the chart is asked about
+    /// the whole range, so a log whose last weigh-in predates the slope window
+    /// still has a line.
+    pub line: Vec<PointRow>,
     pub trend: TrendView,
+    /// The newest weigh-in anywhere in the log, so a window that holds none can
+    /// say when the last one was rather than showing an unexplained blank.
+    pub last_weight: Option<WeightRow>,
     pub phases: Vec<PhaseSpan>,
     /// Body fat percentage, oldest first, when it was measured.
     pub bodyfat: Vec<PointRow>,
@@ -435,8 +447,6 @@ pub struct GymDaily {
     pub presets: Vec<GymPreset>,
     pub efforts: Vec<EffortRow>,
     pub open: Option<LiveSession>,
-    /// Recent finished sessions, newest first.
-    pub sessions: Vec<SessionRow>,
     pub last_deload: Option<String>,
     pub deload_weeks: i64,
     pub weeks_since_deload: Option<i64>,

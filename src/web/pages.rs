@@ -45,7 +45,7 @@ fn trend_summary(t: &TrendView) -> impl IntoView {
     let missing = t.need.saturating_sub(t.have);
     let goal = t.goal.clone();
     let count = t.points.len();
-    let need = t.need;
+    let window = t.window_days;
     view! {
         <div class=ROW>
             <Kpi label="trend" value=slope unit="kg/week" />
@@ -58,14 +58,14 @@ fn trend_summary(t: &TrendView) -> impl IntoView {
         {if count < 2 {
             view! {
                 <Hint text=format!(
-                    "{count} weigh-in(s) in the window: a line needs two, a slope needs {need}.",
+                    "No slope: {count} weigh-in(s) in the last {window} days, and a slope is fitted over that window.",
                 ) />
             }
                 .into_any()
         } else if missing > 0 {
             view! {
                 <Hint text=format!(
-                    "{missing} more weigh-in(s) needed in the window before a slope is shown ({} of {}).",
+                    "{missing} more weigh-in(s) needed in the last {window} days before a slope is shown ({} of {}).",
                     t.have,
                     t.need,
                 ) />
@@ -216,6 +216,7 @@ fn FoodDailyView(d: FoodDaily, saved: Callback<()>) -> impl IntoView {
             <MealForm
                 foods=d.foods.clone()
                 presets=d.presets.clone()
+                day=d.totals.clone()
                 today=today.clone()
                 now=now.clone()
                 saved=saved
@@ -251,16 +252,19 @@ impl Draft {
     }
 }
 
-/// A meal: presets to record in one tap, or a food picked from the list and
-/// added to the draft.
+/// A meal: presets that load their foods into the draft, or a food picked from
+/// the list and added to it.
 ///
-/// The draft is the preview: each row says what it contributes, and the footer
-/// says what the day would come to. `save` writes every row in one transaction,
-/// so a half-entered meal is never stored.
+/// The draft is the preview: each row says what it contributes, the footer says
+/// what the day would come to, and `save` writes every row in one transaction,
+/// so a half-entered meal is never stored. A preset is a head start, not a
+/// commit: it fills the draft and leaves the reader to edit it.
 #[component]
 fn MealForm(
     foods: Vec<FoodRow>,
     presets: Vec<PresetRow>,
+    /// Today's totals so far, for the projection under the draft.
+    day: Totals,
     today: String,
     now: String,
     saved: Callback<()>,
@@ -288,6 +292,18 @@ fn MealForm(
     });
     let foods = StoredValue::new(foods);
     let date0 = today.clone();
+    // Loading a preset stamps it as used, so the list keeps its recency order;
+    // the stamp writes no meal row, and the draft is not saved by it.
+    let touch = Action::new(move |id: &i64| {
+        let id = *id;
+        async move { crate::web::api::act_touch_preset(id).await }
+    });
+    let (preset_note, set_preset_note) = signal(None::<String>);
+    Effect::new(move |_| {
+        if let Some(Err(e)) = touch.value().get() {
+            set_preset_note.set(Some(e.to_string()));
+        }
+    });
     let pick = Callback::new(move |id: i64| {
         foods.with_value(|foods| {
             if let Some(f) = foods.iter().find(|f| f.id == id) {
@@ -333,27 +349,63 @@ fn MealForm(
             })
             .collect::<Vec<_>>()
     });
-    let preset_list = presets.clone();
+    // A preset is loaded, never recorded: its foods and amounts become draft
+    // rows, which the reader can change or drop before saving.
+    let preset_loads: Vec<(PresetRow, Vec<Draft>)> = foods.with_value(|foods| {
+        presets
+            .iter()
+            .map(|p| {
+                let drafts = p
+                    .parts
+                    .iter()
+                    .filter_map(|part| {
+                        foods.iter().find(|f| f.id == part.food).map(|f| Draft {
+                            food: f.clone(),
+                            amount: part.amount,
+                            note: String::new(),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                (p.clone(), drafts)
+            })
+            .collect()
+    });
     view! {
-        {if preset_list.is_empty() {
+        {if preset_loads.is_empty() {
             ().into_any()
         } else {
             view! {
                 <div class=CHIPS>
-                    {preset_list
+                    {preset_loads
                         .iter()
-                        .map(|p| {
+                        .map(|(p, drafts)| {
+                            let rows = drafts.clone();
+                            let name = p.name.clone();
+                            let kcal = p.per_unit.kcal;
+                            let id = p.id;
                             view! {
-                                <PresetChip
-                                    p=p.clone()
-                                    today=today.clone()
-                                    now=now.clone()
-                                    saved=saved
-                                />
+                                <div class=CHIP>
+                                    <button
+                                        type="button"
+                                        title=format!("Load {name} into the draft")
+                                        on:click=move |_| {
+                                            let rows = rows.clone();
+                                            set_drafts.update(|d| d.extend(rows));
+                                            touch.dispatch(id);
+                                        }
+                                    >
+                                        {format!("{name} · {kcal:.0} kcal")}
+                                    </button>
+                                </div>
                             }
                         })
                         .collect_view()}
                 </div>
+                {move || {
+                    preset_note
+                        .get()
+                        .map(|m| view! { <span class=BAD>{m}</span> })
+                }}
             }
                 .into_any()
         }}
@@ -483,48 +535,25 @@ fn MealForm(
             </button>
             <Outcome outcome=outcome />
         </div>
-        <Hint text="Pick a food from the list to add a row, then save. The time defaults to now: press now to fill it from the server's clock." />
-    }
-}
 
-/// One preset, as a button that records it.
-#[component]
-fn PresetChip(p: PresetRow, today: String, now: String, saved: Callback<()>) -> impl IntoView {
-    let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
-    let action = Action::new(move |args: &(i64, String, String, String)| {
-        let (preset, today, now, _) = args.clone();
-        async move { crate::web::api::act_apply_preset(preset, today, now, "1".into()).await }
-    });
-    Effect::new(move |_| {
-        if let Some(r) = action.value().get() {
-            if r.is_ok() {
-                saved.run(());
-            }
-            set_outcome.set(Some(r));
-        }
-    });
-    let name = p.name.clone();
-    let kcal = p.per_unit.kcal;
-    let items = p.items;
-    let id = p.id;
-    view! {
-        <div class=CHIP>
-            <button
-                type="button"
-                title=format!("Record {name}: {items} item(s), {kcal:.0} kcal")
-                on:click=move |_| {
-                    action.dispatch((id, today.clone(), now.clone(), String::new()));
-                }
-                disabled=move || action.pending().get()
-            >
-                {format!("{name} · {kcal:.0} kcal")}
-            </button>
-            {move || match outcome.get() {
-                Some(Err(e)) => view! { <span class=BAD>{e.to_string()}</span> }.into_any(),
-                Some(Ok(_)) => view! { <span class=OK>"✓"</span> }.into_any(),
-                None => ().into_any(),
-            }}
+        <div class=PANEL id="projected-day">
+            <div class=ROW>
+                <span class=OK>"projected day"</span>
+                <span class=DIM>"today's totals plus the rows above, as if they were saved"</span>
+            </div>
+            <div class=KPIS>
+                {move || {
+                    let t = total.get().plus(&day);
+                    view! {
+                        <Kpi label="calories" value=kcal(t.kcal) unit="kcal" />
+                        <Kpi label="protein" value=grams(t.protein) unit="g" />
+                        <Kpi label="fat" value=grams(t.fat) unit="g" />
+                        <Kpi label="carbohydrate" value=grams(t.carbohydrate) unit="g" />
+                    }
+                }}
+            </div>
         </div>
+        <Hint text="Pick a food from the list, or load a preset, to add a row; then save. Nothing is written before save. The time defaults to now: press now to fill it from the server's clock." />
     }
 }
 
@@ -1569,7 +1598,10 @@ fn AddWeightRow(today: String, now: String, saved: Callback<()>) -> impl IntoVie
 
 #[component]
 pub fn WeightAnalysisPage() -> impl IntoView {
-    let (span, set_span) = signal(90i64);
+    // A year rather than a quarter: body weight is read over months, and a log
+    // with a gap of a few weeks would otherwise open on an empty chart with no
+    // hint that the data is there, just outside the window.
+    let (span, set_span) = signal(365i64);
     let data = Resource::new(
         move || span.get(),
         |s| async move { crate::web::api::load_weight_analysis(s).await },
@@ -1609,8 +1641,22 @@ pub fn WeightAnalysisPage() -> impl IntoView {
 
 #[component]
 fn WeightAnalysisView(d: WeightAnalysis) -> impl IntoView {
-    let points: Vec<(i64, f64)> = d.trend.points.iter().map(|p| (p.day, p.kg)).collect();
+    let points: Vec<(i64, f64)> = d.line.iter().map(|p| (p.day, p.kg)).collect();
     let bodyfat: Vec<(i64, f64)> = d.bodyfat.iter().map(|p| (p.day, p.kg)).collect();
+    let span = d.span;
+    // What the empty chart is missing, said plainly: the last weigh-in may be
+    // older than the window, and "0 weigh-ins" then reads as "no data" when the
+    // log has plenty.
+    let outside = match &d.last_weight {
+        Some(w) => format!(
+            " The last weigh-in is dated {}: widen the range to reach it, or log a new one.",
+            w.date,
+        ),
+        None => " No weigh-in has been logged yet.".to_string(),
+    };
+    let last_measured = d.last_weight.as_ref().is_some_and(|w| w.bodyfat.is_some());
+    let outside_kg = outside.clone();
+    let outside_bf = outside;
     let (metric, set_metric) = signal("kcal".to_string());
     let last = d.days.last().map(|x| x.day).unwrap_or(0);
     let (day, set_day) = signal(Option::<i64>::None);
@@ -1685,7 +1731,14 @@ fn WeightAnalysisView(d: WeightAnalysis) -> impl IntoView {
                 }
                     .into_any()
             } else {
-                ().into_any()
+                view! {
+                    <Hint text=format!(
+                        "{} weigh-in(s) in the last {span} days, and a line needs two.{}",
+                        points.len(),
+                        outside_kg,
+                    ) />
+                }
+                    .into_any()
             }}
         </Section>
 
@@ -1695,8 +1748,14 @@ fn WeightAnalysisView(d: WeightAnalysis) -> impl IntoView {
             } else {
                 view! {
                     <Hint text=format!(
-                        "{} weigh-in(s) with a body fat reading: a line needs two.",
+                        "{} weigh-in(s) with a body fat reading in the last {span} days, and a line needs two.{}{}",
                         bodyfat.len(),
+                        if last_measured {
+                            " The last weigh-in did measure it."
+                        } else {
+                            ""
+                        },
+                        outside_bf,
                     ) />
                 }
                     .into_any()
@@ -1896,95 +1955,190 @@ fn GymDailyView(
     let now = d.now.clone();
     let phase = d.phase.clone();
     let efforts = d.efforts.clone();
-    let sessions = d.sessions.clone();
     let open = d.open.clone();
     let places = d.places.clone();
     let exercises = d.exercises.clone();
     let presets = d.presets.clone();
     let close = Callback::new(move |()| set_focus.set(None));
     let choose = Callback::new(move |ex: i64| set_focus.set(Some(ex)));
-    let today_flow = today.clone();
-    let now_flow = now.clone();
     view! {
-        <Section title="Phase">
-            <div class=ROW>
-                <span class=OK>{match &phase {
-                    Some(p) => format!(
-                        "{} since {} · target {:.2} kg/week at {} reps",
-                        p.kind, p.start, p.target_rate, p.target_rep,
-                    ),
-                    None => "no phase yet".to_string(),
-                }}</span>
-                <PhaseSwitch kind=phase.as_ref().map(|p| p.kind.clone()) today=today.clone() saved=saved />
-            </div>
-            <Hint text=reminder />
-        </Section>
-
         {move || {
             let open = open.clone();
             let places = places.clone();
-            let today = today_flow.clone();
-            let now = now_flow.clone();
+            let exercises = exercises.clone();
             let efforts = efforts.clone();
             let presets = presets.clone();
-            let exercises = exercises.clone();
+            let today = today.clone();
+            let now = now.clone();
+            let phase = phase.clone();
+            let reminder = reminder.clone();
+            let today_phase = today.clone();
+            let today_start = today.clone();
+            let now_start = now.clone();
+            let today_screen = today.clone();
             match open {
-                None => {
+                None => view! {
+                    <Section title="Phase">
+                        <div class=ROW>
+                            <span class=OK>{match &phase {
+                                Some(p) => format!(
+                                    "{} since {} · target {:.2} kg/week at {} reps",
+                                    p.kind, p.start, p.target_rate, p.target_rep,
+                                ),
+                                None => "no phase yet".to_string(),
+                            }}</span>
+                            <PhaseSwitch kind=phase.as_ref().map(|p| p.kind.clone()) today=today_phase saved=saved />
+                        </div>
+                        <Hint text=reminder.clone() />
+                    </Section>
+                    <Section title="Start a session">
+                        <StartSession places=places today=today_start now=now_start saved=saved />
+                    </Section>
+                }
+                    .into_any(),
+                Some(live) => {
+                    let options: Vec<(i64, String)> = live
+                        .list
+                        .iter()
+                        .map(|i| (i.exercise, i.name.clone()))
+                        .collect();
+                    let at = live
+                        .list
+                        .iter()
+                        .position(|i| focus.get() == Some(i.exercise));
+                    let next = at
+                        .and_then(|i| live.list.get((i + 1) % live.list.len().max(1)))
+                        .map(|i| (i.exercise, i.name.clone()));
                     view! {
-                        <Section title="Start a session">
-                            <StartSession places=places today=today now=now saved=saved />
-                        </Section>
+                        <SessionScreen
+                            live=live
+                            presets=presets
+                            exercises=exercises
+                            efforts=efforts
+                            today=today_screen
+                            saved=saved
+                            tick=tick
+                            focus=focus
+                            set_focus=set_focus
+                            next=next
+                            options=options
+                            on_open=choose
+                            on_close=close
+                        />
                     }
                         .into_any()
                 }
-                Some(live) => {
-                    match focus.get() {
-                        Some(ex) => {
-                            let session = live.id;
-                            view! {
-                                <Section title="Exercise">
-                                    <ExerciseWindowView
-                                        session=session
-                                        exercise=ex
-                                        tick=tick
-                                        saved=saved
-                                        efforts=efforts
-                                        on_close=close
-                                    />
-                                </Section>
-                            }
-                                .into_any()
-                        }
-                        None => {
-                            let live_place = live.place.clone();
-                            let live_date = live.date.clone();
-                            view! {
-                                <Section title=format!("Session · {live_place} · {live_date}")>
-                                    <LiveSessionView
-                                        live=live
-                                        presets=presets
-                                        exercises=exercises
-                                        efforts=efforts
-                                        today=today
-                                        saved=saved
-                                        on_open=choose
-                                    />
-                                </Section>
-                            }
-                                .into_any()
-                        }
-                    }
-                }
             }
         }}
+    }
+}
 
-        <Section title="Recent sessions">
-            {if sessions.is_empty() {
-                view! { <Hint text="No sessions logged." /> }.into_any()
-            } else {
-                view! { <Sessions sessions=sessions.clone() /> }.into_any()
+/// A session in progress fills the screen: the checklist, the window, and one
+/// way out. The phase switch and the start form are behind it, not beside it, so
+/// a session has a single exit — `end session`, in the bar that never scrolls
+/// away — rather than a UI a mis-tap can leave you inside.
+#[component]
+fn SessionScreen(
+    live: LiveSession,
+    presets: Vec<GymPreset>,
+    exercises: Vec<ExerciseRow>,
+    efforts: Vec<EffortRow>,
+    today: String,
+    saved: Callback<()>,
+    tick: ReadSignal<u32>,
+    focus: ReadSignal<Option<i64>>,
+    set_focus: WriteSignal<Option<i64>>,
+    next: Option<(i64, String)>,
+    options: Vec<(i64, String)>,
+    on_open: Callback<i64>,
+    on_close: Callback<()>,
+) -> impl IntoView {
+    let session = live.id;
+    let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
+    let end = Action::new(move |session: &i64| {
+        let session = *session;
+        async move { crate::web::api::act_end_session(session).await }
+    });
+    Effect::new(move |_| {
+        if let Some(r) = end.value().get() {
+            if r.is_ok() {
+                set_focus.set(None);
+                saved.run(());
+            }
+            set_outcome.set(Some(r));
+        }
+    });
+    let set_count = live.sets.len();
+    // Escape is the way out of the exercise window, never out of the session: a
+    // full-screen view must be interruptible without ending the session, and
+    // ending it stays the explicit press of `end session`.
+    #[cfg(feature = "hydrate")]
+    {
+        let handle = window_event_listener(leptos::ev::keydown, move |e| {
+            if e.key() == "Escape" && focus.get_untracked().is_some() {
+                set_focus.set(None);
+            }
+        });
+        on_cleanup(move || handle.remove());
+    }
+    view! {
+        <div class="session-screen fixed inset-0 z-20 flex flex-col gap-2 overflow-auto bg-black p-2">
+            <div class="sticky top-0 z-10 bg-black flex flex-wrap items-end gap-2 border-b-2 border-green-900 pb-1">
+                <span class=OK>{format!("{} · {}", live.place, live.date)}</span>
+                <span class=DIM>{format!("started {}", live.time)}</span>
+                <DeloadToggle session=live.id deload=live.deload saved=saved />
+                <span class="grow"></span>
+                <span class=DIM>{format!("{set_count} set(s) recorded")}</span>
+                <button
+                    type="button"
+                    class=SMALL_BAD
+                    on:click=move |_| {
+                        end.dispatch(session);
+                    }
+                    disabled=move || end.pending().get()
+                >
+                    "end session"
+                </button>
+            </div>
+            {move || match focus.get() {
+                Some(ex) => {
+                    view! {
+                        <ExerciseWindowView
+                            session=session
+                            exercise=ex
+                            tick=tick
+                            efforts=efforts.clone()
+                            saved=saved
+                            on_close=on_close
+                            next=next.clone()
+                            options=options.clone()
+                            on_open=on_open
+                        />
+                    }
+                        .into_any()
+                }
+                None => {
+                    view! {
+                        <LiveSessionView
+                            live=live.clone()
+                            presets=presets.clone()
+                            exercises=exercises.clone()
+                            efforts=efforts.clone()
+                            today=today.clone()
+                            saved=saved
+                            on_open=on_open
+                        />
+                    }
+                        .into_any()
+                }
             }}
-        </Section>
+            <div class=ROW>
+                <span class=DIM>
+                    "Ending a session with no sets discards it. Esc and ✕ leave the exercise window, not the session; end session closes it."
+                </span>
+            </div>
+            <Outcome outcome=outcome />
+        </div>
     }
 }
 
@@ -2123,8 +2277,12 @@ fn StartSession(
     }
 }
 
-/// A session in progress: its preset checklists, the exercises on the list,
-/// and the way to the next one.
+/// The session's list: presets to fill it, exercises to add to it, and the
+/// button that starts recording.
+///
+/// Picking an exercise adds it to the list and nothing else — the list comes
+/// first, so a superset can be assembled before any set is recorded — and
+/// `start sets` opens the window on the first exercise still to do.
 #[component]
 fn LiveSessionView(
     live: LiveSession,
@@ -2145,10 +2303,6 @@ fn LiveSessionView(
         let (session, ex) = *args;
         async move { crate::web::api::act_add_exercise(session, ex).await }
     });
-    let end = Action::new(move |session: &i64| {
-        let session = *session;
-        async move { crate::web::api::act_end_session(session).await }
-    });
     Effect::new(move |_| {
         if let Some(r) = apply.value().get() {
             if r.is_ok() {
@@ -2165,15 +2319,6 @@ fn LiveSessionView(
             set_outcome.set(Some(r));
         }
     });
-    Effect::new(move |_| {
-        if let Some(r) = end.value().get() {
-            if r.is_ok() {
-                saved.run(());
-            }
-            set_outcome.set(Some(r));
-        }
-    });
-    let live_for_rows = live.clone();
     let rows: Vec<(i64, String, String)> = exercises
         .iter()
         .map(|e| {
@@ -2185,20 +2330,20 @@ fn LiveSessionView(
         })
         .collect();
     let pick = Callback::new(move |ex: i64| {
-        if let Some(live) = Some(live_for_rows.clone()) {
-            add.dispatch((live.id, ex));
-        }
-        on_open.run(ex);
+        add.dispatch((session, ex));
     });
-    let total_sets: i64 = live.sets.len() as i64;
+    let first = live
+        .list
+        .iter()
+        .find(|i| i.sets == 0)
+        .or_else(|| live.list.first())
+        .map(|i| i.exercise);
+    let start = Callback::new(move |()| {
+        if let Some(ex) = first {
+            on_open.run(ex);
+        }
+    });
     view! {
-        <div class=ROW>
-            <span class=DIM>{format!("started {} · {}", live.time, live.place)}</span>
-            <DeloadToggle session=live.id deload=live.deload saved=saved />
-            <span class="grow"></span>
-            <span class=DIM>{format!("{total_sets} set(s) recorded")}</span>
-        </div>
-
         {if presets.is_empty() {
             ().into_any()
         } else {
@@ -2236,11 +2381,21 @@ fn LiveSessionView(
 
         <div class=PANEL>
             <div class=ROW>
-                <span class=OK>"checklist"</span>
-                <span class=DIM>"the exercise window opens from here"</span>
+                <span class=OK>"the list"</span>
+                <span class=DIM>"the session's exercises, in the order they were added"</span>
+                <span class="grow"></span>
+                <button
+                    type="button"
+                    disabled=move || first.is_none()
+                    on:click=move |_| start.run(())
+                >
+                    "start sets"
+                </button>
             </div>
             {if live.list.is_empty() {
-                view! { <Hint text="No exercises on the list yet: apply a preset or pick one below." /> }
+                view! {
+                    <Hint text="Nothing on the list yet: apply a preset or pick exercises below, then press start sets." />
+                }
                     .into_any()
             } else {
                 view! {
@@ -2279,25 +2434,14 @@ fn LiveSessionView(
         <SupersetPanel live=live.clone() efforts=efforts saved=saved />
 
         <Picker
-            label="add an exercise · most recently trained first"
+            label="add an exercise to the list · most recently trained first"
             placeholder="filter exercises"
             rows=rows
             on_pick=pick
         />
 
-        <div class=ROW>
-            <button
-                type="button"
-                on:click=move |_| {
-                    end.dispatch(session);
-                }
-                disabled=move || end.pending().get()
-            >
-                "end session"
-            </button>
-            <Outcome outcome=outcome />
-        </div>
-        <Hint text="Ending a session with no sets discards it. The exercise window is where a set is recorded, with its effort and the time it was saved." />
+        <Outcome outcome=outcome />
+        <Hint text="Picking an exercise adds it to the list; it does not start recording. start sets opens the window on the first exercise still to do, and the window says which exercise is next." />
     }
 }
 
@@ -2473,6 +2617,11 @@ fn ExerciseWindowView(
     efforts: Vec<EffortRow>,
     saved: Callback<()>,
     on_close: Callback<()>,
+    /// The exercise a superset or the list order leads to next, and the list
+    /// to change it from.
+    next: Option<(i64, String)>,
+    options: Vec<(i64, String)>,
+    on_open: Callback<i64>,
 ) -> impl IntoView {
     let data = Resource::new(
         move || (session, exercise, tick.get()),
@@ -2488,7 +2637,20 @@ fn ExerciseWindowView(
             {move || {
                 data.get()
                     .map(|r| match r {
-                        Ok(w) => view! { <WindowBody session=session w=w saved=saved efforts=efforts.clone() /> }.into_any(),
+                        Ok(w) => {
+                            view! {
+                                <WindowBody
+                                    session=session
+                                    w=w
+                                    saved=saved
+                                    efforts=efforts.clone()
+                                    next=next.clone()
+                                    options=options.clone()
+                                    on_open=on_open
+                                />
+                            }
+                                .into_any()
+                        }
                         Err(e) => failure(e).into_any(),
                     })
             }}
@@ -2502,10 +2664,14 @@ fn WindowBody(
     w: ExerciseWindow,
     efforts: Vec<EffortRow>,
     saved: Callback<()>,
+    next: Option<(i64, String)>,
+    options: Vec<(i64, String)>,
+    on_open: Callback<i64>,
 ) -> impl IntoView {
     let target = w.target_rep;
     let load0 = w.last_load.map(|l| format!("{l}")).unwrap_or_default();
     let rep0 = format!("{target}");
+    let next_id = next.as_ref().map(|(id, _)| *id);
     view! {
         <div class=ROW>
             <span class=OK>{format!("{} · {}", w.name, w.group)}</span>
@@ -2526,6 +2692,7 @@ fn WindowBody(
         <div class=PANEL>
             <div class=ROW>
                 <span class=OK>"this session"</span>
+                <span class=DIM>"edit corrects a row in place, without leaving the session"</span>
             </div>
             {if w.sets.is_empty() {
                 view! { <Hint text="No sets yet. Save one below; it is stamped with the time you save it." /> }
@@ -2539,6 +2706,7 @@ fn WindowBody(
                                 <th class=RIGHT>"load × reps"</th>
                                 <th>"effort"</th>
                                 <th class="max-sm:hidden">"note"</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -2547,14 +2715,11 @@ fn WindowBody(
                                 .iter()
                                 .map(|s| {
                                     view! {
-                                        <tr>
-                                            <td>{s.time.clone()}</td>
-                                            <td class=RIGHT>{format!("{} × {}", one(s.load), one(s.rep))}</td>
-                                            <td>{s.effort.clone().unwrap_or_else(|| "—".to_string())}</td>
-                                            <td class="text-gray-500 whitespace-normal max-sm:hidden">
-                                                {s.note.clone()}
-                                            </td>
-                                        </tr>
+                                        <WindowSetRow
+                                            s=s.clone()
+                                            efforts=efforts.clone()
+                                            saved=saved
+                                        />
                                     }
                                 })
                                 .collect_view()}
@@ -2571,9 +2736,43 @@ fn WindowBody(
             load0=load0
             rep0=rep0
             effort0=w.last_effort
-            efforts=efforts
+            efforts=efforts.clone()
             saved=saved
         />
+
+        <div class=ROW>
+            <label class=GROW>
+                "next exercise"
+                <select on:change=move |e| {
+                    if let Ok(id) = event_target_value(&e).parse::<i64>() {
+                        on_open.run(id);
+                    }
+                }>
+                    {options
+                        .iter()
+                        .map(|(id, name)| {
+                            view! {
+                                <option value=id.to_string() selected=next_id == Some(*id)>
+                                    {name.clone()}
+                                </option>
+                            }
+                        })
+                        .collect_view()}
+                </select>
+            </label>
+            {next
+                .clone()
+                .map(|(id, name)| {
+                    view! {
+                        <button type="button" on:click=move |_| on_open.run(id)>
+                            {format!("next · {name}")}
+                        </button>
+                    }
+                })}
+            <span class=DIM>
+                "the default is the next exercise on the list, wrapping round, which is what makes a superset alternate"
+            </span>
+        </div>
 
         <div class=PANEL>
             <div class=ROW>
@@ -2622,6 +2821,121 @@ fn WindowBody(
                     .into_any()
             }}
         </div>
+    }
+}
+
+/// One set already saved in this session, with the way to correct it.
+///
+/// A typo is found the moment it is saved, so the row folds out where it is:
+/// the reader fixes the load, the reps, the effort or the note and saves again,
+/// without leaving the exercise or ending the session.
+#[component]
+fn WindowSetRow(s: SetRow, efforts: Vec<EffortRow>, saved: Callback<()>) -> impl IntoView {
+    let (editing, set_editing) = signal(false);
+    let load = NodeRef::<leptos::html::Input>::new();
+    let rep = NodeRef::<leptos::html::Input>::new();
+    let effort = NodeRef::<leptos::html::Select>::new();
+    let note = NodeRef::<leptos::html::Input>::new();
+    let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
+    let action = Action::new(move |args: &(i64, String, String, String, String)| {
+        let (id, load, rep, effort, note) = args.clone();
+        async move { crate::web::api::act_edit_set(id, load, rep, effort, note).await }
+    });
+    Effect::new(move |_| {
+        if let Some(r) = action.value().get() {
+            if r.is_ok() {
+                set_editing.set(false);
+                saved.run(());
+            }
+            set_outcome.set(Some(r));
+        }
+    });
+    let id = s.id;
+    let load0 = format!("{}", s.load);
+    let rep0 = format!("{}", s.rep);
+    let effort0 = s.effort_rank;
+    let note0 = s.note.clone();
+    view! {
+        <tr>
+            <td>{s.time.clone()}</td>
+            <td class=RIGHT>{format!("{} × {}", one(s.load), one(s.rep))}</td>
+            <td>{s.effort.clone().unwrap_or_else(|| "—".to_string())}</td>
+            <td class="text-gray-500 whitespace-normal max-sm:hidden">{s.note.clone()}</td>
+            <td>
+                <button
+                    type="button"
+                    class=SMALL
+                    on:click=move |_| set_editing.update(|e| *e = !*e)
+                >
+                    "edit"
+                </button>
+            </td>
+        </tr>
+        {move || {
+            editing
+                .get()
+                .then(|| {
+                    let load0 = load0.clone();
+                    let rep0 = rep0.clone();
+                    let note0 = note0.clone();
+                    view! {
+                        <tr>
+                            <td></td>
+                            <td colspan="4">
+                                <form on:submit=move |e| {
+                                    e.prevent_default();
+                                    action
+                                        .dispatch((
+                                            id,
+                                            value_of(load, &load0),
+                                            value_of(rep, &rep0),
+                                            chosen(effort),
+                                            value_of(note, &note0),
+                                        ));
+                                }>
+                                    <div class=LINE>
+                                        <label class=NARROW>
+                                            "load"
+                                            <input type="text" size="5" value=load0.clone() node_ref=load />
+                                        </label>
+                                        <label class=NARROW>
+                                            "reps"
+                                            <input type="text" size="4" value=rep0.clone() node_ref=rep />
+                                        </label>
+                                        <label class=GROW>
+                                            "effort"
+                                            <select node_ref=effort>
+                                                {efforts
+                                                    .iter()
+                                                    .map(|x| {
+                                                        let sel = effort0 == Some(x.rank);
+                                                        view! {
+                                                            <option value=x.name.clone() selected=sel title=x.hint.clone()>
+                                                                {format!("{} · {}", x.name, x.hint)}
+                                                            </option>
+                                                        }
+                                                    })
+                                                    .collect_view()}
+                                            </select>
+                                        </label>
+                                        <label class=GROW>
+                                            "note"
+                                            <input type="text" size="10" value=note0.clone() node_ref=note />
+                                        </label>
+                                        <button type="submit" disabled=move || action.pending().get()>
+                                            "save"
+                                        </button>
+                                        <button type="button" on:click=move |_| set_editing.set(false)>
+                                            "cancel"
+                                        </button>
+                                    </div>
+                                    <Outcome outcome=outcome />
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                })
+        }}
     }
 }
 
@@ -2706,84 +3020,6 @@ fn SetForm(
     }
 }
 
-#[component]
-fn Sessions(sessions: Vec<SessionRow>) -> impl IntoView {
-    view! {
-        {sessions
-            .into_iter()
-            .map(|s| {
-                let head = format!("{} · {}", s.date, s.place);
-                view! {
-                    <div class=ROW>
-                        <span class=OK>{head}</span>
-                        {if s.deload {
-                            view! { <span class=WARN>"deload"</span> }.into_any()
-                        } else {
-                            ().into_any()
-                        }}
-                        <span class=DIM>{s.note}</span>
-                    </div>
-                    {s.prs
-                        .iter()
-                        .map(|p| {
-                            view! {
-                                <div class=ROW>
-                                    <span class=WARN>
-                                        {format!(
-                                            "PR {} · {} × {} = {} e1rm",
-                                            p.exercise,
-                                            one(p.load),
-                                            one(p.rep),
-                                            one(p.e1rm),
-                                        )}
-                                    </span>
-                                </div>
-                            }
-                        })
-                        .collect_view()}
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>"exercise"</th>
-                                <th class=RIGHT>"load"</th>
-                                <th class=RIGHT>"reps"</th>
-                                <th>"effort"</th>
-                                <th class="max-sm:hidden">"note"</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {s.sets
-                                .iter()
-                                .map(|x| {
-                                    view! {
-                                        <tr>
-                                            <td>
-                                                {x.exercise.clone()}
-                                                {x
-                                                    .superset
-                                                    .map(|_| view! { <span class=WARN>" · ss"</span> })}
-                                                {if x.inferred {
-                                                    view! { <span class=DIM>" · inferred"</span> }.into_any()
-                                                } else {
-                                                    ().into_any()
-                                                }}
-                                            </td>
-                                            <td class=RIGHT>{one(x.load)}</td>
-                                            <td class=RIGHT>{one(x.rep)}</td>
-                                            <td>{x.effort.clone().unwrap_or_else(|| "—".to_string())}</td>
-                                            <td class="text-gray-500 whitespace-normal max-sm:hidden">{x.note.clone()}</td>
-                                        </tr>
-                                    }
-                                })
-                                .collect_view()}
-                        </tbody>
-                    </table>
-                }
-            })
-            .collect_view()}
-    }
-}
-
 // ------------------------------------------------------------------ gym · edit
 
 #[component]
@@ -2828,7 +3064,7 @@ fn GymEditView(d: GymEdit, saved: Callback<()>) -> impl IntoView {
             on_pick=pick
         />
         <div class:hidden=move || view.get() != "sessions">
-            <Section title="Recent sessions">
+            <Section title="Sessions">
                 <Hint text="Edit a set's load, reps, effort or note, or delete it. Deleting closes the gap in the session's order." />
                 <SessionsEdit d=sessions efforts=d.efforts.clone() saved=saved />
             </Section>
@@ -2861,6 +3097,24 @@ fn SessionsEdit(d: GymEdit, efforts: Vec<EffortRow>, saved: Callback<()>) -> imp
                         <span class=OK>{head}</span>
                         <DeloadToggle session=s.id deload=s.deload saved=saved />
                     </div>
+                    {s.prs
+                        .iter()
+                        .map(|p| {
+                            view! {
+                                <div class=ROW>
+                                    <span class=WARN>
+                                        {format!(
+                                            "PR {} · {} × {} = {} e1rm",
+                                            p.exercise,
+                                            one(p.load),
+                                            one(p.rep),
+                                            one(p.e1rm),
+                                        )}
+                                    </span>
+                                </div>
+                            }
+                        })
+                        .collect_view()}
                     {s
                         .sets
                         .iter()
@@ -2915,7 +3169,15 @@ fn SetEditRow(x: SetRow, efforts: Vec<EffortRow>, saved: Callback<()>) -> impl I
         <div class=RECORD>
             <div class=ROW>
                 <span class=DIM>{x.time.clone()}</span>
-                <span class=GROW>{x.exercise.clone()}</span>
+                <span class=GROW>
+                    {x.exercise.clone()}
+                    {x.superset.map(|_| view! { <span class=WARN>" · ss"</span> })}
+                    {if x.inferred {
+                        view! { <span class=DIM>" · inferred"</span> }.into_any()
+                    } else {
+                        ().into_any()
+                    }}
+                </span>
                 <span class=RIGHT>{format!("{} × {}", one(x.load), one(x.rep))}</span>
                 <span class=DIM>{x.effort.clone().unwrap_or_else(|| "—".to_string())}</span>
                 <button type="button" class=SMALL on:click=move |_| set_editing.update(|e| *e = !*e)>
@@ -3293,16 +3555,17 @@ fn GroupAdder(groups: Vec<MuscleRow>, #[prop(into)] on_add: Callback<(i64, f64)>
 fn GymPresetPanels(d: GymEdit, saved: Callback<()>) -> impl IntoView {
     let presets = d.presets.clone();
     let names: Vec<(i64, String)> = d.exercises.iter().map(|e| (e.id, e.name.clone())).collect();
+    let names_for_rows = names.clone();
     view! {
         <Section title="Presets">
-            <Hint text="A preset is a named list of exercises. Applying it on the daily page puts its exercises on the session's checklist." />
+            <Hint text="A preset is a named list of exercises. Applying it on the daily page puts its exercises on the session's list; editing it rewrites the list and leaves finished sessions alone." />
             {if presets.is_empty() {
                 view! { <Hint text="No presets yet." /> }.into_any()
             } else {
                 view! {
                     {presets
                         .into_iter()
-                        .map(|p| view! { <GymPresetRow p=p saved=saved /> })
+                        .map(|p| view! { <GymPresetRow p=p names=names_for_rows.clone() saved=saved /> })
                         .collect_view()}
                 }
                     .into_any()
@@ -3314,12 +3577,84 @@ fn GymPresetPanels(d: GymEdit, saved: Callback<()>) -> impl IntoView {
     }
 }
 
+/// One exercise row of a preset form: a select plus the way to drop it.
+///
+/// The rows are a list rather than a fixed set of slots, so a preset starts
+/// with the one exercise it must have and grows as far as the reader needs.
 #[component]
-fn GymPresetRow(p: GymPreset, saved: Callback<()>) -> impl IntoView {
+fn PresetExerciseRow(
+    index: usize,
+    names: Vec<(i64, String)>,
+    picked: RwSignal<Vec<i64>>,
+    /// The exercise this row opens on, when it came from an existing preset.
+    initial: Option<i64>,
+) -> impl IntoView {
+    view! {
+        <div class=LINE>
+            <label class=GROW>
+                "exercise"
+                <select on:change=move |e| {
+                    let v = event_target_value(&e).parse::<i64>().unwrap_or(-1);
+                    picked
+                        .update(|p| {
+                            if index < p.len() {
+                                p[index] = v;
+                            }
+                        });
+                }>
+                    {if index > 0 {
+                        view! { <option value="-1">"—"</option> }.into_any()
+                    } else {
+                        ().into_any()
+                    }}
+                    {names
+                        .iter()
+                        .map(|(id, n)| {
+                            view! {
+                                <option value=id.to_string() selected=initial == Some(*id)>
+                                    {n.clone()}
+                                </option>
+                            }
+                        })
+                        .collect_view()}
+                </select>
+            </label>
+            {if index > 0 {
+                view! {
+                    <button
+                        type="button"
+                        class=SMALL_BAD
+                        on:click=move |_| {
+                            picked
+                                .update(|p| {
+                                    if index < p.len() {
+                                        p.remove(index);
+                                    }
+                                });
+                        }
+                    >
+                        "remove"
+                    </button>
+                }
+                    .into_any()
+            } else {
+                ().into_any()
+            }}
+        </div>
+    }
+}
+
+#[component]
+fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView {
+    let (editing, set_editing) = signal(false);
     let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
     let del = Action::new(move |id: &i64| {
         let id = *id;
         async move { crate::web::api::act_delete_exercise_preset(id).await }
+    });
+    let edit = Action::new(move |args: &(i64, String, Vec<i64>)| {
+        let (id, name, exercises) = args.clone();
+        async move { crate::web::api::act_edit_exercise_preset(id, name, exercises).await }
     });
     Effect::new(move |_| {
         if let Some(r) = del.value().get() {
@@ -3329,7 +3664,21 @@ fn GymPresetRow(p: GymPreset, saved: Callback<()>) -> impl IntoView {
             set_outcome.set(Some(r));
         }
     });
+    Effect::new(move |_| {
+        if let Some(r) = edit.value().get() {
+            if r.is_ok() {
+                set_editing.set(false);
+                saved.run(());
+            }
+            set_outcome.set(Some(r));
+        }
+    });
     let id = p.id;
+    let name0 = p.name.clone();
+    let picks = RwSignal::new(p.items.iter().map(|i| i.exercise).collect::<Vec<i64>>());
+    let picks_for_rows = picks;
+    let name_field = NodeRef::<leptos::html::Input>::new();
+    let names_for_edit = names.clone();
     let items = p
         .items
         .iter()
@@ -3337,10 +3686,17 @@ fn GymPresetRow(p: GymPreset, saved: Callback<()>) -> impl IntoView {
         .collect::<Vec<_>>()
         .join(", ");
     view! {
-        <div class=RECORD>
+        <div class=RECORD data-preset=p.name.clone()>
             <div class=ROW>
                 <span class=GROW>{p.name.clone()}</span>
                 <span class=DIM>{format!("{} exercise(s)", p.items.len())}</span>
+                <button
+                    type="button"
+                    class=SMALL
+                    on:click=move |_| set_editing.update(|e| *e = !*e)
+                >
+                    "edit"
+                </button>
                 <button
                     type="button"
                     class=SMALL_BAD
@@ -3355,6 +3711,63 @@ fn GymPresetRow(p: GymPreset, saved: Callback<()>) -> impl IntoView {
             <div class=ROW>
                 <span class="text-gray-500 whitespace-normal">{items}</span>
             </div>
+            {move || {
+                if !editing.get() {
+                    return ().into_any();
+                }
+                let name0 = name0.clone();
+                let names = names_for_edit.clone();
+                let rows = picks_for_rows
+                    .get()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, initial)| {
+                        view! {
+                            <PresetExerciseRow
+                                index=i
+                                names=names.clone()
+                                picked=picks_for_rows
+                                initial=Some(*initial)
+                            />
+                        }
+                    })
+                    .collect_view();
+                view! {
+                    <form on:submit=move |e| {
+                        e.prevent_default();
+                        let mut exercises: Vec<i64> = Vec::new();
+                        for id in picks_for_rows.get_untracked() {
+                            if id > 0 && !exercises.contains(&id) {
+                                exercises.push(id);
+                            }
+                        }
+                        edit.dispatch((id, value_of(name_field, &name0), exercises));
+                    }>
+                        <div class=ROW>
+                            <label class=GROW>
+                                "name"
+                                <input type="text" size="16" value=name0.clone() node_ref=name_field />
+                            </label>
+                        </div>
+                        {rows}
+                        <div class=ROW>
+                            <button
+                                type="button"
+                                on:click=move |_| picks_for_rows.update(|p| p.push(-1))
+                            >
+                                "add exercise"
+                            </button>
+                            <button type="submit" disabled=move || edit.pending().get()>
+                                "save"
+                            </button>
+                            <button type="button" on:click=move |_| set_editing.set(false)>
+                                "cancel"
+                            </button>
+                        </div>
+                    </form>
+                }
+                    .into_any()
+            }}
             <Outcome outcome=outcome />
         </div>
     }
@@ -3363,12 +3776,8 @@ fn GymPresetRow(p: GymPreset, saved: Callback<()>) -> impl IntoView {
 #[component]
 fn AddGymPreset(names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView {
     let name = NodeRef::<leptos::html::Input>::new();
-    let slots = [
-        NodeRef::<leptos::html::Select>::new(),
-        NodeRef::<leptos::html::Select>::new(),
-        NodeRef::<leptos::html::Select>::new(),
-        NodeRef::<leptos::html::Select>::new(),
-    ];
+    // A preset starts with the one exercise it must have; the rows grow.
+    let picks = RwSignal::new(vec![-1i64]);
     let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
     let action = Action::new(move |args: &(String, Vec<i64>)| {
         let (name, exercises) = args.clone();
@@ -3384,11 +3793,10 @@ fn AddGymPreset(names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView
     });
     let names_for_rows = names.clone();
     view! {
-        <form on:submit=move |e| {
+        <form id="add-preset" on:submit=move |e| {
             e.prevent_default();
             let mut out: Vec<i64> = Vec::new();
-            for slot in slots {
-                let id = selected(slot, -1);
+            for id in picks.get_untracked() {
                 if id > 0 && !out.contains(&id) {
                     out.push(id);
                 }
@@ -3401,35 +3809,27 @@ fn AddGymPreset(names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView
                     <input type="text" size="16" value="" node_ref=name />
                 </label>
             </div>
-            {slots
-                .iter()
-                .enumerate()
-                .map(|(i, slot)| {
-                    let slot = *slot;
-                    let names = names_for_rows.clone();
-                    view! {
-                        <div class=LINE>
-                            <label class=GROW>
-                                "exercise"
-                                <select node_ref=slot>
-                                    {if i > 0 {
-                                        view! { <option value="-1">"—"</option> }.into_any()
-                                    } else {
-                                        ().into_any()
-                                    }}
-                                    {names
-                                        .iter()
-                                        .map(|(id, n)| {
-                                            view! { <option value=id.to_string()>{n.clone()}</option> }
-                                        })
-                                        .collect_view()}
-                                </select>
-                            </label>
-                        </div>
-                    }
-                })
-                .collect_view()}
+            {move || {
+                picks
+                    .get()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, initial)| {
+                        view! {
+                            <PresetExerciseRow
+                                index=i
+                                names=names_for_rows.clone()
+                                picked=picks
+                                initial=(*initial > 0).then_some(*initial)
+                            />
+                        }
+                    })
+                    .collect_view()
+            }}
             <div class=ROW>
+                <button type="button" on:click=move |_| picks.update(|p| p.push(-1))>
+                    "add exercise"
+                </button>
                 <button type="submit" disabled=move || action.pending().get()>
                     "add preset"
                 </button>
@@ -3701,35 +4101,25 @@ pub fn GymAnalysisPage() -> impl IntoView {
 fn GymAnalysisView(a: GymAnalysis, on_pick: Callback<i64>) -> impl IntoView {
     let chosen = a.chosen.clone();
     let options = a.exercises.clone();
-    let current = chosen
-        .as_ref()
-        .and_then(|c| options.iter().find(|o| o.name == c.exercise).map(|o| o.id));
+    let rows: Vec<(i64, String, String)> = options
+        .iter()
+        .map(|o| {
+            (
+                o.id,
+                format!("{} · {}", o.name, o.group),
+                format!("{} session(s)", o.sessions),
+            )
+        })
+        .collect();
     view! {
         <Section title="Strength and volume">
             <Hint text="The thick line is the chosen exercise's best estimated 1RM per session. The dashed lines are sets per week for that exercise and for the exercises that share its main muscle group, on the right-hand scale: the overlay is what answers whether strength moved when the volume did." />
-            <div class=ROW>
-                <label class=GROW>
-                    "exercise"
-                    <select
-                        on:change=move |e| {
-                            if let Ok(id) = event_target_value(&e).parse::<i64>() {
-                                on_pick.run(id);
-                            }
-                        }
-                    >
-                        {options
-                            .iter()
-                            .map(|o| {
-                                view! {
-                                    <option value=o.id.to_string() selected=current == Some(o.id)>
-                                        {format!("{} · {} ({} sessions)", o.name, o.group, o.sessions)}
-                                    </option>
-                                }
-                            })
-                            .collect_view()}
-                    </select>
-                </label>
-            </div>
+            <Picker
+                label="exercise · search by name or muscle group"
+                placeholder="filter exercises"
+                rows=rows
+                on_pick=on_pick
+            />
             {match chosen {
                 Some(c) => {
                     let strength: Vec<(i64, f64)> = c

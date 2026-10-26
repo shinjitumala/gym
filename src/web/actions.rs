@@ -921,49 +921,22 @@ pub async fn add_preset(db: &Db, name: &str, items: Vec<(i64, f64)>) -> Res<i64>
     Ok(id)
 }
 
-/// Apply a preset: one meal row per item, at `date`/`time`, and the preset's
-/// `last_used` moves so the list can be ordered by it.
-pub async fn apply_preset(
-    db: &Db,
-    preset: i64,
-    date: &str,
-    time: &str,
-    multiplier: f64,
-) -> Res<usize> {
-    if multiplier <= 0.0 {
-        Err("The multiplier must be greater than zero.".to_string())?;
-    }
-    let at = instant_of(date, time)?;
-    let items = sqlx::query!(
-        r#"SELECT food AS "food!", amount AS "amount!" FROM meal_preset_item WHERE preset = ?1"#,
-        preset
-    )
-    .fetch_all(&db.pool)
-    .await?;
-    if items.is_empty() {
-        Err("That preset has no foods.".to_string())?;
-    }
-    let mut tx = db.pool.begin().await?;
-    for item in &items {
-        sqlx::query!(
-            "INSERT INTO meal (date, food, amount, note) VALUES (?1, ?2, ?3, ?4)",
-            at,
-            item.food,
-            item.amount * multiplier,
-            ""
-        )
-        .execute(&mut *tx)
-        .await?;
-    }
+/// Mark a preset as used.
+///
+/// A preset no longer records its foods by itself: it loads them into the meal
+/// being entered, and nothing is written until that is saved. Loading is still
+/// what "used" means, so the list keeps sorting by the preset the reader
+/// reaches for first; the stamp writes no meal row.
+pub async fn touch_preset(db: &Db, preset: i64) -> Res<()> {
+    let at = Local::now().to_rfc3339();
     sqlx::query!(
         "UPDATE meal_preset SET last_used = ?1 WHERE id = ?2",
         at,
         preset
     )
-    .execute(&mut *tx)
+    .execute(&db.pool)
     .await?;
-    tx.commit().await?;
-    Ok(items.len())
+    Ok(())
 }
 
 pub async fn delete_preset(db: &Db, id: i64) -> Res<()> {
@@ -1001,6 +974,43 @@ pub async fn add_exercise_preset(db: &Db, name: &str, items: Vec<i64>) -> Res<i6
     }
     tx.commit().await?;
     Ok(id)
+}
+
+/// Rewrite a preset: its name and its list, in one transaction.
+///
+/// Finished sessions keep the checklist they recorded — they store the
+/// exercises, not the preset — so rewriting a preset never rewrites history.
+pub async fn edit_exercise_preset(db: &Db, id: i64, name: &str, items: Vec<i64>) -> Res<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        Err("A preset needs a name.".to_string())?;
+    }
+    if items.is_empty() {
+        Err("A preset needs at least one exercise.".to_string())?;
+    }
+    let mut tx = db.pool.begin().await?;
+    sqlx::query!(
+        "UPDATE exercise_list SET name = ?1 WHERE id = ?2",
+        name,
+        id
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!("DELETE FROM exercise_list_item WHERE list = ?1", id)
+        .execute(&mut *tx)
+        .await?;
+    for (position, exercise) in items.iter().enumerate() {
+        sqlx::query!(
+            "INSERT INTO exercise_list_item (list, exercise, position) VALUES (?1, ?2, ?3)",
+            id,
+            exercise,
+            position as i64
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 pub async fn delete_exercise_preset(db: &Db, id: i64) -> Res<()> {

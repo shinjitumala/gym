@@ -5,6 +5,11 @@
 //! half of the web build: `sqlx`, `tokio` and `inquire` are for the host, so a
 //! browser bundle never carries a database driver.
 
+// A page is one view tree, and the browser half resolves every node's type as
+// a future: the deepest page (a session inside the exercise window, with the
+// table's folded-out row) needs more nesting than the default limit allows.
+#![recursion_limit = "256"]
+
 pub mod stats;
 pub mod train;
 pub mod web;

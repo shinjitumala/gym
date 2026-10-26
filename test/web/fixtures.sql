@@ -1,6 +1,7 @@
 -- A fixture log for the web scenarios: two places, six exercises with muscle
--- groups, two gym presets, four bench sessions one of which is a deload, five
--- foods, a meal preset, four meals and nine weigh-ins.
+-- groups, two gym presets, four bench sessions one of which is a deload, two
+-- squat sessions (so the analysis has a list to search), five foods, a meal
+-- preset, four meals and nine weigh-ins.
 --
 -- The dates are absolute on purpose. A scenario that asserts "sorted by
 -- recency" needs to know which row came last, and a relative fixture would
@@ -70,6 +71,19 @@ INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
 SELECT s.id, e.id, 1, s.date, 40, 8, (SELECT id FROM effort WHERE name = 'hard')
 FROM session s, exercise e WHERE s.date LIKE '2026-10-16%' AND e.name = 'bench press';
 
+-- A second exercise with two sessions: the analysis dropdown lists exercises
+-- trained at least twice, and one entry is not a list to search.
+INSERT INTO session (date, place, ended)
+SELECT '2026-10-08T18:00:00+00:00', p.id, '2026-10-08T19:00:00+00:00' FROM place p WHERE p.name = 'the gym';
+INSERT INTO session (date, place, ended)
+SELECT '2026-10-15T18:00:00+00:00', p.id, '2026-10-15T19:00:00+00:00' FROM place p WHERE p.name = 'the gym';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 0, s.date, 100, 5, (SELECT id FROM effort WHERE name = 'hard')
+FROM session s, exercise e WHERE s.date LIKE '2026-10-08%' AND e.name = 'squat';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 0, s.date, 102.5, 5, (SELECT id FROM effort WHERE name = 'hard')
+FROM session s, exercise e WHERE s.date LIKE '2026-10-15%' AND e.name = 'squat';
+
 INSERT INTO food (name, calories, protein, fat, carbohydrate) VALUES
     ('oats', 380, 13, 7, 60),
     ('milk', 120, 6, 5, 10),
@@ -89,6 +103,12 @@ INSERT INTO meal (date, food, amount)
 SELECT '2026-10-24T12:30:00+00:00', id, 2.0 FROM food WHERE name = 'chicken';
 INSERT INTO meal (date, food, amount)
 SELECT '2026-10-25T08:00:00+00:00', id, 1.0 FROM food WHERE name = 'bread';
+
+-- One weigh-in well outside the trend's 21-day window: the slope is fitted over
+-- that window, the chart is asked about the whole range, and a page that draws
+-- the window instead of the range shows an empty line for a log that has weight
+-- in it.
+INSERT INTO weight (date, kg, bodyfat) VALUES ('2026-06-01T07:00:00+00:00', 78.2, 19.4);
 
 INSERT INTO weight (date, kg, bodyfat) VALUES
     ('2026-09-01T07:00:00+00:00', 80.0, 18.0),

@@ -39,6 +39,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRATCH = os.environ.get("FPR_SCRATCH_DIR") or tempfile.mkdtemp(prefix="gym-web-")
 
+# Tailwind 4.3 added the first-party scrollbar utilities (scrollbar-thin,
+# scrollbar-thumb-*, scrollbar-track-*), so the build pins that release.
+TAILWIND_VERSION = "v4.3.3"
+
 BROWSERS = [
     "brave",
     "brave-browser",
@@ -372,7 +376,7 @@ def build():
     binary = os.environ.get("GYM_BIN")
     if binary:
         return os.path.abspath(binary)
-    env = dict(os.environ, SQLX_OFFLINE="true")
+    env = dict(os.environ, SQLX_OFFLINE="true", LEPTOS_TAILWIND_VERSION=TAILWIND_VERSION)
     steps = []
     if shutil.which("cargo-leptos"):
         steps.append(["cargo", "leptos", "build", "--release"])
@@ -440,6 +444,82 @@ def serve(binary, home, port):
 # --------------------------------------------------------------- the scenarios
 
 
+def in_section(cdp, title, expression):
+    """Evaluate `expression` with `s` bound to the section titled `title`.
+
+    The edit page keeps every panel in the document and hides the ones that are
+    not chosen, so a page-wide ``button[innerText='edit']`` finds the wrong one.
+    A section title is what a reader uses to tell them apart, so it is what the
+    scenario uses too.
+    """
+    return cdp.eval(
+        "(() => { const s = [...document.querySelectorAll('main section')]"
+        f".find(x => x.querySelector('h2') && x.querySelector('h2').innerText === {json.dumps(title)});"
+        f"if (!s) return null; return ({expression}); }})()"
+    )
+
+
+def section_click(cdp, title, text, selector="button"):
+    ok = cdp.eval(
+        "(() => { const s = [...document.querySelectorAll('main section')]"
+        f".find(x => x.querySelector('h2') && x.querySelector('h2').innerText === {json.dumps(title)});"
+        "if (!s) return false;"
+        f"const e = [...s.querySelectorAll({json.dumps(selector)})]"
+        f".find(e => e.innerText.trim() === {json.dumps(text)});"
+        "if (!e) return false; e.scrollIntoView({block: 'center'}); e.click(); return true; })()"
+    )
+    need(ok, f"no {selector} reading {text!r} in the {title!r} section")
+
+
+def section_fill(cdp, title, selector, value, index=0):
+    ok = cdp.eval(
+        "(() => { const s = [...document.querySelectorAll('main section')]"
+        f".find(x => x.querySelector('h2') && x.querySelector('h2').innerText === {json.dumps(title)});"
+        "if (!s) return false;"
+        f"const e = s.querySelectorAll({json.dumps(selector)})[{index}];"
+        "if (!e) return false; e.focus();"
+        f"e.value = {json.dumps(value)};"
+        "e.dispatchEvent(new Event('input', {bubbles: true}));"
+        "e.dispatchEvent(new Event('change', {bubbles: true})); return true; })()"
+    )
+    need(ok, f"no {selector}[{index}] in the {title!r} section")
+
+
+def choose_text(cdp, expression, text):
+    """Pick the option whose label contains `text` in the select at `expression`."""
+    ok = cdp.eval(
+        f"(() => {{ const s = {expression}; if (!s) return false;"
+        f"const o = [...s.options].find(o => o.textContent.includes({json.dumps(text)}));"
+        "if (!o) return false; s.value = o.value;"
+        "s.dispatchEvent(new Event('change', {bubbles: true})); return true; })()"
+    )
+    need(ok, f"no option containing {text!r} at {expression}")
+
+
+def preset_click(cdp, name, text):
+    ok = cdp.eval(
+        "(() => { const rec = document.querySelector(" + json.dumps(f'[data-preset="{name}"]') + ");"
+        "if (!rec) return false;"
+        f"const e = [...rec.querySelectorAll('button')]"
+        f".find(e => e.innerText.trim() === {json.dumps(text)});"
+        "if (!e) return false; e.scrollIntoView({block: 'center'}); e.click(); return true; })()"
+    )
+    need(ok, f"no {text!r} button on the preset {name!r}")
+
+
+def preset_fill(cdp, name, selector, value, index=0):
+    ok = cdp.eval(
+        "(() => { const rec = document.querySelector(" + json.dumps(f'[data-preset="{name}"]') + ");"
+        "if (!rec) return false;"
+        f"const e = rec.querySelectorAll({json.dumps(selector)})[{index}];"
+        "if (!e) return false; e.focus();"
+        f"e.value = {json.dumps(value)};"
+        "e.dispatchEvent(new Event('input', {bubbles: true}));"
+        "e.dispatchEvent(new Event('change', {bubbles: true})); return true; })()"
+    )
+    need(ok, f"no {selector}[{index}] on the preset {name!r}")
+
+
 def nav_has_three_tabs(cdp, base):
     """The bar is the three things the log records, not a page list."""
     cdp.go(f"{base}/gym")
@@ -459,96 +539,187 @@ def nav_has_three_tabs(cdp, base):
     cdp.screenshot("nav")
 
 
-def gym_place_is_sorted_by_last_session(cdp, base):
-    """A session starts by picking a place from a list, newest session first."""
+def scrollbars_are_thin_and_green(cdp, base):
+    """The scrollbar is styled: thin, a green thumb on a black track."""
     cdp.go(f"{base}/gym")
-    cdp.until_text("main", "Start a session")
-    order = cdp.text("main section:nth-of-type(2) button")
+    style = cdp.eval(
+        "(() => { const e = document.querySelector('div.bg-black'); const s = getComputedStyle(e);"
+        # The border every rule and control uses is green-900, so comparing
+        # against it asks the same question without hard-coding a colour space:
+        # a browser is free to compute oklch() as lab() or as rgb().
+        "return {width: s.scrollbarWidth, colour: s.scrollbarColor,"
+        "green: getComputedStyle(document.querySelector('header')).borderTopColor}; })()"
+    )
+    need(style["width"] == "thin", f"the scrollbar width is {style['width']!r}, not thin")
+    thumb, _, track = style["colour"].partition(") ")
     need(
-        order.index("home") < order.index("the gym"),
-        f"the place list is not newest-first: {order!r}",
+        (thumb + ")") == style["green"],
+        f"the scrollbar thumb is {thumb!r}, not the green-900 the borders use ({style['green']!r})",
     )
-    need("last session" in order, f"a place does not say when it was last used: {order!r}")
-    cdp.click("main button", "start session")
-    cdp.until_text("main", "checklist", "the checklist after starting")
-    cdp.until_text("main", "0 set(s) recorded", "the set count of a fresh session")
-    cdp.screenshot("gym-started")
+    need(track == "rgb(0, 0, 0)", f"the scrollbar track is {track!r}, not black")
+    scrolls = cdp.eval("getComputedStyle(document.querySelector('main')).scrollbarGutter")
+    need(scrolls == "stable", f"the page does not reserve the scrollbar's room: {scrolls!r}")
+    cdp.screenshot("scrollbar")
 
 
-def gym_preset_fills_the_checklist(cdp, base):
-    """A preset puts its exercises on the checklist, in its own order."""
-    cdp.click("main button", "push · 2 exercises")
-    cdp.until_text("main", "☐ bench press", "the checklist after applying a preset")
-    checklist = cdp.text("main")
-    need("☐ incline press" in checklist, f"the second preset exercise is missing: {checklist[:400]!r}")
+def weight_the_analysis_opens_on_the_data(cdp, base):
+    """Weight · analyse opens on a range that holds the log, and draws weight and
+    body fat: both are recorded, so a missing line is a bug."""
+    cdp.go(f"{base}/weight/analyse")
+    cdp.until_text("main", "Weight by phase")
+    chosen = cdp.eval(
+        "[...document.querySelectorAll('main button.on')].map(e => e.innerText.trim())"
+    )
+    need(chosen and chosen[0] == "365d", f"the range opens on {chosen!r}, not the year")
+    lines = cdp.eval(
+        "(() => { const out = {};"
+        "document.querySelectorAll('main section').forEach(s => {"
+        "const h = s.querySelector('h2');"
+        "out[h ? h.innerText : '?'] = s.querySelectorAll('svg polyline').length; });"
+        "return out; })()"
+    )
+    need(lines.get("Weight by phase"), f"the weight line is missing: {lines!r}")
+    need(lines.get("Body fat"), f"the body-fat line is missing: {lines!r}")
     need(
-        checklist.index("bench press") < checklist.index("incline press"),
-        "the checklist is not in the preset's order",
+        "in the last 365 days" not in cdp.text("main"),
+        "the page says the window holds no weigh-ins, so the range is too narrow",
     )
-    cdp.screenshot("gym-checklist")
+    cdp.screenshot("weight-analysis")
 
 
-def gym_exercise_window_records_effort_and_time(cdp, base):
-    """The window defaults to the last load and offers the three efforts."""
-    cdp.click_contains("main button", "bench press")
-    cdp.until_text("main", "this session", "the exercise window")
-    load = cdp.eval("document.querySelectorAll('main input[type=text]')[0].value")
-    need(load == "70", f"the load defaulted to {load!r}, not the last session's 70")
-    efforts = cdp.eval(
-        "[...document.querySelectorAll('main select')][0]"
-        ".options.length && [...document.querySelectorAll('main select')][0].innerText"
+def weight_the_line_is_the_whole_range(cdp, base):
+    """The weight line is the range's weigh-ins, not the slope's trailing window.
+
+    The slope needs its 21 days of weigh-ins; the chart is asked about the range
+    the reader chose, so a log whose weigh-ins are older than that window still
+    has a line, and its oldest point is the range's, not the window's.
+    """
+    cdp.go(f"{base}/weight/analyse")
+    cdp.until_text("main", "Weight by phase")
+    first, last = cdp.eval(
+        "(() => { const s = [...document.querySelectorAll('main section')]"
+        ".find(x => x.querySelector('h2') && x.querySelector('h2').innerText === 'Weight by phase');"
+        "const t = [...s.querySelectorAll('text.x-tick')].map(e => e.textContent);"
+        "return [t[0], t[t.length - 1]]; })()"
     )
-    need("hard" in efforts and "form fail" in efforts and "fail" in efforts, f"the effort list is {efforts!r}")
-    need("3+ reps from failure" in efforts, f"an effort does not say what it means: {efforts!r}")
-    advice = cdp.text("main")
-    need("2.5 kg" in advice, f"no load step in the advice: {advice[:400]!r}")
-    need("70.0 kg × 8" in advice, f"the advice does not read the last session: {advice[:400]!r}")
-    cdp.fill("main input[type=text]", "72.5", 0)
-    cdp.fill("main input[type=text]", "8", 1)
-    cdp.click("main button", "save set")
-    cdp.until_text("main", "72.5", "the saved set's load")
-    saved = cdp.text("main")
-    need("hard" in saved, f"the saved set has no effort: {saved[:400]!r}")
     need(
-        cdp.eval("document.querySelectorAll('main table tbody tr').length > 0"),
-        "the session's table did not gain a row",
+        first == "2026-06-01",
+        f"the weight line starts at {first!r}, not at the range's oldest weigh-in (2026-06-01)",
     )
-    cdp.screenshot("gym-set")
+    need(last == "2026-10-24", f"the weight line ends at {last!r}, not the newest weigh-in")
+    # One dot per observation: the line is split where the phase changes, so
+    # counting the dots is counting the weigh-ins the chart drew.
+    dots = cdp.eval(
+        "(() => { const s = [...document.querySelectorAll('main section')]"
+        ".find(x => x.querySelector('h2') && x.querySelector('h2').innerText === 'Weight by phase');"
+        "return s.querySelectorAll('svg circle').length; })()"
+    )
+    need(dots >= 10, f"the weight line drew {dots} weigh-ins for the range's ten")
+    cdp.screenshot("weight-line-range")
 
 
-def gym_back_and_end_session(cdp, base):
-    """X returns to the checklist; end session closes it."""
-    cdp.click_contains("main button", "back to the checklist")
-    cdp.until_text("main", "☑ bench press", "the checklist after a set")
-    cdp.until_text("main", "1 set(s) recorded", "the session's set count")
-    cdp.click("main button", "end session")
-    cdp.until_text("main", "Start a session", "the session to close")
-    sessions = cdp.text("main")
-    need("Recent sessions" in sessions, "the recent sessions panel is gone")
-    cdp.screenshot("gym-ended")
+def weight_trend_has_a_phase_colour(cdp, base):
+    """The trend line is coloured by the phase each weigh-in was taken in."""
+    legend = cdp.text("main")
+    need("bulk" in legend and "cut" in legend, f"the phase legend is missing: {legend[:400]!r}")
+    strokes = cdp.eval(
+        "[...document.querySelectorAll('main svg polyline')].map(e => e.getAttribute('stroke'))"
+    )
+    need(strokes, "the weight chart drew no line")
 
 
-def gym_analysis_shades_the_deload_week(cdp, base):
-    """The strength chart shades the deload week instead of dropping its point."""
-    cdp.go(f"{base}/gym/analyse")
-    cdp.until_text("main", "estimated 1RM", "the strength chart")
+def weight_analysis_marks_the_deload_week(cdp, base):
+    """The weight line shades the deload week it runs through."""
     weeks = cdp.eval("document.querySelectorAll('main svg rect.deload-week').length")
     need(weeks == 1, f"{weeks} deload bands drawn, not the one deload week")
-    panel = cdp.text("main")
-    need("deload week" in panel, f"the legend does not say what the band is: {panel[:500]!r}")
-    # The band is drawn behind the line, not in place of a point: the strength
-    # line still has one point per session in the window.
-    counted = re.search(r"(\d+) session\(s\) in the window", panel)
-    need(counted, f"the page does not say how many sessions it drew: {panel[:400]!r}")
-    drawn = cdp.eval(
-        "document.querySelector('main svg polyline[stroke-width=\"2\"]')"
-        ".getAttribute('points').trim().split(/\\s+/).length"
-    )
     need(
-        int(drawn) == int(counted.group(1)),
-        f"the strength line has {drawn} points for {counted.group(1)} sessions, so a point was dropped",
+        "deload week" in cdp.text("main"),
+        "the weight chart's legend does not name the deload band",
     )
-    cdp.screenshot("gym-analysis-deload")
+    cdp.screenshot("weight-analysis-deload")
+
+
+def weight_intake_bar_shows_the_food(cdp, base):
+    """Pressing a bar names the foods that made that day."""
+    bars = cdp.eval("document.querySelectorAll('main svg rect.intake-bar').length")
+    need(bars, "the intake chart drew no bars")
+    cdp.eval(
+        "(() => { const r = document.querySelectorAll('main svg rect.intake-bar');"
+        "r[r.length - 1].dispatchEvent(new MouseEvent('click', {bubbles: true})); return true; })()"
+    )
+    cdp.until_text("main", "food", "the day's foods")
+    panel = cdp.text("main section:last-of-type")
+    need(
+        any(word in panel for word in ("oats", "bread", "chicken", "rice", "milk")),
+        f"the picked day does not name its foods: {panel!r}",
+    )
+    cdp.screenshot("weight-bars")
+
+
+def weight_foods_are_ranked_over_the_range(cdp, base):
+    """Under the bars, the range's foods are ranked in the shown metric."""
+    cdp.go(f"{base}/weight/analyse")
+    cdp.until_text("#food-ranking", "ranked by calories", "the range's food ranking")
+    cdp.until_text("#food-ranking tbody tr", "oats", "the ranked foods")
+    calories = cdp.text("#food-ranking tbody")
+    need(
+        calories.index("oats") < calories.index("chicken") < calories.index("rice"),
+        f"the calories are not ranked largest first: {calories!r}",
+    )
+    cdp.click("main button", "protein")
+    cdp.until_text("#food-ranking", "ranked by protein", "the ranking to switch metric")
+    protein = cdp.text("#food-ranking tbody")
+    need(
+        protein.index("chicken") < protein.index("oats"),
+        f"the protein ranking is not re-sorted: {protein!r}",
+    )
+    need("%" in protein, f"the ranking has no share of the range: {protein!r}")
+    cdp.screenshot("weight-ranking")
+
+
+def charts_have_dates_and_numbers(cdp, base):
+    """Every chart labels its axes: dates along the bottom, numbers up the side."""
+    for page in ("/weight/analyse", "/gym/analyse"):
+        cdp.go(f"{base}{page}")
+        cdp.until_text("main", "time range")
+        charts = cdp.eval(
+            "[...document.querySelectorAll('main svg')].map(s => ({"
+            "dates: [...s.querySelectorAll('text.x-tick')].map(t => t.textContent),"
+            "numbers: [...s.querySelectorAll('text.y-tick')].map(t => t.textContent)}))"
+        )
+        need(charts, f"{page} drew no chart")
+        chart = charts[0]
+        need(len(chart["dates"]) >= 3, f"{page} has {len(chart['dates'])} date labels")
+        need(
+            all(re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) for d in chart["dates"]),
+            f"{page} dates are {chart['dates']!r}",
+        )
+        need(len(chart["numbers"]) >= 2, f"{page} has {len(chart['numbers'])} number labels")
+        need(
+            all(re.search(r"\d", n) for n in chart["numbers"]),
+            f"{page} numbers are {chart['numbers']!r}",
+        )
+        # An SVG `text` fills black unless told otherwise, and black on this
+        # page's black is a label nobody can read - the bug this asserts against.
+        fills = cdp.eval(
+            "[...document.querySelectorAll('main svg text')]"
+            ".map(t => getComputedStyle(t).fill)"
+        )
+        need(
+            fills and not any(f in ("rgb(0, 0, 0)", "none") for f in fills),
+            f"{page} axis labels are painted {set(fills)}, which is the background",
+        )
+        gaps = cdp.eval(
+            "(() => { const s = document.querySelector('main svg');"
+            "const t = s.querySelector('text.y-tick'); if (!t) return null;"
+            "const b = t.getBoundingClientRect(); const svg = s.getBoundingClientRect();"
+            "return b.left - svg.left; })()"
+        )
+        need(
+            gaps is None or gaps >= 0,
+            f"{page} numbers start {gaps}px left of the chart, so they are clipped",
+        )
+    cdp.screenshot("chart-axes")
 
 
 def food_food_list_is_sorted_by_last_eaten(cdp, base):
@@ -597,6 +768,51 @@ def food_totals_show_the_maintenance_gap(cdp, base):
     )
 
 
+def food_a_preset_loads_the_draft(cdp, base):
+    """A preset fills the meal being entered; nothing is written before save."""
+    cdp.go(f"{base}/food")
+    cdp.until_text("main", "Record a meal")
+    saved = "document.querySelectorAll('main section:last-of-type tbody tr').length"
+    before = cdp.eval(saved)
+    cdp.click_contains("main button", "breakfast ·")
+    cdp.until_text("main", "oats · 1.00 ×", "the preset's first food in the draft")
+    draft = cdp.text("main section:nth-of-type(2)")
+    need("milk · 1.00 ×" in draft, f"the preset's second food is missing: {draft[:600]!r}")
+    need(
+        cdp.eval(saved) == before,
+        "loading a preset wrote meals before save",
+    )
+    cdp.click("main button", "save")
+    cdp.until(
+        f"{saved} === {before + 2}",
+        10,
+        "the preset's two rows to be saved from the draft",
+    )
+    cdp.screenshot("food-preset")
+
+
+def food_the_meal_projects_the_day(cdp, base):
+    """The meal form projects the day: today's totals plus the rows above it."""
+    cdp.go(f"{base}/food")
+    cdp.until_text("main", "Record a meal")
+    top = int(
+        cdp.eval(
+            "document.querySelector('main section:nth-of-type(1) span.tabular-nums').innerText"
+        )
+    )
+    cdp.click_contains("main section button", "bread")
+    cdp.click("main button", "add row")
+    cdp.until_text("#projected-day", "projected day", "the projected day")
+    projected = int(
+        cdp.eval("document.querySelector('#projected-day span.tabular-nums').innerText")
+    )
+    need(
+        projected == top + 250,
+        f"the projected day is {projected} kcal, not today's {top} + the bread's 250",
+    )
+    cdp.screenshot("food-projection")
+
+
 def weight_a_weigh_in_defaults_to_now(cdp, base):
     """A weigh-in is a date, a time defaulting to now, kg, optional body fat."""
     cdp.go(f"{base}/weight")
@@ -615,73 +831,10 @@ def weight_a_weigh_in_defaults_to_now(cdp, base):
     cdp.screenshot("weight-saved")
 
 
-def weight_trend_has_a_phase_colour(cdp, base):
-    """The trend line is coloured by the phase each weigh-in was taken in."""
-    cdp.go(f"{base}/weight/analyse")
-    cdp.until_text("main", "Weight by phase")
-    legend = cdp.text("main")
-    need("bulk" in legend and "cut" in legend, f"the phase legend is missing: {legend[:400]!r}")
-    strokes = cdp.eval(
-        "[...document.querySelectorAll('main svg polyline')].map(e => e.getAttribute('stroke'))"
-    )
-    need(strokes, "the weight chart drew no line")
-
-
-def weight_analysis_marks_the_deload_week(cdp, base):
-    """The weight line shades the deload week it runs through."""
-    cdp.go(f"{base}/weight/analyse")
-    cdp.until_text("main", "Weight by phase")
-    weeks = cdp.eval("document.querySelectorAll('main svg rect.deload-week').length")
-    need(weeks == 1, f"{weeks} deload bands drawn, not the one deload week")
-    need(
-        "deload week" in cdp.text("main"),
-        "the weight chart's legend does not name the deload band",
-    )
-    cdp.screenshot("weight-analysis-deload")
-
-
-def weight_intake_bar_shows_the_food(cdp, base):
-    """Pressing a bar names the foods that made that day."""
-    bars = cdp.eval("document.querySelectorAll('main svg rect.intake-bar').length")
-    need(bars, "the intake chart drew no bars")
-    cdp.eval(
-        "(() => { const r = document.querySelectorAll('main svg rect.intake-bar');"
-        "r[r.length - 1].dispatchEvent(new MouseEvent('click', {bubbles: true})); return true; })()"
-    )
-    cdp.until_text("main", "food", "the day's foods")
-    panel = cdp.text("main section:last-of-type")
-    need(
-        any(word in panel for word in ("oats", "bread", "chicken", "rice", "milk")),
-        f"the picked day does not name its foods: {panel!r}",
-    )
-    cdp.screenshot("weight-bars")
-
-
-def weight_foods_are_ranked_over_the_range(cdp, base):
-    """Under the bars, the range's foods are ranked in the shown metric."""
-    cdp.go(f"{base}/weight/analyse")
-    cdp.until_text("#food-ranking", "ranked by calories", "the range's food ranking")
-    cdp.until_text("#food-ranking tbody tr", "oats", "the ranked foods")
-    calories = cdp.text("#food-ranking tbody")
-    need(
-        calories.index("oats") < calories.index("chicken") < calories.index("rice"),
-        f"the calories are not ranked largest first: {calories!r}",
-    )
-    cdp.click("main button", "protein")
-    cdp.until_text("#food-ranking", "ranked by protein", "the ranking to switch metric")
-    protein = cdp.text("#food-ranking tbody")
-    need(
-        protein.index("chicken") < protein.index("oats"),
-        f"the protein ranking is not re-sorted: {protein!r}",
-    )
-    need("%" in protein, f"the ranking has no share of the range: {protein!r}")
-    cdp.screenshot("weight-ranking")
-
-
 def edit_tabs_are_the_three_modes(cdp, base):
     """Edit is reached from a mode's bottom row, and stays inside that mode."""
     cdp.go(f"{base}/gym/edit")
-    cdp.until_text("main", "Recent sessions")
+    cdp.until_text("main", "Edit a set's load")
     groups = cdp.eval(
         "[...document.querySelectorAll('main button')].map(e => e.innerText.trim())"
     )
@@ -698,6 +851,263 @@ def edit_tabs_are_the_three_modes(cdp, base):
     cdp.screenshot("edit")
 
 
+def gym_place_is_sorted_by_last_session(cdp, base):
+    """A session starts by picking a place from a list, newest session first."""
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "Start a session")
+    order = cdp.text("main section:nth-of-type(2) button")
+    need(
+        order.index("home") < order.index("the gym"),
+        f"the place list is not newest-first: {order!r}",
+    )
+    need("last session" in order, f"a place does not say when it was last used: {order!r}")
+    cdp.click("main button", "start session")
+    cdp.until_text("main", "the list", "the session's list")
+    cdp.until_text("main", "0 set(s) recorded", "the set count of a fresh session")
+    cdp.screenshot("gym-started")
+
+
+def gym_a_session_fills_the_screen(cdp, base):
+    """A session in progress is the whole screen, and end session is its exit."""
+    box = cdp.eval(
+        "(() => { const e = document.querySelector('.session-screen'); if (!e) return null;"
+        "const r = e.getBoundingClientRect();"
+        "return {w: r.width, h: r.height, sw: window.innerWidth, sh: window.innerHeight,"
+        "position: getComputedStyle(e).position}; })()"
+    )
+    need(box, "the session screen is not on the page")
+    need(box["position"] == "fixed", f"the session screen is {box['position']}, not fixed")
+    need(
+        box["w"] >= box["sw"] - 1 and box["h"] >= box["sh"] - 1,
+        f"the session screen is {box['w']}x{box['h']} in a {box['sw']}x{box['sh']} viewport",
+    )
+    need(
+        not cdp.eval("document.body.innerText.includes('Start a session')"),
+        "the start form is still behind a session in progress",
+    )
+    need(
+        cdp.eval(
+            "!![...document.querySelectorAll('.session-screen button')]"
+            ".find(b => b.innerText.trim() === 'end session')"
+        ),
+        "the session screen has no end session button",
+    )
+    cdp.screenshot("gym-fullscreen")
+
+
+def gym_preset_fills_the_list(cdp, base):
+    """A preset puts its exercises on the list, in its own order."""
+    cdp.click("main button", "push · 2 exercises")
+    cdp.until_text("main", "☐ bench press", "the list after applying a preset")
+    checklist = cdp.text("main")
+    need("☐ incline press" in checklist, f"the second preset exercise is missing: {checklist[:600]!r}")
+    need(
+        checklist.index("bench press") < checklist.index("incline press"),
+        "the list is not in the preset's order",
+    )
+    cdp.screenshot("gym-list")
+
+
+def gym_the_list_is_selected_then_start_sets(cdp, base):
+    """Picking an exercise adds it to the list; start sets opens the window."""
+    cdp.fill("main input[type=text]", "squat", 0)
+    cdp.click_contains("main button", "squat")
+    cdp.until_text("main", "☐ squat", "the picked exercise on the list")
+    need(
+        "this session" not in cdp.text("main"),
+        "picking an exercise opened the window instead of adding it to the list",
+    )
+    cdp.click("main button", "start sets")
+    cdp.until_text("main", "this session", "the exercise window")
+    cdp.until_text("main", "bench press · chest", "the window on the first exercise to do")
+    cdp.screenshot("gym-window")
+
+
+def gym_a_saved_set_is_edited_in_place(cdp, base):
+    """A set saved by mistake is corrected where it is, without leaving the
+    session."""
+    cdp.fill("main input[type=text]", "70", 0)
+    cdp.fill("main input[type=text]", "8", 1)
+    cdp.click("main button", "save set")
+    cdp.until_text("main", "70.0 × 8.0", "the saved set's row")
+    cdp.click("main button", "edit")
+    cdp.until(
+        "document.querySelectorAll('main input[type=text]').length >= 3",
+        10,
+        "the saved row to fold out",
+    )
+    cdp.fill("main input[type=text]", "72.5", 0)
+    cdp.click("main button", "save")
+    cdp.until_text("main", "72.5 × 8.0", "the corrected set's row")
+    rows = cdp.eval("document.querySelectorAll('main table tbody tr').length")
+    need(rows == 1, f"{rows} rows in the session's table after the correction, not one")
+    cdp.screenshot("gym-set-edited")
+
+
+def gym_the_next_exercise_alternates(cdp, base):
+    """The window names the next exercise in list order — the alternation a
+    superset needs — and the dropdown changes it."""
+    page = cdp.text("main")
+    need(
+        "next · incline press" in page,
+        f"the next exercise is not the list's next: {page[:800]!r}",
+    )
+    cdp.click("main button", "next · incline press")
+    cdp.until_text("main", "incline press · chest", "the next exercise's window")
+    page = cdp.text("main")
+    need(
+        "next · squat" in page,
+        f"the window does not say what follows the second exercise: {page[:800]!r}",
+    )
+    choose_text(cdp, "[...document.querySelectorAll('main select')].pop()", "bench press")
+    cdp.until_text("main", "bench press · chest", "the window the dropdown chose")
+    cdp.screenshot("gym-next")
+
+
+def gym_escape_leaves_the_window_not_the_session(cdp, base):
+    """Esc and X leave the exercise window; the session stays open.
+
+    A full-screen session must be interruptible, and its only exit is `end
+    session`: a key that closed the session would make a mis-press into a lost
+    workout, so Esc does what the window's X does and no more.
+    """
+    cdp.until_text("main", "this session", "the exercise window")
+    cdp.eval(
+        "document.dispatchEvent(new KeyboardEvent('keydown',"
+        "{key: 'Escape', bubbles: true})); true"
+    )
+    cdp.until(
+        "!document.body.innerText.includes('this session')", 5, "Esc to leave the window"
+    )
+    need(
+        cdp.eval("!!document.querySelector('.session-screen')"),
+        "Esc closed the session's screen, not just its window",
+    )
+    need(
+        not cdp.eval("document.body.innerText.includes('Start a session')"),
+        "Esc put the start form back, so the session was ended",
+    )
+    need(
+        "the list" in cdp.text("main"),
+        f"Esc did not go back to the session's list: {cdp.text('main')[:300]!r}",
+    )
+    cdp.screenshot("gym-escape")
+    # Leave the window open for the scenario that follows.
+    cdp.click("main button", "start sets")
+    cdp.until_text("main", "this session", "the exercise window again")
+
+
+def gym_back_and_end_session(cdp, base):
+    """X returns to the list; end session closes the session and the screen."""
+    cdp.click_contains("main button", "back to the checklist")
+    cdp.until_text("main", "☑ bench press", "the list after a set")
+    cdp.until_text("main", "1 set(s) recorded", "the session's set count")
+    cdp.click("main button", "end session")
+    cdp.until_text("main", "Start a session", "the session to close")
+    need(
+        not cdp.eval("!!document.querySelector('.session-screen')"),
+        "the session screen is still up after end session",
+    )
+    need(
+        "Recent sessions" not in cdp.text("main"),
+        "the recent sessions view is still on the daily page",
+    )
+    cdp.screenshot("gym-ended")
+
+
+def gym_a_preset_starts_with_one_row_and_is_edited(cdp, base):
+    """A preset starts with one exercise and grows a row at a time, and an
+    existing preset is rewritten from the edit page."""
+    cdp.go(f"{base}/gym/edit")
+    cdp.until_text("main", "Edit a set's load")
+    cdp.click("main button", "presets")
+    cdp.until_text("main", "A preset is a named list of exercises")
+    rows = "document.querySelectorAll('#add-preset select').length"
+    need(cdp.eval(rows) == 1, f"a new preset starts with {cdp.eval(rows)} rows, not one")
+    cdp.fill("#add-preset input[type=text]", "pull", 0)
+    cdp.click("#add-preset button", "add exercise")
+    need(cdp.eval(rows) == 2, "add exercise did not add a row")
+    choose_text(cdp, "document.querySelectorAll('#add-preset select')[0]", "bench press")
+    choose_text(cdp, "document.querySelectorAll('#add-preset select')[1]", "squat")
+    cdp.click("#add-preset button", "add preset")
+    cdp.until_text(f'[data-preset="pull"]', "2 exercise(s)", "the new preset")
+    need(
+        "bench press, squat"
+        in cdp.eval(
+            'document.querySelector(\'[data-preset="pull"] span.whitespace-normal\').innerText'
+        ),
+        "the new preset did not keep the two exercises in order",
+    )
+    preset_click(cdp, "pull", "edit")
+    cdp.until(f'!!document.querySelector(\'[data-preset="pull"] form\')', 10, "the preset to fold out")
+    preset_fill(cdp, "pull", "input[type=text]", "pull day", 0)
+    preset_click(cdp, "pull", "add exercise")
+    choose_text(
+        cdp,
+        "[...document.querySelector('[data-preset=\"pull\"]').querySelectorAll('select')].pop()",
+        "row",
+    )
+    preset_click(cdp, "pull", "save")
+    cdp.until_text('[data-preset="pull day"]', "3 exercise(s)", "the edited preset")
+    need(
+        "bench press, squat, row"
+        in cdp.eval(
+            'document.querySelector(\'[data-preset="pull day"] span.whitespace-normal\').innerText'
+        ),
+        "the edited preset did not keep its three exercises in order",
+    )
+    cdp.screenshot("gym-preset-edited")
+
+
+def gym_analysis_searches_the_exercises(cdp, base):
+    """The analysis exercise list is searchable, and picking one loads it."""
+    cdp.go(f"{base}/gym/analyse")
+    cdp.until_text("main", "estimated 1RM")
+    rows = "s.querySelectorAll('div.flex.flex-col button').length"
+    before = in_section(cdp, "Strength and volume", rows)
+    need(before and before >= 2, f"the exercise list has {before} rows, not the log's exercises")
+    section_fill(cdp, "Strength and volume", "input[type=text]", "squat", 0)
+    after = in_section(cdp, "Strength and volume", rows)
+    need(after == 1, f"the filter left {after} rows, not the one exercise named squat")
+    cdp.eval(
+        "(() => { const s = [...document.querySelectorAll('main section')]"
+        ".find(x => x.querySelector('h2') && x.querySelector('h2').innerText === 'Strength and volume');"
+        "const e = [...s.querySelectorAll('button')].find(b => b.innerText.includes('squat'));"
+        "if (!e) return false; e.scrollIntoView({block: 'center'}); e.click(); return true; })()"
+    )
+    cdp.until(
+        "(() => { const s = [...document.querySelectorAll('main section')]"
+        ".find(x => x.querySelector('h2') && x.querySelector('h2').innerText === 'Strength and volume');"
+        "return s && s.innerText.includes('2 session(s) in the window'); })()",
+        10,
+        "the chart for the exercise the search picked",
+    )
+    cdp.screenshot("gym-analysis-search")
+
+
+def gym_analysis_shades_the_deload_week(cdp, base):
+    """The strength chart shades the deload week instead of dropping its point."""
+    cdp.go(f"{base}/gym/analyse")
+    cdp.until_text("main", "estimated 1RM", "the strength chart")
+    weeks = cdp.eval("document.querySelectorAll('main svg rect.deload-week').length")
+    need(weeks == 1, f"{weeks} deload bands drawn, not the one deload week")
+    panel = cdp.text("main")
+    need("deload week" in panel, f"the legend does not say what the band is: {panel[:500]!r}")
+    # The band is drawn behind the line, not in place of a point: the strength
+    # line still has one point per session in the window.
+    counted = re.search(r"(\d+) session\(s\) in the window", panel)
+    need(counted, f"the page does not say how many sessions it drew: {panel[:400]!r}")
+    drawn = cdp.eval(
+        "document.querySelector('main svg polyline[stroke-width=\"2\"]')"
+        ".getAttribute('points').trim().split(/\\s+/).length"
+    )
+    need(
+        int(drawn) == int(counted.group(1)),
+        f"the strength line has {drawn} points for {counted.group(1)} sessions, so a point was dropped",
+    )
+    cdp.screenshot("gym-analysis-deload")
+
+
 def gym_a_deload_is_opted_into(cdp, base):
     """A deload is marked on the session, and its advice halves the load and
     the sets, drawn from the last normal session."""
@@ -709,7 +1119,7 @@ def gym_a_deload_is_opted_into(cdp, base):
         f"the deload reminder is missing: {page[:400]!r}",
     )
     cdp.click("main button", "start session")
-    cdp.until_text("main", "checklist", "the checklist after starting")
+    cdp.until_text("main", "the list", "the list after starting")
     need(
         "mark deload" in cdp.text("main") and "un-deload" not in cdp.text("main"),
         "a new session already reads as a deload, so nothing is opted into",
@@ -717,7 +1127,7 @@ def gym_a_deload_is_opted_into(cdp, base):
     cdp.click("main button", "mark deload")
     cdp.until_text("main", "un-deload", "the session to be marked a deload")
     cdp.click("main button", "push · 2 exercises")
-    cdp.until_text("main", "☐ bench press", "the preset's checklist")
+    cdp.until_text("main", "☐ bench press", "the preset's list")
     cdp.click_contains("main button", "bench press")
     cdp.until_text("main", "deload session", "the exercise window in a deload session")
     advice = cdp.text("main")
@@ -752,9 +1162,9 @@ def gym_superset_records_one_unit(cdp, base):
     cdp.go(f"{base}/gym")
     cdp.until_text("main", "Start a session")
     cdp.click("main button", "start session")
-    cdp.until_text("main", "checklist", "the checklist after starting")
+    cdp.until_text("main", "the list", "the list after starting")
     cdp.click("main button", "push · 2 exercises")
-    cdp.until_text("main", "☐ bench press", "the preset's checklist")
+    cdp.until_text("main", "☐ bench press", "the preset's list")
     effort = cdp.eval("document.querySelector('main select.ss-effort').value")
     need(
         effort == "hard",
@@ -773,43 +1183,52 @@ def gym_superset_records_one_unit(cdp, base):
     need("superset 2" not in page, "the two exercises were recorded as two groups")
     need(
         "☑ bench press · 1 set(s)" in page and "☑ incline press · 1 set(s)" in page,
-        f"the checklist did not record the group's sets: {page[:600]!r}",
+        f"the list did not record the group's sets: {page[:600]!r}",
     )
     cdp.screenshot("gym-superset")
     cdp.click("main button", "end session")
     cdp.until_text("main", "Start a session", "the session to close")
-    logged = cdp.text("main section:last-of-type tbody")
+    # The log marks the group: the edit page's session rows say which two sets
+    # were one superset, at the load they shared.
+    cdp.go(f"{base}/gym/edit")
+    cdp.until_text("main", "Edit a set's load")
+    logged = cdp.text("main")
     need(
-        logged.count("· ss") == 2,
-        f"the two sets are not marked as one superset in the log: {logged!r}",
+        logged.count(" · ss") == 2,
+        f"the two sets are not marked as one superset in the log: {logged[:900]!r}",
     )
-    rows = logged.splitlines()
-    need(
-        "bench press · ss" in rows[0] and "60.0" in rows[0] and "hard" in rows[0],
-        f"the group's first row is not the shared load at its own reps: {rows[:2]!r}",
-    )
-    need(
-        "incline press · ss" in rows[1] and "60.0" in rows[1] and "hard" in rows[1],
-        f"the group's second row is not the shared load at its own reps: {rows[:2]!r}",
-    )
+    need("60.0 × 8.0" in logged and "60.0 × 10.0" in logged,
+         f"the two rows do not share the group's load at their own reps: {logged[:900]!r}")
 
 
 SCENARIOS = [
     nav_has_three_tabs,
-    gym_place_is_sorted_by_last_session,
-    gym_preset_fills_the_checklist,
-    gym_exercise_window_records_effort_and_time,
-    gym_back_and_end_session,
-    gym_analysis_shades_the_deload_week,
+    scrollbars_are_thin_and_green,
+    weight_the_analysis_opens_on_the_data,
+    weight_the_line_is_the_whole_range,
     weight_trend_has_a_phase_colour,
     weight_analysis_marks_the_deload_week,
     weight_intake_bar_shows_the_food,
     weight_foods_are_ranked_over_the_range,
+    charts_have_dates_and_numbers,
     food_food_list_is_sorted_by_last_eaten,
     food_a_meal_is_previewed_then_saved,
     food_totals_show_the_maintenance_gap,
+    food_a_preset_loads_the_draft,
+    food_the_meal_projects_the_day,
     weight_a_weigh_in_defaults_to_now,
     edit_tabs_are_the_three_modes,
+    gym_place_is_sorted_by_last_session,
+    gym_a_session_fills_the_screen,
+    gym_preset_fills_the_list,
+    gym_the_list_is_selected_then_start_sets,
+    gym_a_saved_set_is_edited_in_place,
+    gym_the_next_exercise_alternates,
+    gym_escape_leaves_the_window_not_the_session,
+    gym_back_and_end_session,
+    gym_a_preset_starts_with_one_row_and_is_edited,
+    gym_analysis_searches_the_exercises,
+    gym_analysis_shades_the_deload_week,
     gym_a_deload_is_opted_into,
     gym_superset_records_one_unit,
 ]
