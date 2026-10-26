@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT exercise AS \"exercise!\", count(DISTINCT session) AS \"n!\" FROM training_set GROUP BY exercise",
+  "query": "SELECT ts.exercise AS \"exercise!\", count(DISTINCT ts.session) AS \"n!\"\n           FROM training_set ts LEFT JOIN effort e ON e.id = ts.effort\n           WHERE e.name IS NULL OR e.name <> ?1\n           GROUP BY ts.exercise",
   "describe": {
     "columns": [
       {
@@ -22,12 +22,12 @@
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       false,
       false
     ]
   },
-  "hash": "081685d4fda3858d68cc5d6379fdaccd9ad56d7a92e4731cd29dc015f9b1bef2"
+  "hash": "2e02b779928ac188f1d9046c08bdad29bd110db577dce39df8106035a7d0a8ba"
 }

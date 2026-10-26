@@ -254,7 +254,7 @@ note.
 | `set/*.toml` | `training_set` | 9 664 rows. The `session` field is **ignored** — it is `0` for most of the archive and the session's list is the only membership record. A set no list mentions stops the import rather than being attached to a guess, and so does a set two sessions both list. |
 | `weight/*.toml` | `weight` | 312 rows. `bodyfat = 0.0` is imported as `0.0`, not `NULL`, for the same reason as food. |
 | `meal/*.toml` | `meal` | 7 529 rows. |
-| — | `effort` | Seeded with the vocabulary the notes already use: `fail`, `form fail`, `very hard`, `hard`, `incomplete`, `deload`, `easy`. |
+| — | `effort` | Seeded with the vocabulary the notes already use: `fail`, `form fail`, `very hard`, `hard`, `incomplete`, `deload`, `easy`, and `warmup`. The first three are the rungs the recommendation compares; the rest are recorded and read by name, and `warmup` is left out of every comparison and count. |
 | — | `setting` | Seeded with the four defaults above (`deload_weeks = 6`, `trend_window_days = 21`, `trend_min_weighins = 14`, `maintenance_min_days = 10`). |
 | — | `phase`, `meal_preset`, `meal_preset_item`, `exercise_list`, `exercise_list_item`, `session_list_item`, `superset` | Empty except for the supersets reconstructed below. |
 

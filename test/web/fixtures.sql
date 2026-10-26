@@ -1,7 +1,8 @@
 -- A fixture log for the web scenarios: two places, six exercises with muscle
--- groups, two gym presets, four bench sessions one of which is a deload, two
--- squat sessions (so the analysis has a list to search), five foods, a meal
--- preset, four meals and ten weigh-ins.
+-- groups, two gym presets, four bench sessions one of which is a deload and one
+-- of which is only a warmup, two squat sessions and two row sessions (so the
+-- analysis has a list to search), five foods, a meal preset, four meals and ten
+-- weigh-ins.
 --
 -- Every date here is counted back from the day the suite runs, never written as
 -- a calendar day: each row names a day of `DAYS_AGO` in `drive.py` and the time
@@ -55,12 +56,26 @@ FROM session s, exercise e WHERE s.date LIKE '{{on:bench_first}}%' AND e.name = 
 INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
 SELECT s.id, e.id, 0, s.date, 60, 8, (SELECT id FROM effort WHERE name = 'form fail')
 FROM session s, exercise e WHERE s.date LIKE '{{on:bench_second}}%' AND e.name = 'bench press';
+-- The newest working session opens with a warmup: it is recorded and shown, and
+-- it is not one of the session's two working sets nor the set to beat.
 INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
-SELECT s.id, e.id, 0, s.date, 70, 8, (SELECT id FROM effort WHERE name = 'hard')
+SELECT s.id, e.id, 0, s.date, 40, 10, (SELECT id FROM effort WHERE name = 'warmup')
 FROM session s, exercise e WHERE s.date LIKE '{{on:bench_third}}%' AND e.name = 'bench press';
 INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
 SELECT s.id, e.id, 1, s.date, 70, 8, (SELECT id FROM effort WHERE name = 'hard')
 FROM session s, exercise e WHERE s.date LIKE '{{on:bench_third}}%' AND e.name = 'bench press';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 2, s.date, 70, 8, (SELECT id FROM effort WHERE name = 'hard')
+FROM session s, exercise e WHERE s.date LIKE '{{on:bench_third}}%' AND e.name = 'bench press';
+
+-- A session that was only a warmup. It is the newest bench session, and it is
+-- not the numbers to beat: the comparison reaches back past it to the 70 kg
+-- session, so an unfinished workout cannot read as a regression.
+INSERT INTO session (date, place, ended)
+SELECT '{{at:bench_warmup_only:18:00:00}}', p.id, '{{at:bench_warmup_only:18:20:00}}' FROM place p WHERE p.name = 'home';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 0, s.date, 40, 10, (SELECT id FROM effort WHERE name = 'warmup')
+FROM session s, exercise e WHERE s.date LIKE '{{on:bench_warmup_only}}%' AND e.name = 'bench press';
 
 -- A deload week: the same exercise lighter, flagged on the session. It is shown
 -- in the history and shaded on the charts, but it is not the number to beat,
@@ -86,6 +101,25 @@ FROM session s, exercise e WHERE s.date LIKE '{{on:squat_first}}%' AND e.name = 
 INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
 SELECT s.id, e.id, 0, s.date, 102.5, 5, (SELECT id FROM effort WHERE name = 'hard')
 FROM session s, exercise e WHERE s.date LIKE '{{on:squat_second}}%' AND e.name = 'squat';
+
+-- A third exercise worked twice, plus a session that was only its warmup: two
+-- sessions of work, so the analysis offers it and draws it, and the warmup-only
+-- session is neither a third session nor a bar of volume.
+INSERT INTO session (date, place, ended)
+SELECT '{{at:row_first:18:00:00}}', p.id, '{{at:row_first:19:00:00}}' FROM place p WHERE p.name = 'the gym';
+INSERT INTO session (date, place, ended)
+SELECT '{{at:row_second:18:00:00}}', p.id, '{{at:row_second:19:00:00}}' FROM place p WHERE p.name = 'the gym';
+INSERT INTO session (date, place, ended)
+SELECT '{{at:row_warmup_only:18:00:00}}', p.id, '{{at:row_warmup_only:18:15:00}}' FROM place p WHERE p.name = 'the gym';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 0, s.date, 60, 8, (SELECT id FROM effort WHERE name = 'hard')
+FROM session s, exercise e WHERE s.date LIKE '{{on:row_first}}%' AND e.name = 'row';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 0, s.date, 65, 8, (SELECT id FROM effort WHERE name = 'hard')
+FROM session s, exercise e WHERE s.date LIKE '{{on:row_second}}%' AND e.name = 'row';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 0, s.date, 40, 12, (SELECT id FROM effort WHERE name = 'warmup')
+FROM session s, exercise e WHERE s.date LIKE '{{on:row_warmup_only}}%' AND e.name = 'row';
 
 INSERT INTO food (name, calories, protein, fat, carbohydrate) VALUES
     ('oats', 380, 13, 7, 60),

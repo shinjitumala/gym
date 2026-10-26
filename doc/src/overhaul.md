@@ -37,7 +37,7 @@ the current data directory as the archive.
 | # | Decision | Consequence |
 |---|----------|-------------|
 | 1 | Places, muscle groups and food numbers get edit paths; they are no longer hand-edited TOML. | Add/create/edit/delete for every reference table, in the intervention tab and in the CLI. |
-| 2 | PR detection uses the existing rep-factor table (the `to_one_rep_max` calculation). | Best estimated 1RM per exercise, compared against every earlier session of that exercise, independent of place. Sets above 30 reps are excluded (the table is bounded, and those are endurance sets). |
+| 2 | PR detection uses the existing rep-factor table (the `one_rep_max` calculation in `src/train.rs`). | Best estimated 1RM per exercise, compared against every earlier session of that exercise, independent of place. Sets above 30 reps are excluded (the table is bounded, and those are endurance sets). |
 | 3 | A superset is n-ary and ordered, and its members share the load by definition — only the reps differ. | `set.superset` plus `set.position`; the migration synthesizes the partner row with the same load and the reps from the note. |
 | 4 | The web UI is Leptos with hydration (SSR + WASM), and `install.sh` still installs one binary. | The hydrated site is embedded in the binary, so no site directory has to be deployed and the Android cross-build still produces something runnable. |
 | 5 | `gym web` binds loopback, and keeps the name it has today. | Default `127.0.0.1:8080`; a non-loopback address is only reachable if passed explicitly, and the documentation says what that exposes. There is no `gym serve`: the command that already exists does the job. |
@@ -234,7 +234,9 @@ exercise list, and one exercise window that records a set with its effort and
 the time it was saved, against the last three sessions of that exercise. Effort
 is part of what is compared: `src/train.rs` decides the next set, and it reads
 effort before load and reps because a set taken closer to failure at the same
-numbers is progress. A superset is recorded as one group sharing a load, and a
+numbers is progress. A warmup is recorded with its own effort and then left out
+of every comparison and count, because it is not a rung on that ladder: the
+ladder only makes sense for sets taken near failure. A superset is recorded as one group sharing a load, and a
 deload session's target is half the last normal load and half its sets; the
 analysis shades the deload week instead of dropping it.
 

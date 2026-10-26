@@ -12,7 +12,7 @@
 use crate::db::Db;
 use crate::stats::{self, DayIntake, Goal, Point};
 use crate::train::{self, SetEffort};
-use crate::util::{to_one_rep_max, Res};
+use crate::util::Res;
 use crate::web::dto::*;
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -681,13 +681,31 @@ impl RawSet {
         }
     }
 
-    fn effort(&self) -> Option<SetEffort> {
-        Some(SetEffort {
+    fn effort(&self) -> SetEffort {
+        SetEffort {
             load: self.load,
             rep: self.rep,
             effort: self.effort_rank,
-        })
+            warmup: !self.is_working(),
+        }
     }
+
+    /// Whether the set counts as work.
+    ///
+    /// A warmup is recorded, shown and corrected like any other set, but it is
+    /// not a set taken near failure: the advice, the row's own pre-filled
+    /// numbers, the PR badge, the strength line and the sets-per-week volume
+    /// all leave it out, so a warmup can neither fake progress nor pass for the
+    /// work it prepared for.
+    fn is_working(&self) -> bool {
+        !train::is_warmup(self.effort.as_deref())
+    }
+}
+
+/// The set a session is compared by: its best working set. `None` when the
+/// session holds only warmups, which is not a session of work.
+fn best_of(sets: &[&RawSet]) -> Option<SetEffort> {
+    train::best(&sets.iter().map(|s| s.effort()).collect::<Vec<_>>())
 }
 
 async fn all_sets(db: &Db) -> Res<Vec<RawSet>> {
@@ -782,13 +800,15 @@ pub async fn places(db: &Db) -> Res<Vec<PlaceRow>> {
         .collect())
 }
 
-/// The efforts the window offers, hardest first: the three the log defines,
-/// which is what the dropdown is for. A set recorded with one of the older
-/// levels still shows its own name.
+/// The efforts the window offers: the three rungs of the ladder, hardest first,
+/// and then the warmup marker. A warmup is picked in the same dropdown because
+/// it is what the set was — `effort` is the column that records it — but it is
+/// not a fourth rung; see [`train::WARMUP`]. A set recorded with one of the
+/// older levels still shows its own name.
 async fn efforts(db: &Db) -> Res<Vec<EffortRow>> {
     let rows = sqlx::query!(
         r#"SELECT id AS "id!", name AS "name!", sort AS "sort!"
-           FROM effort WHERE name IN ('hard', 'form fail', 'fail') ORDER BY sort"#
+           FROM effort WHERE name IN ('hard', 'form fail', 'fail', 'warmup') ORDER BY sort"#
     )
     .fetch_all(&db.pool)
     .await?;
@@ -799,6 +819,7 @@ async fn efforts(db: &Db) -> Res<Vec<EffortRow>> {
             hint: match r.name.as_str() {
                 "hard" => "3+ reps from failure".to_string(),
                 "form fail" => "1–2 reps from failure".to_string(),
+                train::WARMUP => "not near failure: outside the ladder".to_string(),
                 _ => "0 reps from failure".to_string(),
             },
             name: r.name,
@@ -857,13 +878,18 @@ pub async fn sessions_with_sets(db: &Db, limit: Option<i64>) -> Res<Sessions> {
 
     // Best e1RM per exercise per session, over the whole log, then a running
     // maximum by date: a session outside the window still counts as "earlier".
+    // Warmups are left out on both sides, so a light warmup of many reps cannot
+    // take the record and the record is never a warmup.
     let all_dates = session_dates(db).await?;
     let mut per_ex: HashMap<i64, BTreeMap<NaiveDate, f64>> = HashMap::new();
     for s in &sets {
+        if !s.is_working() {
+            continue;
+        }
         let Some(d) = all_dates.get(&s.session).copied() else {
             continue;
         };
-        if let Ok(e) = to_one_rep_max(s.load, s.rep) {
+        if let Some(e) = train::one_rep_max(s.load, s.rep) {
             let v = per_ex
                 .entry(s.exercise)
                 .or_default()
@@ -909,7 +935,10 @@ pub async fn sessions_with_sets(db: &Db, limit: Option<i64>) -> Res<Sessions> {
         }
         let mut prs: Vec<PrRow> = Vec::new();
         for s in by_session.get(&row.id).cloned().unwrap_or_default() {
-            let Ok(e) = to_one_rep_max(s.load, s.rep) else {
+            if !s.is_working() {
+                continue;
+            }
+            let Some(e) = train::one_rep_max(s.load, s.rep) else {
                 continue;
             };
             let before = previous(s.exercise, date);
@@ -950,6 +979,10 @@ async fn session_dates(db: &Db) -> Res<HashMap<i64, NaiveDate>> {
 
 /// The session currently being recorded: the newest one that has not been
 /// ended.
+///
+/// Each checklist row carries the effort last recorded for its exercise, which
+/// is the default the superset form opens on. A warmup is left out of it: the
+/// effort that set was taken at is not the effort the group will be worked at.
 async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveSession>> {
     let row = sqlx::query!(
         r#"SELECT s.id AS "id!", s.date, p.name AS "place!", s.note AS "note!",
@@ -967,11 +1000,12 @@ async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveS
         r#"SELECT sli.exercise AS "exercise!", e.name AS "name!",
                   (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = sli.exercise) AS "last",
                   (SELECT e2.sort FROM training_set ts JOIN effort e2 ON e2.id = ts.effort
-                   WHERE ts.exercise = sli.exercise
+                   WHERE ts.exercise = sli.exercise AND e2.name <> ?2
                    ORDER BY julianday(ts.date) DESC, ts.id DESC LIMIT 1) AS last_effort_rank
            FROM session_list_item sli JOIN exercise e ON e.id = sli.exercise
            WHERE sli.session = ?1 ORDER BY sli.position"#,
-        r.id
+        r.id,
+        train::WARMUP
     )
     .fetch_all(&db.pool)
     .await?;
@@ -1130,21 +1164,20 @@ pub async fn exercise_window(db: &Db, session: i64, exercise: i64) -> Res<Exerci
     finished.reverse();
 
     // The best set of a session is the one with the highest estimated 1RM: one
-    // number that compares a heavy single with a light set of many.
-    let best = |sets: &[&RawSet]| -> Option<SetEffort> {
-        sets.iter()
-            .filter_map(|s| {
-                let e1rm = to_one_rep_max(s.load, s.rep).ok()?;
-                Some((e1rm, s.effort()?))
-            })
-            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(_, e)| e)
-    };
-    let normal: Vec<&(NaiveDate, bool, Vec<&RawSet>)> =
-        finished.iter().filter(|(_, deload, _)| !*deload).collect();
-    let last = normal.first().and_then(|(_, _, s)| best(s));
-    let prev = normal.get(1).and_then(|(_, _, s)| best(s));
-    let last_sets = normal.first().map(|(_, _, s)| s.len() as i64).unwrap_or(0);
+    // number that compares a heavy single with a light set of many. A session
+    // of warmups alone is not the last session of anything: it has no numbers
+    // to beat, so it is skipped rather than read as a session that fell behind.
+    let normal: Vec<&(NaiveDate, bool, Vec<&RawSet>)> = finished
+        .iter()
+        .filter(|(_, deload, _)| !*deload)
+        .filter(|(_, _, sets)| sets.iter().any(|s| s.is_working()))
+        .collect();
+    let last = normal.first().and_then(|(_, _, s)| best_of(s));
+    let prev = normal.get(1).and_then(|(_, _, s)| best_of(s));
+    let last_sets = normal
+        .first()
+        .map(|(_, _, s)| s.iter().filter(|s| s.is_working()).count() as i64)
+        .unwrap_or(0);
     let last_date = normal.first().map(|(d, _, _)| iso(*d)).unwrap_or_default();
     let advice = if live.deload != 0 {
         last.map(|l| {
@@ -1162,13 +1195,39 @@ pub async fn exercise_window(db: &Db, session: i64, exercise: i64) -> Res<Exerci
     } else {
         train::recommend(prev, last, target_rep).map(|a| a.why)
     };
+    // The row opens on the set just done, because the next set is usually that
+    // one again; with none of this session's own sets to copy, it opens on the
+    // best set of the last session that did some work. A warmup is neither: it
+    // prepared for the numbers, so pre-filling it would repeat the warmup.
+    let here = all
+        .iter()
+        .filter(|s| s.session == session && s.exercise == exercise && s.is_working())
+        .next_back();
+    let prefill = here
+        .map(|s| Prefill {
+            load: s.load,
+            rep: s.rep,
+            effort: s.effort_rank,
+        })
+        .or_else(|| {
+            last.map(|l| Prefill {
+                load: l.load,
+                rep: l.rep,
+                effort: l.effort,
+            })
+        });
     let history: Vec<HistorySession> = finished
         .iter()
         .take(3)
         .map(|(d, deload, sets)| HistorySession {
             date: iso(*d),
             place: String::new(),
-            effort: sets.iter().filter_map(|s| s.effort.clone()).next(),
+            // The session's own effort, from its first working set: a warmup
+            // opened the session, and that is not the effort that was worked at.
+            effort: sets
+                .iter()
+                .find(|s| s.is_working())
+                .and_then(|s| s.effort.clone()),
             deload: *deload,
             sets: sets
                 .iter()
@@ -1194,8 +1253,7 @@ pub async fn exercise_window(db: &Db, session: i64, exercise: i64) -> Res<Exerci
         group,
         target_rep,
         deload: live.deload != 0,
-        last_load: last.map(|l| l.load),
-        last_effort: last.and_then(|l| l.effort),
+        prefill,
         advice,
         history,
         sets,
@@ -1235,8 +1293,14 @@ pub async fn gym_analysis(db: &Db, span_days: i64, want: Option<i64>) -> Res<Gym
     let sets = all_sets(db).await?;
     let dates = session_dates(db).await?;
 
+    // Sessions per exercise, which is what the picker offers: a session whose
+    // only sets were warmups is not a session of that exercise to analyse.
     let counts: HashMap<i64, i64> = sqlx::query!(
-        r#"SELECT exercise AS "exercise!", count(DISTINCT session) AS "n!" FROM training_set GROUP BY exercise"#
+        r#"SELECT ts.exercise AS "exercise!", count(DISTINCT ts.session) AS "n!"
+           FROM training_set ts LEFT JOIN effort e ON e.id = ts.effort
+           WHERE e.name IS NULL OR e.name <> ?1
+           GROUP BY ts.exercise"#,
+        train::WARMUP
     )
     .fetch_all(&db.pool)
     .await?
@@ -1279,9 +1343,11 @@ pub async fn gym_analysis(db: &Db, span_days: i64, want: Option<i64>) -> Res<Gym
     };
     let week_of = |d: NaiveDate| d - Duration::days(d.weekday().num_days_from_monday() as i64);
 
+    // Sets per week is volume: a warmup is not work, so counting it would make
+    // the bar climb every time the reader prepared for the work.
     let week_sets = |ex: i64| -> Vec<VolumePoint> {
         let mut by_week: BTreeMap<NaiveDate, f64> = BTreeMap::new();
-        for s in sets.iter().filter(|s| s.exercise == ex) {
+        for s in sets.iter().filter(|s| s.exercise == ex && s.is_working()) {
             if let Some(d) = in_window(s) {
                 *by_week.entry(week_of(d)).or_insert(0.0) += 1.0;
             }
@@ -1295,17 +1361,22 @@ pub async fn gym_analysis(db: &Db, span_days: i64, want: Option<i64>) -> Res<Gym
     let chosen = pick.map(|id| {
         let name = index.get(&id).cloned().unwrap_or_default();
         let group = group_of.get(&id).cloned().unwrap_or_default();
-        let mut best: BTreeMap<NaiveDate, f64> = BTreeMap::new();
+        // The session's strength is its best working set, the same set the
+        // advice compares: a warmup is drawn on neither.
+        let mut by_day: BTreeMap<NaiveDate, Vec<SetEffort>> = BTreeMap::new();
         for s in sets.iter().filter(|s| s.exercise == id) {
             if let Some(d) = in_window(s) {
-                if let Ok(e) = to_one_rep_max(s.load, s.rep) {
-                    let v = best.entry(d).or_insert(0.0);
-                    if e > *v {
-                        *v = e;
-                    }
-                }
+                by_day.entry(d).or_default().push(s.effort());
             }
         }
+        let strength: Vec<StrengthPoint> = by_day
+            .into_iter()
+            .filter_map(|(d, session)| {
+                let best = train::best(&session)?;
+                let e1rm = train::one_rep_max(best.load, best.rep)?;
+                Some(StrengthPoint { day: days(d), e1rm })
+            })
+            .collect();
         let overlaps = exercises
             .iter()
             .filter(|e| e.id != id && group_of.get(&e.id) == Some(&group))
@@ -1318,10 +1389,7 @@ pub async fn gym_analysis(db: &Db, span_days: i64, want: Option<i64>) -> Res<Gym
             .filter(|o| !o.sets.is_empty())
             .collect();
         AnalysisSeries {
-            strength: best
-                .into_iter()
-                .map(|(d, e1rm)| StrengthPoint { day: days(d), e1rm })
-                .collect(),
+            strength,
             sets: week_sets(id),
             overlaps,
             exercise: name,

@@ -402,7 +402,8 @@ pub struct ChecklistRow {
     pub last_used: Option<String>,
     /// Sets recorded for this exercise in this session.
     pub sets: i64,
-    /// The effort of the last set recorded for it, for the default.
+    /// The effort of the last working set recorded for it, for the default.
+    /// A warmup is not it: the group is worked at the effort of the work.
     pub last_effort: Option<i64>,
 }
 
@@ -453,6 +454,20 @@ pub struct GymDaily {
     pub phase: Option<PhaseRow>,
 }
 
+/// The numbers a fresh set row opens on.
+///
+/// They come from the last working set this session recorded for the exercise;
+/// with none of this session's own sets to copy, from the best set of the last
+/// session that did some work. A warmup is neither, so it is never repeated by
+/// the row it prepared for.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Prefill {
+    pub load: f64,
+    pub rep: f64,
+    /// The effort's rank, defaulted in the dropdown.
+    pub effort: Option<i64>,
+}
+
 /// One exercise, while it is being recorded: its sets in this session, the
 /// numbers to beat, and what to attempt next.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -464,10 +479,8 @@ pub struct ExerciseWindow {
     pub deload: bool,
     /// This session's sets of this exercise.
     pub sets: Vec<SetRow>,
-    /// The last load used for it here, which the first row defaults to.
-    pub last_load: Option<f64>,
-    /// The last effort used for it, defaulted in the dropdown.
-    pub last_effort: Option<i64>,
+    /// What the next row's load, reps and effort default to.
+    pub prefill: Option<Prefill>,
     pub advice: Option<String>,
     pub history: Vec<HistorySession>,
 }

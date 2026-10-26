@@ -2716,8 +2716,15 @@ fn WindowBody(
     on_open: Callback<i64>,
 ) -> impl IntoView {
     let target = w.target_rep;
-    let load0 = w.last_load.map(|l| format!("{l}")).unwrap_or_default();
-    let rep0 = format!("{target}");
+    // The row opens on the numbers just done — this session's last working set,
+    // or the last session's best when this session has none — and falls back to
+    // the phase's rep target for an exercise with no history to copy.
+    let load0 = w.prefill.map(|p| format!("{}", p.load)).unwrap_or_default();
+    let rep0 = w
+        .prefill
+        .map(|p| format!("{}", p.rep))
+        .unwrap_or_else(|| format!("{target}"));
+    let effort0 = w.prefill.and_then(|p| p.effort);
     let next_id = next.as_ref().map(|(id, _)| *id);
     view! {
         <div class=ROW>
@@ -2782,7 +2789,7 @@ fn WindowBody(
             exercise=w.exercise
             load0=load0
             rep0=rep0
-            effort0=w.last_effort
+            effort0=effort0
             efforts=efforts.clone()
             saved=saved
         />
