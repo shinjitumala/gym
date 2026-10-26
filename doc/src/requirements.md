@@ -136,8 +136,8 @@ Acceptance criteria:
       load, reps, effort and note, and saving writes that row alone, so a typo
       does not mean ending the session.
 - [x] **The window names the next exercise and lets it be changed**: the default
-      is the next one on the list, wrapping round, which is the alternation a
-      superset needs; the dropdown opens any exercise on the list instead.
+      is the next one on the list, wrapping round, so a round is worked in the
+      list's order; the dropdown opens any exercise on the list instead.
 - [x] **The exercise window opens on the numbers to beat**: this session's sets
       with the time each was saved, the advice from
       [effort before weight](#effort-is-compared-before-weight), and the last
@@ -166,13 +166,22 @@ Acceptance criteria:
       the reader can see what the halving is half of. The deload's own rows are
       shown in the history but are never the numbers to beat afterwards: the
       session after it compares against the normal session again.
-- [x] **A superset records two or more exercises as one unit**: one load for the
-      group, a rep count for each exercise, saved in one action. A blank rep row
-      keeps that exercise out, so the group is exactly the exercises that were
-      given reps, and the list marks each of them done.
-- [x] **The order a superset was performed in is recorded**, not inferred: every
-      set carries the session-wide position it was saved at, so two sets of one
-      group at positions 3 and 4 say which exercise came first.
+- [x] **An exercise the log does not have is added to the list by name.**
+      `add new` beside the picker takes a name, creates the exercise when the
+      log has none of that name, and puts it on the list; a name the log already
+      has is reused, so the list never points at two rows of one name. The new
+      exercise has no muscle group until the edit page gives it one.
+- [x] **A round of exercises is the list loop, not a recorded group.** Recording
+      is: open an exercise from the list, save its sets, go back to the list and
+      open the next one, in whatever order the session allows; each set is
+      written on its own exercise at its own load, and the list ticks off as it
+      goes. Sets recorded as one superset before the affordance was dropped keep
+      their group and stay readable in the log; nothing writes that column now.
+- [x] **The recent records are shown in full**: the last three sessions of the
+      exercise are a table each, with the time every set was saved, its load ×
+      reps, its effort and its note. A warmup is therefore read as the warmup it
+      was, beside the work it prepared for, rather than as an anonymous pair of
+      numbers among the others.
 
 ## Daily · food
 

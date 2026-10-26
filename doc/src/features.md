@@ -282,12 +282,11 @@ Acceptance criteria:
 
 ## Feature: Gym · daily
 
-Status: works. A session is started from a place, its list is built from a preset
-or an exercise at a time, `start sets` records it one exercise at a time through
-the exercise window, and `end session` closes it; a deload is marked on the
-session, a superset is recorded as one group, and a set saved by mistake is
-corrected in place. Inferred rows from the migration are still missing from the
-analysis.
+Status: works. A session is started from a place, its list is built from a preset,
+an exercise at a time or by name, `start sets` records it one exercise at a time
+through the exercise window, and `end session` closes it; a deload is marked on
+the session, and a set saved by mistake is corrected in place. Inferred rows from
+the migration are still missing from the analysis.
 
 Acceptance criteria:
 
@@ -299,8 +298,9 @@ Acceptance criteria:
       session's last working set, or to the best set of the last session when
       this session has none, and falls back to the phase's rep target; the
       dropdown offers `fail`, `form fail`, `hard` and the `warmup` marker with
-      what each means, the last three sessions are shown, and the sentence for
-      the next set is printed.
+      what each means, the last three sessions are shown in full — every set's
+      time, load × reps, effort and note — and the sentence for the next set is
+      printed.
 - [x] Saving a row stamps the time it was saved, and X returns to the list with
       the exercise marked done.
 - [x] An open session fills the screen and is left through `end session` alone,
@@ -308,8 +308,8 @@ Acceptance criteria:
 - [x] Picking an exercise adds it to the list; `start sets` opens the window on
       the first exercise still to do.
 - [x] The window names the next exercise on the list, wrapping round, and the
-      dropdown opens any exercise on the list instead — the alternation a
-      superset is performed in.
+      dropdown opens any exercise on the list instead — the list's order is the
+      order a round of exercises is worked in.
 - [x] A saved set is edited where it is, without leaving the session.
 - [x] End session closes it, and a session with no sets is discarded.
 - [x] The effort of a set is stored as a row and compared before load and reps
@@ -329,8 +329,11 @@ Acceptance criteria:
 - [x] A deload session's suggested target is half the load and half the sets,
       drawn from the last session trained normally, for that session only: the
       deload's rows are shown in the history but are not the numbers to beat.
-- [x] Two or more exercises can be recorded as one superset group, each with
-      its own reps, sharing the load.
+- [x] An exercise the log does not have is added to the session's list by name,
+      and joins it like any other; a name the log already has is reused.
+- [x] A round of exercises is recorded by going back to the list between them,
+      so each set stands on its own exercise at its own load. Supersets logged
+      before the affordance was dropped keep their group and stay readable.
 - [x] A preset can be applied as the session's checklist, items can be completed
       in any order, and the checklist is stored per session, so editing the
       preset later does not rewrite a finished session.

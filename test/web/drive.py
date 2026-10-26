@@ -1035,13 +1035,48 @@ def gym_the_list_is_selected_then_start_sets(cdp, base):
     cdp.screenshot("gym-window")
 
 
+def panel(cdp, title):
+    """One panel of the exercise window, as text.
+
+    The window holds this session's sets beside the recent sessions, and the
+    same load × reps can be in both — a set repeated from last week looks the
+    same as the one just saved — so an assertion names the panel it is about
+    (`this session`, `recent sessions`) rather than the whole page.
+    """
+    return cdp.eval(
+        "(() => { const d = [...document.querySelectorAll('main div')]"
+        f".find(e => e.innerText.trim().startsWith({json.dumps(title)}));"
+        "return d ? d.innerText : ''; })()"
+    )
+
+
+def until_panel(cdp, title, text, what=None):
+    """Wait for a text inside one panel, not anywhere on the page."""
+    cdp.until(
+        "(() => { const d = [...document.querySelectorAll('main div')]"
+        f".find(e => e.innerText.trim().startsWith({json.dumps(title)}));"
+        f"return !!d && d.innerText.includes({json.dumps(text)}); }})()",
+        10,
+        what or f"{text!r} in the {title!r} panel",
+    )
+
+
+def panel_rows(cdp, title):
+    """How many table rows one panel shows."""
+    return cdp.eval(
+        "(() => { const d = [...document.querySelectorAll('main div')]"
+        f".find(e => e.innerText.trim().startsWith({json.dumps(title)}));"
+        "return d ? d.querySelectorAll('table tbody tr').length : 0; })()"
+    )
+
+
 def gym_a_saved_set_is_edited_in_place(cdp, base):
     """A set saved by mistake is corrected where it is, without leaving the
     session."""
     cdp.fill("main input[type=text]", "70", 0)
     cdp.fill("main input[type=text]", "8", 1)
     cdp.click("main button", "save set")
-    cdp.until_text("main", "70.0 × 8.0", "the saved set's row")
+    until_panel(cdp, "this session", "70.0 × 8.0", "the saved set's row")
     cdp.click("main button", "edit")
     cdp.until(
         "document.querySelectorAll('main input[type=text]').length >= 3",
@@ -1050,8 +1085,8 @@ def gym_a_saved_set_is_edited_in_place(cdp, base):
     )
     cdp.fill("main input[type=text]", "72.5", 0)
     cdp.click("main button", "save")
-    cdp.until_text("main", "72.5 × 8.0", "the corrected set's row")
-    rows = cdp.eval("document.querySelectorAll('main table tbody tr').length")
+    until_panel(cdp, "this session", "72.5 × 8.0", "the corrected set's row")
+    rows = panel_rows(cdp, "this session")
     need(rows == 1, f"{rows} rows in the session's table after the correction, not one")
     cdp.screenshot("gym-set-edited")
 
@@ -1340,48 +1375,113 @@ def gym_a_deload_is_opted_into(cdp, base):
     cdp.until_text("main", "Start a session", "the session to close")
 
 
-def gym_superset_records_one_unit(cdp, base):
-    """Two exercises are recorded as one superset: one load, a rep count each."""
+def gym_the_list_is_worked_exercise_by_exercise(cdp, base):
+    """A session is the list, one exercise at a time: open one, record its sets,
+    go back, open the next.
+
+    That loop is the whole of what a round of exercises is; nothing is written
+    as a group, so each set stands on its own exercise at its own load.
+    """
     cdp.go(f"{base}/gym")
     cdp.until_text("main", "Start a session")
     cdp.click("main button", "start session")
     cdp.until_text("main", "the list", "the list after starting")
     cdp.click("main button", "push · 2 exercises")
     cdp.until_text("main", "☐ bench press", "the preset's list")
-    effort = cdp.eval("document.querySelector('main select.ss-effort').value")
+    # The first exercise of the round, prepared with a warmup so a finished
+    # session in the log has one to read back later.
+    cdp.click_contains("main button", "bench press")
+    cdp.until_text("main", "bench press · chest", "the bench press window")
+    cdp.fill("main input[type=text]", "40", 0)
+    cdp.fill("main input[type=text]", "10", 1)
+    choose_text(cdp, effort_select(cdp), "warmup")
+    cdp.click("main button", "save set")
+    until_panel(cdp, "this session", "40.0 × 10.0", "the warmup's row")
+    cdp.fill("main input[type=text]", "60", 0)
+    cdp.fill("main input[type=text]", "8", 1)
+    cdp.click("main button", "save set")
+    until_panel(cdp, "this session", "60.0 × 8.0", "the bench press working set")
+    # Back to the list, which is where the next exercise of the round is picked.
+    cdp.click_contains("main button", "back to the checklist")
+    cdp.until_text("main", "☑ bench press · 2 set(s)", "the list after the first exercise")
     need(
-        effort == "hard",
-        f"the superset's effort defaulted to {effort!r}, not the last one used (hard)",
+        "☐ incline press" in cdp.text("main"),
+        f"the second exercise does not read as still to do: {cdp.text('main')[:600]!r}",
     )
-    cdp.fill("main input.ss-load", "60")
-    cdp.fill("main input.ss-rep", "8", 0)
-    cdp.fill("main input.ss-rep", "10", 1)
-    cdp.click("main button", "save superset")
-    cdp.until_text("main", "superset 1 · 60.0 kg", "the superset group")
+    cdp.click_contains("main button", "incline press")
+    cdp.until_text("main", "incline press · chest", "the incline press window")
+    cdp.fill("main input[type=text]", "60", 0)
+    cdp.fill("main input[type=text]", "10", 1)
+    cdp.click("main button", "save set")
+    until_panel(cdp, "this session", "60.0 × 10.0", "the incline press set")
+    cdp.click_contains("main button", "back to the checklist")
+    cdp.until_text("main", "☑ incline press · 1 set(s)", "the list after the second exercise")
     page = cdp.text("main")
     need(
-        "bench press × 8.0" in page and "incline press × 10.0" in page,
-        f"the group does not carry both rep counts: {page[:600]!r}",
+        "3 set(s) recorded" in page,
+        f"the session does not count every set of the round: {page[:500]!r}",
     )
-    need("superset 2" not in page, "the two exercises were recorded as two groups")
     need(
-        "☑ bench press · 1 set(s)" in page and "☑ incline press · 1 set(s)" in page,
-        f"the list did not record the group's sets: {page[:600]!r}",
+        "superset" not in page.lower(),
+        f"the session's list still offers a superset: {page[:900]!r}",
     )
-    cdp.screenshot("gym-superset")
+    cdp.screenshot("gym-list-exercises")
     cdp.click("main button", "end session")
     cdp.until_text("main", "Start a session", "the session to close")
-    # The log marks the group: the edit page's session rows say which two sets
-    # were one superset, at the load they shared.
+    # Every set in the log stands on its own exercise: the three are not a group.
     cdp.go(f"{base}/gym/edit")
     cdp.until_text("main", "Edit a set's load")
     logged = cdp.text("main")
+    for pair in ("40.0 × 10.0", "60.0 × 8.0", "60.0 × 10.0"):
+        need(pair in logged, f"{pair} is missing from the log: {logged[:900]!r}")
     need(
-        logged.count(" · ss") == 2,
-        f"the two sets are not marked as one superset in the log: {logged[:900]!r}",
+        " · ss" not in logged,
+        f"the round's sets were written as one superset group: {logged[:900]!r}",
     )
-    need("60.0 × 8.0" in logged and "60.0 × 10.0" in logged,
-         f"the two rows do not share the group's load at their own reps: {logged[:900]!r}")
+
+
+def gym_an_exercise_is_added_by_name(cdp, base):
+    """An exercise the log has never had is added to the session's list by name.
+
+    It joins the list like any other exercise, on the day it is first done, and
+    arrives with no muscle group until that is filled in on the edit page.
+    """
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "Start a session")
+    cdp.click("main button", "start session")
+    cdp.until_text("main", "the list", "the list after starting")
+    cdp.fill("main input.new-exercise", "face pull", 0)
+    cdp.click("main button", "add new")
+    cdp.until_text("main", "☐ face pull", "the named exercise on the list")
+    cdp.click_contains("main button", "☐ face pull")
+    cdp.until_text("main", "face pull · ungrouped", "the window on the new exercise")
+    cdp.fill("main input[type=text]", "30", 0)
+    cdp.fill("main input[type=text]", "12", 1)
+    cdp.click("main button", "save set")
+    until_panel(cdp, "this session", "30.0 × 12.0", "the new exercise's set")
+    cdp.click_contains("main button", "back to the checklist")
+    cdp.until_text("main", "☑ face pull · 1 set(s)", "the named exercise recorded")
+    cdp.screenshot("gym-added-by-name")
+    cdp.click("main button", "end session")
+    cdp.until_text("main", "Start a session", "the session to close")
+    # The row is in the log now, so the edit page can give it its muscle group.
+    cdp.go(f"{base}/gym/edit")
+    cdp.until_text("main", "Edit a set's load")
+    named = cdp.eval(
+        "[...document.querySelectorAll('main button, main span, main td')]"
+        ".filter(e => e.innerText.trim() === 'face pull').length"
+    )
+    need(named >= 1, "the exercise added by name is not in the log")
+
+
+def recent_records(cdp):
+    """The exercise window's recent sessions, as text.
+
+    The recent records are per session and carry every set of it, so a warmup is
+    read as the warmup it was rather than as a bare load × reps pair among the
+    work.
+    """
+    return panel(cdp, "recent sessions")
 
 
 def gym_a_warmup_is_not_a_number_to_beat(cdp, base):
@@ -1418,9 +1518,9 @@ def gym_a_warmup_is_not_a_number_to_beat(cdp, base):
     cdp.fill("main input[type=text]", "10", 1)
     choose_text(cdp, effort_select(cdp), "warmup")
     cdp.click("main button", "save set")
-    cdp.until_text("main", "40.0 × 10.0", "the warmup's own row")
+    until_panel(cdp, "this session", "40.0 × 10.0", "the warmup's own row")
     need(
-        "warmup" in cdp.text("main"),
+        "warmup" in panel(cdp, "this session"),
         "the warmup is not marked as one in the session's table",
     )
     # A fresh paint, so the assertions read the server's pre-fill: after a
@@ -1441,6 +1541,30 @@ def gym_a_warmup_is_not_a_number_to_beat(cdp, base):
     need(
         "72.5 kg × 8 beat 70.0 kg × 8" in page,
         f"logging a warmup changed the advice: {page[:600]!r}",
+    )
+    # The recent records are shown in full: the day's sets with the time each was
+    # saved, its load and reps, its effort and its note. The warmup the earlier
+    # scenario recorded is there as a warmup, beside the work it prepared for.
+    recent = recent_records(cdp)
+    need(
+        "72.5 × 8.0" in recent,
+        f"the recent records do not hold the working set: {recent[:800]!r}",
+    )
+    need(
+        "40.0 × 10.0" in recent,
+        f"the recent records drop the warmup: {recent[:800]!r}",
+    )
+    need(
+        "warmup" in recent,
+        f"the recent records do not name the warmup's effort: {recent[:800]!r}",
+    )
+    need(
+        re.search(r"\d{2}:\d{2}", recent),
+        f"the recent records carry no time of day: {recent[:800]!r}",
+    )
+    need(
+        "note" in recent,
+        f"the recent records have no note column: {recent[:800]!r}",
     )
     cdp.screenshot("gym-warmup")
     cdp.click("main button", "end session")
@@ -1556,7 +1680,8 @@ SCENARIOS = [
     gym_analysis_shades_the_deload_week,
     gym_a_warmup_is_not_volume_in_the_analysis,
     gym_a_deload_is_opted_into,
-    gym_superset_records_one_unit,
+    gym_the_list_is_worked_exercise_by_exercise,
+    gym_an_exercise_is_added_by_name,
     gym_a_warmup_is_not_a_number_to_beat,
     food_a_preset_is_built_by_searching,
 ]

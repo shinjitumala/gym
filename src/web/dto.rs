@@ -402,9 +402,6 @@ pub struct ChecklistRow {
     pub last_used: Option<String>,
     /// Sets recorded for this exercise in this session.
     pub sets: i64,
-    /// The effort of the last working set recorded for it, for the default.
-    /// A warmup is not it: the group is worked at the effort of the work.
-    pub last_effort: Option<i64>,
 }
 
 /// The session being recorded.

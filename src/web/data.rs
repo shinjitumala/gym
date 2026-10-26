@@ -979,10 +979,6 @@ async fn session_dates(db: &Db) -> Res<HashMap<i64, NaiveDate>> {
 
 /// The session currently being recorded: the newest one that has not been
 /// ended.
-///
-/// Each checklist row carries the effort last recorded for its exercise, which
-/// is the default the superset form opens on. A warmup is left out of it: the
-/// effort that set was taken at is not the effort the group will be worked at.
 async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveSession>> {
     let row = sqlx::query!(
         r#"SELECT s.id AS "id!", s.date, p.name AS "place!", s.note AS "note!",
@@ -998,14 +994,10 @@ async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveS
     };
     let items = sqlx::query!(
         r#"SELECT sli.exercise AS "exercise!", e.name AS "name!",
-                  (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = sli.exercise) AS "last",
-                  (SELECT e2.sort FROM training_set ts JOIN effort e2 ON e2.id = ts.effort
-                   WHERE ts.exercise = sli.exercise AND e2.name <> ?2
-                   ORDER BY julianday(ts.date) DESC, ts.id DESC LIMIT 1) AS last_effort_rank
+                  (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = sli.exercise) AS "last"
            FROM session_list_item sli JOIN exercise e ON e.id = sli.exercise
            WHERE sli.session = ?1 ORDER BY sli.position"#,
-        r.id,
-        train::WARMUP
+        r.id
     )
     .fetch_all(&db.pool)
     .await?;
@@ -1022,7 +1014,6 @@ async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveS
             name: i.name,
             last_used: i.last.as_deref().and_then(local_date).map(iso),
             sets: 0,
-            last_effort: i.last_effort_rank,
         })
         .collect();
     for s in &sets {
