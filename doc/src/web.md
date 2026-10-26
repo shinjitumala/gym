@@ -233,6 +233,16 @@ $ cargo build --release --features ssr    # the binary, which embeds it
 starts the binary's build before the site is complete, so that pass can embed
 nothing, and recompiling the binary is what puts the assets in.
 
+`./deploy.sh` makes the same two passes for Android: the bundle with
+`cargo leptos build --release`, then `cargo build --target aarch64-linux-android
+--release --features ssr` for the binary that embeds it. `cargo leptos` has no
+option for the server's target — it builds the WASM half for
+`wasm32-unknown-unknown` and the server for the host — so the Android binary is
+cargo's own cross build, with `ssr` for the server and the NDK's clang as the
+linker. The script then reads the built script and stylesheet back out of the
+binary, so a build that embedded nothing fails at the deploy rather than on the
+phone.
+
 A build without the bundle — a plain `cargo build` — is still a working CLI;
 `gym web` then refuses to start and says to rebuild, instead of serving an empty
 page.

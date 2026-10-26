@@ -76,23 +76,26 @@ Acceptance criteria:
 ## Feature: Build and install
 
 Status: works, and the build is offline: `.sqlx` carries the checked queries.
-`./install.sh` formats, builds a release binary and installs it into
-`$CARGO_HOME/bin` atomically; `./deploy.sh` cross-compiles for
-`aarch64-linux-android`.
+`./install.sh` formats, builds a release binary with the web UI embedded and
+installs it into `$CARGO_HOME/bin` atomically; `./deploy.sh` builds the same
+bundle in release and cross-compiles the server for `aarch64-linux-android`, so
+the Android binary carries the UI too.
 
 Acceptance criteria:
 
 - [ ] `./install.sh` is idempotent and safe while `gym` is running.
 - [ ] The installed binary reports which build it is (`gym --version`).
-- [ ] The hydrated web assets are inside the binary, so installing is still one
-      file and the Android build produces something runnable.
+- [x] The hydrated web assets are inside the binary, so installing is still one
+      file, and the Android build carries them: `./deploy.sh` reads the built
+      script and stylesheet back out of the `aarch64-linux-android` binary.
+- [ ] `gym web` from the Android binary serves a hydrating page on a phone.
 - [x] Every query is a `sqlx` macro checked at build time; a dynamic SQL string
       is absent from the source tree.
 - [x] A build needs no database: the `.sqlx` offline cache is committed and
       `install.sh` builds with `SQLX_OFFLINE=true`.
 - [x] After a migration changes, one documented command sequence refreshes the
       cache, and a stale cache fails the build instead of failing at runtime.
-- [ ] `./deploy.sh` states its NDK prerequisites and fails with a message, not
+- [x] `./deploy.sh` states its NDK prerequisites and fails with a message, not
       a linker error, when they are missing.
 - [ ] `mdbook build doc` is checked, and a broken internal link fails it.
 

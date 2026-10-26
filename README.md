@@ -96,13 +96,26 @@ The book is built with `mdbook build doc` and read with `mdbook serve doc`.
 
 ## Deploy to Android
 
-`deploy.sh` cross-compiles a release binary for `aarch64-linux-android` with
-the Android NDK toolchain. It needs the same `SQLX_OFFLINE=true` in the
-environment, for the reason `install.sh` sets it.
+`deploy.sh` produces one file for `aarch64-linux-android`, with the web UI
+inside it. It builds the WASM bundle with `cargo leptos build --release` and
+then cross-compiles the server with the Android NDK toolchain, `ssr` included,
+so the second build is what embeds the bundle that `gym web` serves. There is no
+site directory to copy to the phone. `SQLX_OFFLINE=true` is set in the script,
+for the reason `install.sh` sets it.
+
+Prerequisites: `cargo` with the `wasm32-unknown-unknown` and
+`aarch64-linux-android` targets, `cargo-leptos`, `jq`, and the NDK at
+`/opt/android-ndk` (API 35). One that is missing is named and the script stops
+before building anything.
 
 ```bash
 $ ./deploy.sh
+deployed /home/you/gym/target/aarch64-linux-android/release/gym, with the web UI embedded
 ```
+
+The last line is a check, not a summary: the script reads the built script and
+stylesheet back out of the binary, so a build that embedded nothing fails here
+instead of shipping.
 
 ## License
 
