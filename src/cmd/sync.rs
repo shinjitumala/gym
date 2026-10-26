@@ -1,14 +1,8 @@
 use crate::com::*;
 
 #[derive(Args)]
-#[args(desc = "Copy the database to the configured remote.")]
+#[args(f = sync, desc = "Copy the database to the configured remote.")]
 pub struct Sync {}
-impl Run<C> for Sync {
-    type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
-        Ok(sync(c, a)?)
-    }
-}
 fn sync(c: &C, _a: Sync) -> Res<()> {
     let d = c.block_on(crate::db::Db::open(&c.cfg.db))?;
     let tmp = std::env::temp_dir().join(format!("gym-sync-{}.db", std::process::id()));

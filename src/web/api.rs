@@ -20,8 +20,15 @@ fn error(e: impl std::fmt::Display) -> ServerFnError {
 }
 
 #[cfg(feature = "ssr")]
+fn config() -> Result<crate::ctx::C, ServerFnError> {
+    use fpr_cli_util::Ctx;
+    let path = crate::ctx::config_path().map_err(error)?;
+    crate::ctx::C::new(&path).map_err(error)
+}
+
+#[cfg(feature = "ssr")]
 async fn open() -> Result<crate::db::Db, ServerFnError> {
-    let c = crate::ctx::C::new().map_err(error)?;
+    let c = config()?;
     crate::db::Db::open(&c.cfg.db).await.map_err(error)
 }
 
@@ -29,7 +36,7 @@ async fn open() -> Result<crate::db::Db, ServerFnError> {
 
 #[server(input = Json)]
 pub async fn load_server_info() -> Result<ServerInfo, ServerFnError> {
-    let c = crate::ctx::C::new().map_err(error)?;
+    let c = config()?;
     let db = crate::db::Db::open(&c.cfg.db).await.map_err(error)?;
     crate::web::data::info(&db, &c.cfg.remote)
         .await

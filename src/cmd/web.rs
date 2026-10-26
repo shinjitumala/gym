@@ -1,16 +1,10 @@
 use crate::com::*;
 
 #[derive(Args)]
-#[args(desc = "Runs the local web UI on loopback.")]
+#[args(f = web, desc = "Runs the local web UI on loopback.")]
 pub struct Web {
     #[arg(desc = "Socket address.", s = ("127.0.0.1:8080"))]
     pub addr: String,
-}
-impl Run<C> for Web {
-    type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
-        Ok(web(c, a)?)
-    }
 }
 
 #[cfg(feature = "ssr")]

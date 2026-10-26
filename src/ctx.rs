@@ -1,7 +1,22 @@
 use crate::com::*;
 use serde::Deserialize;
-use std::{env, fs, future::Future, path::PathBuf, sync::OnceLock};
+use std::{env, future::Future, path::PathBuf, sync::OnceLock};
 use tokio::runtime::{Builder, Runtime};
+
+/// Where the configuration path comes from, in the order it is tried: the
+/// variable, then the file named below `$HOME`. The name is the one the other
+/// `fpr` tools use, so a machine that sets one can set them all the same way.
+pub const ENV: &str = "FPR_GYM_CONFIG_PATH";
+pub const DEF: &str = ".config/gym.toml";
+
+/// The configuration file to read, as a path.
+pub fn config_path() -> Result<String, String> {
+    if let Ok(p) = env::var(ENV) {
+        return Ok(p);
+    }
+    let home = env::var("HOME").map_err(|_| "Failed to get variable '$HOME'.".to_string())?;
+    Ok(format!("{home}/{DEF}"))
+}
 
 #[derive(Deserialize, Clone)]
 pub struct Cfg {
@@ -23,27 +38,11 @@ fn rt() -> &'static Runtime {
     })
 }
 
-impl C {
-    pub fn new() -> Res<Self> {
-        let p = {
-            let home = env::var("HOME").expect("Failed to get variable '$HOME'");
-            let p = PathBuf::from(format!("{home}/.config/gym.toml"));
-            if p.exists() {
-                p
-            } else {
-                let p = "CONFIG_PATH";
-                let p = env::var(p).map_err(|_| format!("'{p}' not set."))?;
-                PathBuf::from(p)
-            }
-        };
+impl Ctx for C {
+    fn new(path: &str) -> Result<Self, String> {
+        let p = PathBuf::from(path);
 
-        let cfg: Cfg = toml::from_str(&fs::read_to_string(&p).map_err(|e| {
-            format!(
-                "Failed to read file '{}' because '{e}'",
-                p.to_string_lossy()
-            )
-        })?)
-        .map_err(|e| format!("Failed to parse '{}' because '{e}'", p.to_string_lossy()))?;
+        let cfg: Cfg = from_toml(&p)?;
 
         let p = PathBuf::from(&cfg.db);
         if p.is_dir() {
@@ -65,6 +64,23 @@ impl C {
         }
 
         Ok(C { cfg })
+    }
+}
+
+impl C {
+    /// A context that read no configuration.
+    ///
+    /// `--version` and `--help` are answered with it, because neither reads a
+    /// setting: they report on the binary, and a binary that refuses to do
+    /// that until a configuration file exists cannot answer the question a
+    /// fresh install is asking.
+    pub fn unconfigured() -> Self {
+        C {
+            cfg: Cfg {
+                db: String::new(),
+                remote: String::new(),
+            },
+        }
     }
 
     pub fn block_on<F: Future>(&self, f: F) -> F::Output {

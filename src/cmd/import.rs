@@ -1,18 +1,12 @@
 use crate::com::*;
 
 #[derive(Args)]
-#[args(desc = "Fill an empty database from a TOML archive directory.")]
+#[args(f = import_act, desc = "Fill an empty database from a TOML archive directory.")]
 pub struct Import {
     #[arg(desc = "The directory holding the TOML archive, for example ~/g/gym_data/d.")]
     dir: Option<String>,
     #[arg(desc = "A TOML table mapping a note partner name to an exercise name.")]
     map: Option<String>,
-}
-impl Run<C> for Import {
-    type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
-        Ok(import_act(c, a)?)
-    }
 }
 fn import_act(c: &C, a: Import) -> Res<()> {
     let dir = a.dir.ok_or_else(|| {

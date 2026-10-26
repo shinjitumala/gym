@@ -1,16 +1,58 @@
 # Commands
 
+`gym --help` lists the commands, and every command answers the same question
+about itself:
+
+```text
+$ gym --help
+Usage: gym <act>
+Acts:
+weight Add weight data.
+web    Runs the local web UI on loopback.
+sync   Copy the database to the configured remote.
+new    New session at the gym to the buffer.
+food   Add food data.
+db     The database.
+
+$ gym db --help
+Usage: gym db <act>
+Acts:
+init   Create an empty database at the configured path.
+import Fill an empty database from a TOML archive directory.
+
+$ gym web --help
+Usage: gym web <opts...>
+Options:
+--addr Req<String> Socket address.  (default: 127.0.0.1:8080)
+```
+
+`--version` names the build, which is what to quote in a bug report:
+
+```text
+$ gym --version
+gym v0.9.0: x86_64-unknown-linux-gnu, release
+A local-first fitness tracker for progressive overload, body weight and food.
+Repository: https://github.com/shinjitumala/gym, commit = 906835d, dirty = false
+```
+
+Both answer without a configuration file, so they work on a machine where `gym`
+has just been installed. Neither is an act: `gym` with no argument at all is a
+mistake, and says so:
+
 ```text
 $ gym
-Expected an act.
-? Choose an action.
-> weight Add weight data.
-  web    Runs a local web server.
-  sync   Copy the database to the configured remote.
-  new    New session at the gym to the buffer.
-  food   Add food data.
-  db     The database.
-[↑↓ to move, enter to select, type to filter]
+Expected act.
+Use this command for help:
+gym --help
+```
+
+A command that fails prints what went wrong and `Aborting.`, then exits with
+status 1, so a script can tell a refusal from a success:
+
+```text
+$ FPR_GYM_CONFIG_PATH=/tmp/gym-try/missing.toml gym food
+Failed to open file '/tmp/gym-try/missing.toml' because 'No such file or directory (os error 2)'.
+Aborting.
 ```
 
 Every prompt in every command accepts ESC. On a text field it skips an
