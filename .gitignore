@@ -3,3 +3,6 @@
 test.sqlite
 s/data.js
 __pycache__/
+# The knowledge base keeps its index beside the repository it indexed, not in
+# it: the file is rebuilt whenever the docs change.
+.fpr-kb/
