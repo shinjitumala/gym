@@ -20,6 +20,7 @@ page is driven by evaluating the same DOM calls a click makes.
 """
 
 import base64
+import datetime
 import hashlib
 import json
 import os
@@ -38,6 +39,7 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRATCH = os.environ.get("FPR_SCRATCH_DIR") or tempfile.mkdtemp(prefix="gym-web-")
+DB = os.path.join(SCRATCH, "gym.db")
 
 # Tailwind 4.3 added the first-party scrollbar utilities (scrollbar-thin,
 # scrollbar-thumb-*, scrollbar-track-*), so the build pins that release.
@@ -364,6 +366,81 @@ class Cdp:
 # ---------------------------------------------------------------- the fixture
 
 
+# How many days before the day the suite runs each of the fixture's rows sits.
+# `fixtures.sql` dates a row by naming one of these, so the whole log moves with
+# the calendar and a scenario about recency — "yesterday", the range's oldest
+# weigh-in — answers the same on any day. The times of day stay in the SQL, next
+# to the rows they belong to.
+DAYS_AGO = {
+    "phase_start": 56,
+    "bench_first": 22,
+    "bench_second": 15,
+    "bench_third": 8,
+    "deload": 11,
+    "squat_first": 19,
+    "squat_second": 12,
+    "preset_used": 2,
+    "meal_newest": 1,
+    "meal_older": 2,
+    "weigh_outside": 140,
+    "weigh_1": 56,
+    "weigh_2": 49,
+    "weigh_3": 42,
+    "weigh_4": 35,
+    "weigh_5": 28,
+    "weigh_6": 21,
+    "weigh_7": 14,
+    "weigh_8": 7,
+    "weigh_9": 3,
+}
+
+# `{{on:name}}` is the local day, `{{at:name:HH:MM:SS}}` a local instant on it.
+DATE_TOKEN = re.compile(r"\{\{(on|at):(\w+)(?::(\d{2}:\d{2}:\d{2}))?\}\}")
+
+
+def dated(sql):
+    """Fill the fixture's date tokens with days counted back from today.
+
+    The instant carries the machine's own offset for that day, so the server
+    reads back the local date the fixture meant — including across a daylight
+    saving change, which a fixed offset would shift by an hour.
+    """
+
+    def fill(m):
+        kind, name, clock = m.groups()
+        days = DAYS_AGO.get(name)
+        need(
+            days is not None,
+            f"fixtures.sql dates a row '{{{{{kind}:{name}}}}}' with no day to count back",
+        )
+        day = datetime.date.today() - datetime.timedelta(days=days)
+        if kind == "on":
+            return day.isoformat()
+        moment = datetime.datetime.combine(day, datetime.time.fromisoformat(clock))
+        return moment.astimezone().isoformat()
+
+    filled = DATE_TOKEN.sub(fill, sql)
+    need(not DATE_TOKEN.search(filled), "a fixture date token was left unfilled")
+    return filled
+
+
+def weigh_in_days():
+    """The local days of the fixture's oldest and newest weigh-in.
+
+    The chart's axis is the data it drew, and the fixture's dates move with the
+    day the suite runs, so the scenario reads the days it seeded from the
+    database rather than naming a calendar date that would expire. Every writer
+    stores an RFC3339 instant with an offset, so the date part of the stored
+    string is the local day the row belongs to.
+    """
+    connection = sqlite3.connect(DB)
+    try:
+        oldest, newest = connection.execute("SELECT MIN(date), MAX(date) FROM weight").fetchone()
+    finally:
+        connection.close()
+    return oldest[:10], newest[:10]
+
+
 def build():
     """Build the server and the WASM bundle, unless GYM_BIN names a binary.
 
@@ -407,7 +484,7 @@ def fixture(binary, home, db, page_url):
     )
     need(done.returncode == 0, f"gym db init failed: {(done.stderr + done.stdout)[-400:]}")
     with open(os.path.join(HERE, "fixtures.sql")) as f:
-        sql = f.read()
+        sql = dated(f.read())
     connection = sqlite3.connect(db)
     connection.executescript(sql)
     connection.commit()
@@ -594,6 +671,7 @@ def weight_the_line_is_the_whole_range(cdp, base):
     the reader chose, so a log whose weigh-ins are older than that window still
     has a line, and its oldest point is the range's, not the window's.
     """
+    oldest, newest = weigh_in_days()
     cdp.go(f"{base}/weight/analyse")
     cdp.until_text("main", "Weight by phase")
     first, last = cdp.eval(
@@ -603,10 +681,13 @@ def weight_the_line_is_the_whole_range(cdp, base):
         "return [t[0], t[t.length - 1]]; })()"
     )
     need(
-        first == "2026-06-01",
-        f"the weight line starts at {first!r}, not at the range's oldest weigh-in (2026-06-01)",
+        first == oldest,
+        f"the weight line starts at {first!r}, not at the range's oldest weigh-in ({oldest})",
     )
-    need(last == "2026-10-24", f"the weight line ends at {last!r}, not the newest weigh-in")
+    need(
+        last == newest,
+        f"the weight line ends at {last!r}, not the newest weigh-in ({newest})",
+    )
     # One dot per observation: the line is split where the phase changes, so
     # counting the dots is counting the weigh-ins the chart drew.
     dots = cdp.eval(
@@ -723,7 +804,12 @@ def charts_have_dates_and_numbers(cdp, base):
 
 
 def food_food_list_is_sorted_by_last_eaten(cdp, base):
-    """The food picker is ordered by the last meal of that food."""
+    """The food picker is ordered by the last meal of that food.
+
+    The fixture eats bread yesterday and the rest two days ago, so the newest
+    row's note is "yesterday": the note is written from the food's own date and
+    today's, not from the fixture's.
+    """
     cdp.go(f"{base}/food")
     cdp.until_text("main", "Record a meal")
     order = cdp.text("main section:nth-of-type(2) div.flex.flex-col button")
@@ -1241,7 +1327,7 @@ def main():
     print(f"scratch: {SCRATCH}")
     home = os.path.join(SCRATCH, "home")
     profile = os.path.join(SCRATCH, "browser")
-    db = os.path.join(SCRATCH, "gym.db")
+    db = DB
     for path in (home, profile):
         os.makedirs(path, exist_ok=True)
     fixture(binary, home, db, None)

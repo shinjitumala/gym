@@ -294,5 +294,20 @@ standard library and one Chromium-based browser.
 $ python3 test/web/drive.py
 ```
 
+The fixture log in `test/web/fixtures.sql` is dated **relative to the run**,
+never to a calendar day. A row names a day — `{{at:meal_newest:08:00:00}}` — and
+the `DAYS_AGO` table in `drive.py` says how many days before today that name
+sits; the script fills them in before seeding. The instant carries the machine's
+offset for its own day, so the server reads back the same local date even when a
+daylight saving change falls inside the log.
+
+That is what keeps a scenario about recency honest. The food picker is ordered
+by the last meal of each food and says "yesterday" beside the newest one, and
+the weight chart's ends are the log's oldest and newest weigh-in; written as
+absolute dates, the same fixture reads "2 days ago" the day after it was
+written, and the suite fails on the calendar rather than on the app. Where a
+scenario reads a date back, it asks the seeded database for the day it wrote
+(`weigh_in_days()`), so the assertion is about the data and not about today.
+
 Screenshots and the scratch database go under `$FPR_SCRATCH_DIR`, never into the
 repository.
