@@ -226,8 +226,8 @@ Acceptance criteria:
       changed after it was registered.
 - [x] A food that a meal still refers to cannot be deleted, and the refusal
       says how many meals use it.
-- [x] Meal presets can be created and deleted, with their foods and amounts;
-      editing one in place is still missing.
+- [x] Meal presets can be created and deleted, with their foods and amounts
+      picked from a searchable food list; editing one in place is still missing.
 - [x] Every edit affects only the row it names.
 
 ## Feature: Weight · daily
@@ -348,8 +348,8 @@ Acceptance criteria:
       the surviving value is visible before the merge is confirmed.
 - [x] An exercise can carry a video link, and it is validated on save.
 - [x] Gym presets (a named list of exercises) can be created, edited and
-      deleted, a preset starts with one exercise and grows a row at a time, and
-      applying one fills a session's list.
+      deleted, their exercises picked from a list searchable by name or muscle
+      group, and applying one fills a session's list.
 
 ## Feature: Gym · analysis
 

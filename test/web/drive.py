@@ -573,6 +573,28 @@ def choose_text(cdp, expression, text):
     need(ok, f"no option containing {text!r} at {expression}")
 
 
+def section_rows(cdp, title, selector):
+    """How many elements `selector` matches in the section titled `title`."""
+    return in_section(cdp, title, f"s.querySelectorAll({json.dumps(selector)}).length")
+
+
+def section_pick(cdp, title, text):
+    """Click the row of the narrowed list in `title` whose label contains `text`.
+
+    A picker row is two spans, the label and the hint, so its innerText is not a
+    single string a scenario can spell out; `contains` is what a reader does
+    when they read the list.
+    """
+    ok = cdp.eval(
+        "(() => { const s = [...document.querySelectorAll('main section')]"
+        f".find(x => x.querySelector('h2') && x.querySelector('h2').innerText === {json.dumps(title)});"
+        "if (!s) return false;"
+        f"const e = [...s.querySelectorAll('button')].find(b => b.innerText.includes({json.dumps(text)}));"
+        "if (!e) return false; e.scrollIntoView({block: 'center'}); e.click(); return true; })()"
+    )
+    need(ok, f"no row containing {text!r} in the {title!r} section")
+
+
 def preset_click(cdp, name, text):
     ok = cdp.eval(
         "(() => { const rec = document.querySelector(" + json.dumps(f'[data-preset="{name}"]') + ");"
@@ -1101,20 +1123,35 @@ def gym_back_and_end_session(cdp, base):
     cdp.screenshot("gym-ended")
 
 
-def gym_a_preset_starts_with_one_row_and_is_edited(cdp, base):
-    """A preset starts with one exercise and grows a row at a time, and an
-    existing preset is rewritten from the edit page."""
+def gym_a_preset_is_built_by_searching_and_edited(cdp, base):
+    """A preset is built by searching for its exercises, and an existing preset
+    is rewritten the same way from the edit page."""
     cdp.go(f"{base}/gym/edit")
     cdp.until_text("main", "Edit a set's load")
     cdp.click("main button", "presets")
     cdp.until_text("main", "A preset is a named list of exercises")
-    rows = "document.querySelectorAll('#add-preset select').length"
-    need(cdp.eval(rows) == 1, f"a new preset starts with {cdp.eval(rows)} rows, not one")
+    added = ("[...document.querySelectorAll('#add-preset button')]"
+             ".filter(b => b.innerText.trim() === 'remove').length")
+    need(cdp.eval(added) == 0, f"a new preset starts with {cdp.eval(added)} rows, not none")
     cdp.fill("#add-preset input[type=text]", "pull", 0)
-    cdp.click("#add-preset button", "add exercise")
-    need(cdp.eval(rows) == 2, "add exercise did not add a row")
-    choose_text(cdp, "document.querySelectorAll('#add-preset select')[0]", "bench press")
-    choose_text(cdp, "document.querySelectorAll('#add-preset select')[1]", "squat")
+    candidates = "div.max-h-64 button"
+    everything = section_rows(cdp, "Add a preset", candidates)
+    need(everything >= 2, f"the add form lists {everything} exercises, not the log's")
+    # "press chest" is no row's text: no single substring carries the words in
+    # that order. The search reads them one word at a time, in any order.
+    cdp.fill("#add-preset input[type=text]", "press chest", 1)
+    narrowed = section_rows(cdp, "Add a preset", candidates)
+    need(narrowed == 2, f"'press chest' left {narrowed} exercises, not the two chest presses")
+    section_pick(cdp, "Add a preset", "bench press")
+    # "sqt" is not a substring of anything either: its letters are in order in
+    # "squat", which is what a typo looks like.
+    cdp.fill("#add-preset input[type=text]", "sqt", 1)
+    need(
+        section_rows(cdp, "Add a preset", candidates) == 1,
+        "'sqt' did not narrow the list to the one exercise",
+    )
+    section_pick(cdp, "Add a preset", "squat")
+    need(cdp.eval(added) == 2, "the picks did not add the two rows")
     cdp.click("#add-preset button", "add preset")
     cdp.until_text(f'[data-preset="pull"]', "2 exercise(s)", "the new preset")
     need(
@@ -1125,18 +1162,28 @@ def gym_a_preset_starts_with_one_row_and_is_edited(cdp, base):
         "the new preset did not keep the two exercises in order",
     )
     preset_click(cdp, "pull", "edit")
-    cdp.until(f'!!document.querySelector(\'[data-preset="pull"] form\')', 10, "the preset to fold out")
-    preset_fill(cdp, "pull", "input[type=text]", "pull day", 0)
-    preset_click(cdp, "pull", "add exercise")
-    choose_text(
-        cdp,
-        "[...document.querySelector('[data-preset=\"pull\"]').querySelectorAll('select')].pop()",
-        "row",
+    cdp.until(
+        '!!document.querySelector(\'[data-preset="pull"] input[placeholder="filter exercises"]\')',
+        10,
+        "the preset to fold out with its filter",
     )
+    preset_fill(cdp, "pull", "input[type=text]", "pull day", 0)
+    preset_fill(cdp, "pull", "input[type=text]", "pll", 1)
+    need(
+        in_section(
+            cdp,
+            "Presets",
+            "document.querySelector('[data-preset=\"pull\"]')"
+            f".querySelectorAll('{candidates}').length",
+        )
+        == 1,
+        "'pll' did not narrow the preset's candidates to the pull up",
+    )
+    preset_click(cdp, "pull", "pull up · back")
     preset_click(cdp, "pull", "save")
     cdp.until_text('[data-preset="pull day"]', "3 exercise(s)", "the edited preset")
     need(
-        "bench press, squat, row"
+        "bench press, squat, pull up"
         in cdp.eval(
             'document.querySelector(\'[data-preset="pull day"] span.whitespace-normal\').innerText'
         ),
@@ -1287,6 +1334,47 @@ def gym_superset_records_one_unit(cdp, base):
          f"the two rows do not share the group's load at their own reps: {logged[:900]!r}")
 
 
+def food_a_preset_is_built_by_searching(cdp, base):
+    """A meal preset's foods are picked from a narrowed list, amount and all,
+    and the preset then loads on the daily page."""
+    cdp.go(f"{base}/food/edit")
+    cdp.until_text("main", "Meals · last 120 days")
+    cdp.click("main button", "presets")
+    cdp.until_text("main", "A preset is a named set of foods")
+    cdp.fill("#add-preset input[type=text]", "snack", 0)
+    candidates = "div.max-h-64 button"
+    everything = section_rows(cdp, "Add a preset", candidates)
+    need(everything >= 2, f"the add form lists {everything} foods, not the log's")
+    # A typo, not a substring: the letters of "chikn" are in order in "chicken",
+    # which is the row the reader meant.
+    cdp.fill("#add-preset input[type=text]", "chikn", 1)
+    need(
+        section_rows(cdp, "Add a preset", candidates) == 1,
+        "'chikn' did not narrow the list to the one food",
+    )
+    section_pick(cdp, "Add a preset", "chicken")
+    cdp.fill("#add-preset input[type=text]", "", 1)
+    section_pick(cdp, "Add a preset", "oats")
+    cdp.fill("#add-preset input[type=text]", "2", 2)
+    cdp.click("#add-preset button", "add preset")
+    # Saving re-runs the page's query, which reopens the edit page on its first
+    # segment: the preset row is read where it is, hidden or not.
+    cdp.until(
+        "(() => { const r = document.querySelector('[data-preset=\"snack\"]');"
+        "return !!r && r.textContent.includes('chicken ×2.0'); })()",
+        10,
+        "the new preset's first food",
+    )
+    need(
+        "oats ×1.0"
+        in cdp.eval('document.querySelector(\'[data-preset="snack"]\').textContent'),
+        "the new preset did not keep both foods, in the order they were picked",
+    )
+    cdp.screenshot("food-preset-search")
+    cdp.go(f"{base}/food")
+    cdp.until_text("main", "snack ·", "the new preset on the daily page")
+
+
 SCENARIOS = [
     nav_has_three_tabs,
     scrollbars_are_thin_and_green,
@@ -1312,11 +1400,12 @@ SCENARIOS = [
     gym_the_next_exercise_alternates,
     gym_escape_leaves_the_window_not_the_session,
     gym_back_and_end_session,
-    gym_a_preset_starts_with_one_row_and_is_edited,
+    gym_a_preset_is_built_by_searching_and_edited,
     gym_analysis_searches_the_exercises,
     gym_analysis_shades_the_deload_week,
     gym_a_deload_is_opted_into,
     gym_superset_records_one_unit,
+    food_a_preset_is_built_by_searching,
 ]
 
 

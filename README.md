@@ -92,7 +92,7 @@ $ gym web      # http://127.0.0.1:8080
   from the TOML archive.
 - [The web UI](doc/src/web.md) — `gym web`, its pages, and how it is built.
 - [Requirements for the web UI](doc/src/requirements.md) — the scenarios the
-  pages are judged against, and the two definitions they rest on.
+  pages are judged against, and the definitions they rest on.
 - [The overhaul](doc/src/overhaul.md) — the decisions behind the rebuild, and
   what is still planned.
 

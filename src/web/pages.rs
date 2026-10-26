@@ -1073,7 +1073,7 @@ fn PresetEditRow(p: PresetRow, saved: Callback<()>) -> impl IntoView {
         .collect::<Vec<_>>()
         .join(", ");
     view! {
-        <div class=RECORD>
+        <div class=RECORD data-preset=p.name.clone()>
             <div class=ROW>
                 <span class=GROW>{p.name.clone()}</span>
                 <span class=RIGHT>{format!("{:.0} kcal", p.per_unit.kcal)}</span>
@@ -1099,20 +1099,18 @@ fn PresetEditRow(p: PresetRow, saved: Callback<()>) -> impl IntoView {
 #[component]
 fn AddPresetRow(foods: Vec<FoodRow>, saved: Callback<()>) -> impl IntoView {
     let name = NodeRef::<leptos::html::Input>::new();
-    let rows = [
-        (
-            NodeRef::<leptos::html::Select>::new(),
-            NodeRef::<leptos::html::Input>::new(),
-        ),
-        (
-            NodeRef::<leptos::html::Select>::new(),
-            NodeRef::<leptos::html::Input>::new(),
-        ),
-        (
-            NodeRef::<leptos::html::Select>::new(),
-            NodeRef::<leptos::html::Input>::new(),
-        ),
-    ];
+    // The chosen foods and their amounts, in the order they were picked: that
+    // order is the preset's, and the daily page loads its foods in it.
+    let picked = RwSignal::new(Vec::<(i64, String)>::new());
+    // Only the ids drive the rows, so typing an amount does not rebuild the
+    // inputs it is typed into.
+    let ids = Memo::new(move |_| {
+        picked
+            .get()
+            .into_iter()
+            .map(|(food, _)| food)
+            .collect::<Vec<_>>()
+    });
     let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
     let action = Action::new(move |args: &(String, Vec<(i64, String)>)| {
         let (name, foods) = args.clone();
@@ -1126,71 +1124,120 @@ fn AddPresetRow(foods: Vec<FoodRow>, saved: Callback<()>) -> impl IntoView {
             set_outcome.set(Some(r));
         }
     });
-    let opts: Vec<(i64, String)> = foods
+    let candidates: Vec<(i64, String, String)> = foods
         .iter()
-        .map(|f| (f.id, format!("{} · {:.0} kcal", f.name, f.per_unit.kcal)))
+        .map(|f| (f.id, f.name.clone(), format!("{:.0} kcal", f.per_unit.kcal)))
         .collect();
-    let opts_for_rows = opts.clone();
-    view! {
-        <form on:submit=move |e| {
-            e.prevent_default();
-            let mut out = Vec::new();
-            for (food, amount) in rows {
-                let id = selected(food, -1);
-                let a = value_of(amount, "");
-                if id < 0 || a.trim().is_empty() {
-                    continue;
-                }
-                out.push((id, a));
+    let names = StoredValue::new(
+        foods
+            .into_iter()
+            .map(|f| (f.id, f.name))
+            .collect::<Vec<_>>(),
+    );
+    let add = Callback::new(move |food: i64| {
+        picked.update(|p| {
+            if !p.iter().any(|(id, _)| *id == food) {
+                p.push((food, "1".to_string()));
             }
-            action.dispatch((value_of(name, ""), out));
-        }>
+        });
+    });
+    view! {
+        <div id="add-preset">
             <div class=ROW>
                 <label class=GROW>
                     "name"
                     <input type="text" size="16" value="" node_ref=name />
                 </label>
             </div>
-            {rows
-                .iter()
-                .enumerate()
-                .map(|(i, (food, amount))| {
-                    let opts = opts_for_rows.clone();
-                    let food = *food;
-                    let amount = *amount;
-                    view! {
-                        <div class=LINE>
-                            <label class=GROW>
-                                "food"
-                                <select node_ref=food>
-                                    {if i > 0 {
-                                        view! { <option value="-1">"—"</option> }.into_any()
-                                    } else {
-                                        ().into_any()
-                                    }}
-                                    {opts
-                                        .iter()
-                                        .map(|(id, label)| {
-                                            view! { <option value=id.to_string()>{label.clone()}</option> }
-                                        })
-                                        .collect_view()}
-                                </select>
-                            </label>
-                            <label class=NARROW>
-                                "×"
-                                <input type="text" size="4" value=if i == 0 { "1" } else { "" } node_ref=amount />
-                            </label>
-                        </div>
-                    }
-                })
-                .collect_view()}
+            <Picker
+                label="food · most recently eaten first"
+                placeholder="filter foods"
+                rows=candidates
+                on_pick=add
+            />
+            <Hint text="Type to narrow the list and click a food to add it, then set how much. Nothing is written before add preset." />
+            {move || {
+                let ids = ids.get();
+                if ids.is_empty() {
+                    return ().into_any();
+                }
+                view! {
+                    <div class=PANEL>
+                        {ids
+                            .iter()
+                            .enumerate()
+                            .map(|(i, food)| {
+                                let food = *food;
+                                let label = names
+                                    .with_value(|names| {
+                                        names
+                                            .iter()
+                                            .find(|(id, _)| *id == food)
+                                            .map(|(_, name)| name.clone())
+                                            .unwrap_or_default()
+                                    });
+                                let amount = picked
+                                    .with_untracked(|p| {
+                                        p.get(i).map(|(_, a)| a.clone()).unwrap_or_default()
+                                    });
+                                view! {
+                                    <div class=LINE>
+                                        <span class=GROW>{label}</span>
+                                        <label class=NARROW>
+                                            "×"
+                                            <input
+                                                type="text"
+                                                size="4"
+                                                value=amount
+                                                on:input=move |e| {
+                                                    let a = event_target_value(&e);
+                                                    picked
+                                                        .update(|p| {
+                                                            if let Some(row) = p.get_mut(i) {
+                                                                row.1 = a;
+                                                            }
+                                                        });
+                                                }
+                                            />
+                                        </label>
+                                        <button
+                                            type="button"
+                                            class=SMALL_BAD
+                                            on:click=move |_| picked
+                                                .update(|p| {
+                                                    if i < p.len() {
+                                                        p.remove(i);
+                                                    }
+                                                })
+                                        >
+                                            "remove"
+                                        </button>
+                                    </div>
+                                }
+                            })
+                            .collect_view()}
+                    </div>
+                }
+                    .into_any()
+            }}
             <div class=ROW>
-                <button type="submit" disabled=move || action.pending().get()>
+                <button
+                    type="button"
+                    disabled=move || action.pending().get() || picked.get().is_empty()
+                    on:click=move |_| {
+                        let out = picked
+                            .get_untracked()
+                            .into_iter()
+                            .filter(|(_, a)| !a.trim().is_empty())
+                            .collect::<Vec<_>>();
+                        action.dispatch((value_of(name, ""), out));
+                    }
+                >
                     "add preset"
                 </button>
                 <Outcome outcome=outcome />
             </div>
-        </form>
+        </div>
     }
 }
 
@@ -3554,7 +3601,26 @@ fn GroupAdder(groups: Vec<MuscleRow>, #[prop(into)] on_add: Callback<(i64, f64)>
 #[component]
 fn GymPresetPanels(d: GymEdit, saved: Callback<()>) -> impl IntoView {
     let presets = d.presets.clone();
-    let names: Vec<(i64, String)> = d.exercises.iter().map(|e| (e.id, e.name.clone())).collect();
+    // `name · group`, the same label the analysis page searches, so a muscle
+    // group narrows the exercises here too.
+    let names: Vec<(i64, String)> = d
+        .exercises
+        .iter()
+        .map(|e| {
+            let groups = e
+                .groups
+                .iter()
+                .map(|g| g.name.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let label = if groups.is_empty() {
+                e.name.clone()
+            } else {
+                format!("{} · {}", e.name, groups)
+            };
+            (e.id, label)
+        })
+        .collect();
     let names_for_rows = names.clone();
     view! {
         <Section title="Presets">
@@ -3577,71 +3643,41 @@ fn GymPresetPanels(d: GymEdit, saved: Callback<()>) -> impl IntoView {
     }
 }
 
-/// One exercise row of a preset form: a select plus the way to drop it.
+/// One exercise of a preset being built: its name, and the way to drop it.
 ///
-/// The rows are a list rather than a fixed set of slots, so a preset starts
-/// with the one exercise it must have and grows as far as the reader needs.
+/// Picking from the filter above appends here, so the order is the order the
+/// reader picked; the preset keeps it, and the daily page puts its exercises on
+/// a session's list in that order.
 #[component]
-fn PresetExerciseRow(
-    index: usize,
-    names: Vec<(i64, String)>,
-    picked: RwSignal<Vec<i64>>,
-    /// The exercise this row opens on, when it came from an existing preset.
-    initial: Option<i64>,
-) -> impl IntoView {
+fn PickedExercise(index: usize, name: String, picked: RwSignal<Vec<i64>>) -> impl IntoView {
     view! {
         <div class=LINE>
-            <label class=GROW>
-                "exercise"
-                <select on:change=move |e| {
-                    let v = event_target_value(&e).parse::<i64>().unwrap_or(-1);
+            <span class=GROW>{name}</span>
+            <button
+                type="button"
+                class=SMALL_BAD
+                on:click=move |_| {
                     picked
                         .update(|p| {
                             if index < p.len() {
-                                p[index] = v;
+                                p.remove(index);
                             }
                         });
-                }>
-                    {if index > 0 {
-                        view! { <option value="-1">"—"</option> }.into_any()
-                    } else {
-                        ().into_any()
-                    }}
-                    {names
-                        .iter()
-                        .map(|(id, n)| {
-                            view! {
-                                <option value=id.to_string() selected=initial == Some(*id)>
-                                    {n.clone()}
-                                </option>
-                            }
-                        })
-                        .collect_view()}
-                </select>
-            </label>
-            {if index > 0 {
-                view! {
-                    <button
-                        type="button"
-                        class=SMALL_BAD
-                        on:click=move |_| {
-                            picked
-                                .update(|p| {
-                                    if index < p.len() {
-                                        p.remove(index);
-                                    }
-                                });
-                        }
-                    >
-                        "remove"
-                    </button>
                 }
-                    .into_any()
-            } else {
-                ().into_any()
-            }}
+            >
+                "remove"
+            </button>
         </div>
     }
+}
+
+/// The rows a preset form's filter narrows: `(id, label, note)`, with the muscle
+/// group in the label so a group finds the exercise too.
+fn preset_candidates(names: &[(i64, String)]) -> Vec<(i64, String, String)> {
+    names
+        .iter()
+        .map(|(id, label)| (*id, label.clone(), String::new()))
+        .collect()
 }
 
 #[component]
@@ -3676,9 +3712,16 @@ fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) ->
     let id = p.id;
     let name0 = p.name.clone();
     let picks = RwSignal::new(p.items.iter().map(|i| i.exercise).collect::<Vec<i64>>());
-    let picks_for_rows = picks;
     let name_field = NodeRef::<leptos::html::Input>::new();
-    let names_for_edit = names.clone();
+    let names_for_edit = StoredValue::new(names.clone());
+    let candidates = preset_candidates(&names);
+    let add = Callback::new(move |exercise: i64| {
+        picks.update(|p| {
+            if !p.contains(&exercise) {
+                p.push(exercise);
+            }
+        });
+    });
     let items = p
         .items
         .iter()
@@ -3711,60 +3754,66 @@ fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) ->
             <div class=ROW>
                 <span class="text-gray-500 whitespace-normal">{items}</span>
             </div>
+            // The form is mounted only while it is open, and the rows below are
+            // their own closure, so a pick changes the rows without rebuilding
+            // the filter box and throwing away what was typed into it.
             {move || {
                 if !editing.get() {
                     return ().into_any();
                 }
                 let name0 = name0.clone();
-                let names = names_for_edit.clone();
-                let rows = picks_for_rows
-                    .get()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, initial)| {
-                        view! {
-                            <PresetExerciseRow
-                                index=i
-                                names=names.clone()
-                                picked=picks_for_rows
-                                initial=Some(*initial)
-                            />
-                        }
-                    })
-                    .collect_view();
                 view! {
-                    <form on:submit=move |e| {
-                        e.prevent_default();
-                        let mut exercises: Vec<i64> = Vec::new();
-                        for id in picks_for_rows.get_untracked() {
-                            if id > 0 && !exercises.contains(&id) {
-                                exercises.push(id);
-                            }
-                        }
-                        edit.dispatch((id, value_of(name_field, &name0), exercises));
-                    }>
+                    <div class=FOLD>
                         <div class=ROW>
                             <label class=GROW>
                                 "name"
                                 <input type="text" size="16" value=name0.clone() node_ref=name_field />
                             </label>
                         </div>
-                        {rows}
+                        <Picker
+                            label="exercise · most recently trained first"
+                            placeholder="filter exercises"
+                            rows=candidates.clone()
+                            on_pick=add
+                        />
+                        {move || {
+                            picks
+                                .get()
+                                .iter()
+                                .enumerate()
+                                .map(|(i, exercise)| {
+                                    let label = names_for_edit
+                                        .with_value(|names| {
+                                            names
+                                                .iter()
+                                                .find(|(id, _)| id == exercise)
+                                                .map(|(_, label)| label.clone())
+                                                .unwrap_or_default()
+                                        });
+                                    view! { <PickedExercise index=i name=label picked=picks /> }
+                                })
+                                .collect_view()
+                        }}
                         <div class=ROW>
                             <button
                                 type="button"
-                                on:click=move |_| picks_for_rows.update(|p| p.push(-1))
+                                disabled=move || edit.pending().get() || picks.get().is_empty()
+                                on:click=move |_| {
+                                    edit
+                                        .dispatch((
+                                            id,
+                                            value_of(name_field, &name0),
+                                            picks.get_untracked(),
+                                        ));
+                                }
                             >
-                                "add exercise"
-                            </button>
-                            <button type="submit" disabled=move || edit.pending().get()>
                                 "save"
                             </button>
                             <button type="button" on:click=move |_| set_editing.set(false)>
                                 "cancel"
                             </button>
                         </div>
-                    </form>
+                    </div>
                 }
                     .into_any()
             }}
@@ -3776,8 +3825,9 @@ fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) ->
 #[component]
 fn AddGymPreset(names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView {
     let name = NodeRef::<leptos::html::Input>::new();
-    // A preset starts with the one exercise it must have; the rows grow.
-    let picks = RwSignal::new(vec![-1i64]);
+    // A preset starts empty and grows a row per pick; the filter text stays put
+    // because the picker is not rebuilt when the picks change.
+    let picks = RwSignal::new(Vec::<i64>::new());
     let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
     let action = Action::new(move |args: &(String, Vec<i64>)| {
         let (name, exercises) = args.clone();
@@ -3791,51 +3841,61 @@ fn AddGymPreset(names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView
             set_outcome.set(Some(r));
         }
     });
-    let names_for_rows = names.clone();
-    view! {
-        <form id="add-preset" on:submit=move |e| {
-            e.prevent_default();
-            let mut out: Vec<i64> = Vec::new();
-            for id in picks.get_untracked() {
-                if id > 0 && !out.contains(&id) {
-                    out.push(id);
-                }
+    let names_for_rows = StoredValue::new(names.clone());
+    let candidates = preset_candidates(&names);
+    let add = Callback::new(move |exercise: i64| {
+        picks.update(|p| {
+            if !p.contains(&exercise) {
+                p.push(exercise);
             }
-            action.dispatch((value_of(name, ""), out));
-        }>
+        });
+    });
+    view! {
+        <div id="add-preset">
             <div class=ROW>
                 <label class=GROW>
                     "name"
                     <input type="text" size="16" value="" node_ref=name />
                 </label>
             </div>
+            <Picker
+                label="exercise · most recently trained first"
+                placeholder="filter exercises"
+                rows=candidates
+                on_pick=add
+            />
+            <Hint text="Type to narrow the list and click an exercise to add it; a row's remove takes it out. Nothing is written before add preset." />
             {move || {
                 picks
                     .get()
                     .iter()
                     .enumerate()
-                    .map(|(i, initial)| {
-                        view! {
-                            <PresetExerciseRow
-                                index=i
-                                names=names_for_rows.clone()
-                                picked=picks
-                                initial=(*initial > 0).then_some(*initial)
-                            />
-                        }
+                    .map(|(i, exercise)| {
+                        let label = names_for_rows
+                            .with_value(|names| {
+                                names
+                                    .iter()
+                                    .find(|(id, _)| id == exercise)
+                                    .map(|(_, label)| label.clone())
+                                    .unwrap_or_default()
+                            });
+                        view! { <PickedExercise index=i name=label picked=picks /> }
                     })
                     .collect_view()
             }}
             <div class=ROW>
-                <button type="button" on:click=move |_| picks.update(|p| p.push(-1))>
-                    "add exercise"
-                </button>
-                <button type="submit" disabled=move || action.pending().get()>
+                <button
+                    type="button"
+                    disabled=move || action.pending().get() || picks.get().is_empty()
+                    on:click=move |_| {
+                        action.dispatch((value_of(name, ""), picks.get_untracked()));
+                    }
+                >
                     "add preset"
                 </button>
                 <Outcome outcome=outcome />
             </div>
-        </form>
+        </div>
     }
 }
 
