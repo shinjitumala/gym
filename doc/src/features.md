@@ -79,7 +79,8 @@ Status: works, and the build is offline: `.sqlx` carries the checked queries.
 `./install.sh` formats, builds a release binary with the web UI embedded and
 installs it into `$CARGO_HOME/bin` atomically; `./deploy.sh` builds the same
 bundle in release and cross-compiles the server for `aarch64-linux-android`, so
-the Android binary carries the UI too.
+the Android binary carries the UI too. A 0.8.x build of that binary has run on
+a phone, where `gym web` served the UI and it hydrated.
 
 Acceptance criteria:
 
@@ -88,7 +89,8 @@ Acceptance criteria:
 - [x] The hydrated web assets are inside the binary, so installing is still one
       file, and the Android build carries them: `./deploy.sh` reads the built
       script and stylesheet back out of the `aarch64-linux-android` binary.
-- [ ] `gym web` from the Android binary serves a hydrating page on a phone.
+- [x] `gym web` from the Android binary serves a hydrating page on a phone: a
+      human ran it on a device, and the page was served and hydrated.
 - [x] Every query is a `sqlx` macro checked at build time; a dynamic SQL string
       is absent from the source tree.
 - [x] A build needs no database: the `.sqlx` offline cache is committed and
