@@ -280,3 +280,53 @@ async fn the_web_day_window_is_local_midnight_to_local_midnight() {
     );
     assert_eq!(d.meals.len(), 1);
 }
+
+/// A session the CLI writes is finished the moment it is written; only the web's
+/// live session stays open. If the two were the same, a CLI session would block
+/// the next one started from the browser.
+#[tokio::test]
+async fn a_cli_session_is_finished_when_it_is_written() {
+    let (_s, db) = fresh("ended").await;
+    let place =
+        sqlx::query_scalar!(r#"INSERT INTO place (name) VALUES ('home') RETURNING id AS "id!""#)
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    let id = db
+        .new_session(place, "2026-03-01T10:00:00+00:00", "cli")
+        .await
+        .unwrap();
+    let ended = sqlx::query_scalar!(r#"SELECT ended FROM session WHERE id = ?1"#, id)
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        ended.as_deref(),
+        Some("2026-03-01T10:00:00+00:00"),
+        "a CLI session must not look like one still being recorded"
+    );
+}
+
+/// The recommendation compares effort before load, and a smaller rank means
+/// closer to failure. That ordering is the migration's, so it is asserted here
+/// rather than assumed: `fail` must outrank `form fail`, which outranks `hard`.
+#[tokio::test]
+async fn the_effort_levels_rank_from_none_left_to_easy() {
+    let (_s, db) = fresh("effort").await;
+    let ranks = sqlx::query!(r#"SELECT name AS "name!", sort AS "sort!" FROM effort"#)
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+    let rank = |name: &str| {
+        ranks
+            .iter()
+            .find(|r| r.name == name)
+            .map(|r| r.sort)
+            .unwrap_or_else(|| panic!("no effort called {name}"))
+    };
+    let (fail, form_fail, hard) = (rank("fail"), rank("form fail"), rank("hard"));
+    assert!(
+        fail < form_fail && form_fail < hard,
+        "effort ranks must increase as the set gets easier: fail {fail}, form fail {form_fail}, hard {hard}"
+    );
+}

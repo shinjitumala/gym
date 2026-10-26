@@ -131,8 +131,9 @@ Acceptance criteria:
 
 ## Feature: `gym web`, the local web UI
 
-Status: works, and read-only in the two intervention tabs. `gym web` serves the
-six tabs on loopback; the daily food tab already writes.
+Status: works. `gym web` serves the three modes on loopback, each with its daily,
+edit and analyse pages, and every one of them writes. The scenarios it is judged
+against are on [the requirements page](requirements.md).
 
 Acceptance criteria:
 
@@ -142,11 +143,13 @@ Acceptance criteria:
       the page works with scripts enabled and without them.
 - [x] A new install never pairs a cached script with a newly built WASM: every
       response carries `Cache-Control: no-cache`.
-- [x] The six tabs exist at stable routes: `/food`, `/food/edit`,
-      `/food/analysis`, `/gym`, `/gym/edit`, `/gym/analysis`.
+- [x] The bar is the three modes — `/gym`, `/food`, `/weight` — and a mode's
+      `/edit` and `/analyse` pages are reached from buttons at the bottom of its
+      daily page.
+- [x] Every page writes what it is for; no page is read-only by omission.
 - [x] The look is the one on [the overhaul](overhaul.md#the-look) page: black
       background, green ramp, blocky 2px borders, no rounded corners.
-- [x] The analysis tabs are read-only: no request from them writes a row.
+- [x] The analysis pages are read-only: no request from them writes a row.
 - [x] The server and a CLI write can run at the same time without a lock
       failure under normal use (WAL, a busy timeout, one short transaction per
       row, never a transaction held across a prompt).
@@ -155,47 +158,48 @@ Acceptance criteria:
 
 ## Feature: Food · daily
 
-Status: works. Meals, weigh-ins and presets, behind a meals/weight switch.
+Status: works. The meal being entered, today's totals against maintenance, and
+the day's meals.
 
 Acceptance criteria:
 
-- [x] Meals can be recorded for a chosen time with a food, an amount and a
-      note, and today's totals update in place.
+- [x] A meal is built as rows from a searchable food list sorted by the last
+      time each food was eaten, previewed with its own calories and macros, and
+      saved in one transaction; nothing is written before `save`.
 - [x] A food can be registered from the edit tab, and its macros may be
       unknown.
 - [x] A meal preset records all of its foods in one action, and the preset list
       is ordered by last use.
-- [x] A weigh-in can be recorded from the same screen, with body fat optional.
-- [ ] The screen shows the weight trend against the current phase's goal, or
-      says what data is still missing.
-- [ ] The screen shows today's intake against the estimated maintenance, with
+- [x] A weigh-in has its own tab, with the time defaulting to now and body fat
+      optional.
+- [x] The screen shows today's intake against the estimated maintenance, with
       the estimate withheld when the window has too few logged days.
 
 ## Feature: Weight and intake statistics
 
-Status: missing. Nothing computes a trend; a weigh-in is only ever read back by
-the exercise history.
+Status: works. `src/stats.rs` is the arithmetic, with its own tests; the weight
+pages print its verdicts.
 
 Acceptance criteria:
 
-- [ ] The trend is a least-squares slope over a trailing window whose length,
+- [x] The trend is a least-squares slope over a trailing window whose length,
       the weigh-in minimum and the logged-day minimum all come from the
-      `setting` table, and the screen shows how many weigh-ins are missing when
+      `setting` table, and the page shows how many weigh-ins are missing when
       there are too few.
-- [ ] The trend is drawn with its uncertainty band, and a goal is met only when
+- [x] The trend is drawn with its uncertainty band, and a goal is met only when
       the whole band is inside the goal range.
-- [ ] The maintenance estimate uses intake and weight change over the same
+- [x] The maintenance estimate uses intake and weight change over the same
       window, counts only days with real logging, and is withheld below the
       configured minimum.
-- [ ] Changing a setting takes effect on the next request, with no restart and
+- [x] Changing a setting takes effect on the next request, with no restart and
       no rebuild.
-- [ ] A bulk's default goal is `+1 kg/month`; a cut's is at or below zero; both
-      come from the phase, not from a second setting.
-- [ ] Days inconsistent with the weight-implied trend are listed; no food is
+- [x] A bulk's goal is the phase's target rate, and a cut's is at or below zero;
+      both come from the phase, not from a second setting.
+- [x] Days inconsistent with the weight-implied trend are listed; no food is
       ever blamed from intake alone.
 - [ ] The first week of a new phase is excluded from the window, so a switch
       between a bulk and a cut does not read as a jump in body composition.
-- [ ] A test with synthetic weigh-ins of known slope and noise recovers the
+- [x] A test with synthetic weigh-ins of known slope and noise recovers the
       slope within its band, and refuses the cases below the data threshold.
 
 ## Feature: Food · intervention
@@ -214,30 +218,62 @@ Acceptance criteria:
       editing one in place is still missing.
 - [x] Every edit affects only the row it names.
 
-## Feature: Food · analysis
+## Feature: Weight · daily
 
-Status: works.
+Status: works. The trend, the last weigh-in and the form.
 
 Acceptance criteria:
 
-- [x] A chart shows daily intake as a bar, split by the food that contributed
-      it, with the weight trend above it.
-- [ ] The same chart marks deload weeks and phase boundaries.
-- [x] Foods are ranked by how often they are eaten and by how much of the
-      intake they contribute.
-- [ ] A range can be chosen, and the chart states the range and the number of
-      logged days in it.
+- [x] A weigh-in is a date, a time defaulting to now, kilograms, optional body
+      fat and an optional note, saved from one screen.
+- [x] The last weigh-in, its body fat and the trend against the phase's goal are
+      shown, or the page says how many weigh-ins are still missing.
+- [x] The recent weigh-ins are listed newest first.
+
+## Feature: Food · analysis
+
+Status: superseded by [Weight · analysis](#feature-weight--analysis). The intake
+chart is read against the weight trend, so it is drawn under it rather than on a
+page of its own, and the food rankings moved to food's edit page.
+
+## Feature: Weight · analysis
+
+Status: works. Weight and body fat over a chosen range, with the intake bars
+underneath.
+
+Acceptance criteria:
+
+- [x] The weight line is coloured by the phase each weigh-in was taken in, with
+      bulk and cut in different colours and a legend saying which is which.
+- [x] Body fat is drawn on its own when at least two weigh-ins measured it.
+- [x] Below the line, one bar per day, stacked by the food that contributed it,
+      switchable between calories and each macro.
+- [x] Pressing or hovering a bar names the foods that made that day, with what
+      each contributed.
+- [x] A range can be chosen, and the page states the range and how many of its
+      days count as logged.
+- [ ] The chart marks deload sessions and phase boundaries.
 
 ## Feature: Gym · daily
 
-Status: partial. A session is recorded, the phase is switched and PRs are
-shown; effort presets, supersets and lists do not exist yet.
+Status: works. A session is started from a place, filled from a preset or from
+the exercise list, recorded one exercise at a time through the exercise window,
+and ended. Supersets and inferred rows are still missing.
 
 Acceptance criteria:
 
-- [x] A session is recorded as today's prompts record it, from one screen.
-- [ ] The note carries an effort picked from the presets, with free text still
-      available, and both are stored.
+- [x] A session starts from a place picked from a list sorted by the last
+      session there, and only one session is open at a time.
+- [x] A preset fills the checklist in its own order, and any exercise on it opens
+      the exercise window.
+- [x] The exercise window defaults the load to the last used and the effort to
+      the last recorded, offers `fail`, `form fail` and `hard` with what each
+      means, shows the last three sessions, and prints what to attempt next.
+- [x] Saving a row stamps the time it was saved, and X returns to the checklist
+      with the exercise marked done.
+- [x] End session closes it, and a session with no sets is discarded.
+- [x] The effort of a set is stored as a row and compared before load and reps
+      when the next set is advised; `src/train.rs` holds that rule and its tests.
 - [ ] A set that beats the best estimated 1RM of every earlier session of that
       exercise is marked as a PR, using the existing rep-factor table, ignoring
       sets above 30 reps.
@@ -251,14 +287,14 @@ Acceptance criteria:
       that session only.
 - [ ] Two or more exercises can be recorded as one superset group, each with
       its own reps, sharing the load.
-- [ ] A list can be started as the session's checklist, items can be completed
-      in any order, and the session keeps the list it started from after the
-      list itself is edited.
+- [x] A preset can be applied as the session's checklist, items can be completed
+      in any order, and the checklist is stored per session, so editing the
+      preset later does not rewrite a finished session.
 
 ## Feature: Gym · intervention
 
-Status: partial. Sets, exercises, places and muscle groups are all editable, and
-an exercise can be merged; lists do not exist yet.
+Status: works. Sessions and sets, exercises with their muscle groups, gym
+presets, places and muscle groups are all editable.
 
 Acceptance criteria:
 
@@ -273,19 +309,23 @@ Acceptance criteria:
 - [ ] A merge of two exercises that share a muscle group keeps one amount, and
       the surviving value is visible before the merge is confirmed.
 - [x] An exercise can carry a video link, and it is validated on save.
-- [ ] Lists of exercises can be created, reordered and deleted.
+- [x] Gym presets (a named list of exercises) can be created and deleted, and
+      applying one fills a session's checklist.
 
 ## Feature: Gym · analysis
 
-Status: partial. One exercise's strength trend by dropdown, and sets per muscle
-group; deload shading is not drawn yet.
+Status: works. One exercise's strength overlaid with sets per week for it and
+for the exercises that share its main muscle group.
 
 Acceptance criteria:
 
 - [x] Strength is plotted for one chosen exercise, from its best estimated 1RM
       per session, with its body part named.
-- [x] Sets per muscle group are counted per week, weighted by each exercise's
-      share in the group.
+- [x] Sets per week are counted for the chosen exercise and for every exercise
+      that shares its main muscle group, and drawn on a second scale over the
+      strength line, so the question "did strength move when the volume did" is
+      one chart.
+- [x] The time range can be changed.
 - [ ] Deload weeks are shaded rather than dropped, so the trend keeps its
       points.
 - [ ] Inferred rows from the migration are included and marked as inferred.
@@ -312,8 +352,9 @@ Acceptance criteria:
 
 ## Feature: Tests
 
-Status: works for the store, the importer and the command surface;
-`cargo test` runs 26 of them.
+Status: works for the store, the importer, the command surface, the statistics
+and the recommendation rule; `cargo test` runs them. The rendered UI is walked by
+`python3 test/web/drive.py`, one scenario per requirement.
 
 Acceptance criteria:
 
@@ -321,10 +362,18 @@ Acceptance criteria:
       history, known weigh-ins, and a small TOML archive for the importer.
 - [x] The parity checks — totals to the cent, the history block, the weigh-in
       read-back — are automated.
-- [ ] The statistics are tested against synthetic series with a known slope and
+- [x] The statistics are tested against synthetic series with a known slope and
       noise, including the "not enough data" cases.
+- [x] The recommendation rule is tested for the case it exists for: effort
+      improving while load and reps stand still, and a lighter bar that fails
+      harder.
+- [x] Every requirement of the web UI has a browser scenario named after it in
+      `test/web/drive.py`, and a failure names the scenario.
 - [x] `cargo test` runs them, and a failure names the assertion rather than a
       diff of a whole table.
+- [x] A session written by the CLI is stored finished while the web's live
+      session stays open, and the effort levels' ranks are asserted, since the
+      recommendation depends on their order.
 
 ## Feature: Non-interactive input
 

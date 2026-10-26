@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT f.id AS \"id!\", f.name AS \"name!\", f.calories AS \"kcal!\",\n       COALESCE(f.protein, 0.0) AS \"protein!: f64\",\n       COALESCE(f.fat, 0.0) AS \"fat!: f64\",\n       COALESCE(f.carbohydrate, 0.0) AS \"carbohydrate!: f64\",\n       f.note AS \"note!\",\n       (SELECT count(*) FROM meal m WHERE m.food = f.id) AS \"eaten!\"\nFROM food f ORDER BY f.id\n",
+  "query": "\nSELECT f.id AS \"id!\", f.name AS \"name!\", f.calories AS \"kcal!\",\n       COALESCE(f.protein, 0.0) AS \"protein!: f64\",\n       COALESCE(f.fat, 0.0) AS \"fat!: f64\",\n       COALESCE(f.carbohydrate, 0.0) AS \"carbohydrate!: f64\",\n       f.note AS \"note!\",\n       (SELECT count(*) FROM meal m WHERE m.food = f.id) AS \"eaten!\",\n       (SELECT MAX(m.date) FROM meal m WHERE m.food = f.id) AS \"last\"\nFROM food f\nORDER BY COALESCE(julianday((SELECT MAX(m.date) FROM meal m WHERE m.food = f.id)), 0.0) DESC,\n         f.name\n",
   "describe": {
     "columns": [
       {
@@ -70,6 +70,12 @@
         "ordinal": 7,
         "type_info": "Integer",
         "origin": "Expression"
+      },
+      {
+        "name": "last",
+        "ordinal": 8,
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -83,8 +89,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "18f895ea9870b3cfbcd13323c15ab9c0330b22e39c426005fe542d7030ccfa01"
+  "hash": "bc648e099c3b92a36f612d820f19de057596993536bbfecccab5ebef20a10d77"
 }

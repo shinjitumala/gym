@@ -6,6 +6,7 @@
 //! browser bundle never carries a database driver.
 
 pub mod stats;
+pub mod train;
 pub mod web;
 
 #[cfg(not(target_arch = "wasm32"))]

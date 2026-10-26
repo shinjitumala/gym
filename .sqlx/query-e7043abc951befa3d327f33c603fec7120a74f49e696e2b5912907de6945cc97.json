@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO session_list_item (session, exercise, position)\n               SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1 FROM session_list_item WHERE session = ?1\n               ON CONFLICT (session, exercise) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "e7043abc951befa3d327f33c603fec7120a74f49e696e2b5912907de6945cc97"
+}

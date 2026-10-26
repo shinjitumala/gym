@@ -55,5 +55,9 @@ and nothing is kept in memory between commands.
   program is expected to do, each with the criteria that decide it is done.
 - [The SQLite schema](sqlite-schema.md) — the tables, and the migration from the
   TOML archive.
+- [The web UI](web.md) — `gym web`: the three modes, how a day is recorded, and
+  how the site is built and tested.
+- [Requirements for the web UI](requirements.md) — the scenarios the pages are
+  judged against, and the recency and effort rules behind them.
 - [The overhaul](overhaul.md) — the rebuild onto SQLite and a local web UI: the
-decisions, the six tabs, and the order of work.
+decisions, the pages, and the order of work.

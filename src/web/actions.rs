@@ -168,6 +168,7 @@ pub async fn edit_meal(
 pub async fn add_weight(
     db: &Db,
     date: &str,
+    time: &str,
     kg: f64,
     bodyfat: Option<f64>,
     note: &str,
@@ -180,9 +181,7 @@ pub async fn add_weight(
             Err(format!("'{b}' is not a plausible body fat percentage."))?;
         }
     }
-    let d = NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map_err(|e| format!("'{date}' is not a date (expected YYYY-MM-DD) because '{e}'."))?;
-    let at = instant_of(&d.to_string(), "")?;
+    let at = instant_of(date, time)?;
     Ok(sqlx::query_scalar!(
         r#"INSERT INTO weight (date, kg, bodyfat, note) VALUES (?1, ?2, ?3, ?4) RETURNING id AS "id!""#,
         at,
@@ -198,11 +197,12 @@ pub async fn edit_weight(
     db: &Db,
     id: i64,
     date: &str,
+    time: &str,
     kg: f64,
     bodyfat: Option<f64>,
     note: &str,
 ) -> Res<()> {
-    let at = instant_of(date, "")?;
+    let at = instant_of(date, time)?;
     let n = sqlx::query!(
         "UPDATE weight SET date = ?1, kg = ?2, bodyfat = ?3, note = ?4 WHERE id = ?5",
         at,
@@ -329,67 +329,178 @@ pub async fn delete_food(db: &Db, id: i64) -> Res<()> {
     Ok(())
 }
 
-/// One transaction for a whole session and its sets.
-pub struct NewSession {
-    pub place: i64,
-    pub date: String,
-    pub time: String,
-    pub note: String,
-    pub deload: bool,
-    pub sets: Vec<NewSet>,
-}
-
-pub struct NewSet {
-    pub exercise: i64,
-    pub load: f64,
-    pub rep: f64,
-    pub note: String,
-}
-
-pub async fn add_session(db: &Db, s: NewSession) -> Res<i64> {
-    if s.sets.is_empty() {
-        Err("A session needs at least one set.".to_string())?;
+/// The effort row a name refers to, or `None` for "not recorded".
+async fn effort_id(
+    exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    name: &str,
+) -> Res<Option<i64>> {
+    if name.trim().is_empty() {
+        return Ok(None);
     }
-    let at = instant_of(&s.date, &s.time)?;
-    let mut tx = db.pool.begin().await?;
-    let id = sqlx::query_scalar!(
-        r#"INSERT INTO session (date, place, phase, deload, note) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id AS "id!""#,
+    Ok(
+        sqlx::query_scalar!(r#"SELECT id FROM effort WHERE name = ?1"#, name.trim())
+            .fetch_optional(exec)
+            .await?,
+    )
+}
+
+/// Start a session: one row, open until it is ended.
+///
+/// The phase is the one in force at the start, recorded on the session so the
+/// analysis keeps the phase the session was trained in.
+pub async fn start_session(db: &Db, place: i64, date: &str, time: &str) -> Res<i64> {
+    let open: i64 = sqlx::query_scalar!("SELECT count(*) FROM session WHERE ended IS NULL")
+        .fetch_one(&db.pool)
+        .await?;
+    if open > 0 {
+        Err("A session is already open; end it before starting another.".to_string())?;
+    }
+    let at = instant_of(date, time)?;
+    Ok(sqlx::query_scalar!(
+        r#"INSERT INTO session (date, place, phase) VALUES (?1, ?2, ?3) RETURNING id AS "id!""#,
         at,
-        s.place,
+        place,
         sqlx::query_scalar!(
             r#"SELECT id FROM phase WHERE julianday(start) <= julianday(?1) ORDER BY julianday(start) DESC LIMIT 1"#,
             at
         )
-        .fetch_optional(&mut *tx)
-        .await?,
-        s.deload,
-        s.note
+        .fetch_optional(&db.pool)
+        .await?
+    )
+    .fetch_one(&db.pool)
+    .await?)
+}
+
+/// Put an exercise on the session's checklist, once.
+pub async fn add_exercise(db: &Db, session: i64, exercise: i64) -> Res<()> {
+    sqlx::query!(
+        r#"INSERT INTO session_list_item (session, exercise, position)
+           SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1 FROM session_list_item WHERE session = ?1
+           ON CONFLICT (session, exercise) DO NOTHING"#,
+        session,
+        exercise
+    )
+    .execute(&db.pool)
+    .await?;
+    Ok(())
+}
+
+/// Apply a preset to a session's checklist: every item it does not have yet,
+/// in the preset's order.
+pub async fn apply_exercise_preset(db: &Db, session: i64, preset: i64) -> Res<usize> {
+    let items = sqlx::query!(
+        r#"SELECT exercise AS "exercise!" FROM exercise_list_item WHERE list = ?1 ORDER BY position"#,
+        preset
+    )
+    .fetch_all(&db.pool)
+    .await?;
+    if items.is_empty() {
+        Err("That preset has no exercises yet.".to_string())?;
+    }
+    let mut tx = db.pool.begin().await?;
+    let mut added = 0;
+    for i in items {
+        let n = sqlx::query!(
+            r#"INSERT INTO session_list_item (session, exercise, position)
+               SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1 FROM session_list_item WHERE session = ?1
+               ON CONFLICT (session, exercise) DO NOTHING"#,
+            session,
+            i.exercise
+        )
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        added += n as usize;
+    }
+    tx.commit().await?;
+    Ok(added)
+}
+
+/// Record one set: the row is stamped with the moment it was saved.
+///
+/// The effort is stored as a row, so the ranking lives in the database rather
+/// than in a match on a string.
+pub async fn log_set(
+    db: &Db,
+    session: i64,
+    exercise: i64,
+    load: f64,
+    rep: f64,
+    effort: &str,
+    note: &str,
+) -> Res<i64> {
+    if load < 0.0 || rep <= 0.0 {
+        Err("A set needs a load of at least zero and at least one rep.".to_string())?;
+    }
+    let ended: Option<Option<String>> =
+        sqlx::query_scalar!(r#"SELECT ended FROM session WHERE id = ?1"#, session)
+            .fetch_optional(&db.pool)
+            .await?;
+    match ended {
+        None => Err(format!("No session with id '{session}'."))?,
+        Some(Some(_)) => Err("That session has ended; start a new one.".to_string())?,
+        Some(None) => {}
+    }
+    let at = Local::now().to_rfc3339();
+    let mut tx = db.pool.begin().await?;
+    sqlx::query!(
+        r#"INSERT INTO session_list_item (session, exercise, position)
+           SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1 FROM session_list_item WHERE session = ?1
+           ON CONFLICT (session, exercise) DO NOTHING"#,
+        session,
+        exercise
+    )
+    .execute(&mut *tx)
+    .await?;
+    let id = sqlx::query_scalar!(
+        r#"INSERT INTO training_set (session, exercise, position, date, load, rep, note, effort)
+           SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1, ?3, ?4, ?5, ?6, ?7
+           FROM training_set WHERE session = ?1
+           RETURNING id AS "id!""#,
+        session,
+        exercise,
+        at,
+        load,
+        rep,
+        note,
+        effort_id(&mut *tx, effort).await?
     )
     .fetch_one(&mut *tx)
     .await?;
-    for (position, set) in s.sets.iter().enumerate() {
-        if set.load < 0.0 || set.rep <= 0.0 {
-            Err(format!(
-                "Set {} must have a load of at least zero and at least one rep.",
-                position + 1
-            ))?;
-        }
-        sqlx::query!(
-            r#"INSERT INTO training_set (session, exercise, position, date, load, rep, note)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
-            id,
-            set.exercise,
-            position as i64,
-            at,
-            set.load,
-            set.rep,
-            set.note
-        )
-        .execute(&mut *tx)
-        .await?;
-    }
     tx.commit().await?;
     Ok(id)
+}
+
+/// End the open session.
+///
+/// A session with no sets recorded nothing, so ending it removes the row: there
+/// is no half-session in the log, and no way to be trapped by one started by
+/// mistake.
+pub async fn end_session(db: &Db, session: i64) -> Res<String> {
+    let sets: i64 = sqlx::query_scalar!(
+        "SELECT count(*) FROM training_set WHERE session = ?1",
+        session
+    )
+    .fetch_one(&db.pool)
+    .await?;
+    if sets == 0 {
+        sqlx::query!("DELETE FROM session WHERE id = ?1", session)
+            .execute(&db.pool)
+            .await?;
+        return Ok("No sets were recorded, so the session was discarded.".to_string());
+    }
+    let n = sqlx::query!(
+        "UPDATE session SET ended = ?1 WHERE id = ?2 AND ended IS NULL",
+        Local::now().to_rfc3339(),
+        session
+    )
+    .execute(&db.pool)
+    .await?
+    .rows_affected();
+    if n == 0 {
+        Err(format!("No open session with id '{session}'."))?;
+    }
+    Ok(format!("Session ended with {sets} set(s)."))
 }
 
 /// Flag or unflag a session as a deload. The reminder is advice; this is the
@@ -401,15 +512,16 @@ pub async fn set_deload(db: &Db, id: i64, deload: bool) -> Res<()> {
     Ok(())
 }
 
-pub async fn edit_set(db: &Db, id: i64, load: f64, rep: f64, note: &str) -> Res<()> {
+pub async fn edit_set(db: &Db, id: i64, load: f64, rep: f64, effort: &str, note: &str) -> Res<()> {
     if load < 0.0 || rep <= 0.0 {
         Err("A set needs a load of at least zero and at least one rep.".to_string())?;
     }
     let n = sqlx::query!(
-        "UPDATE training_set SET load = ?1, rep = ?2, note = ?3 WHERE id = ?4",
+        "UPDATE training_set SET load = ?1, rep = ?2, note = ?3, effort = ?4 WHERE id = ?5",
         load,
         rep,
         note,
+        effort_id(&db.pool, effort).await?,
         id
     )
     .execute(&db.pool)
@@ -770,6 +882,43 @@ pub async fn apply_preset(
 
 pub async fn delete_preset(db: &Db, id: i64) -> Res<()> {
     sqlx::query!("DELETE FROM meal_preset WHERE id = ?1", id)
+        .execute(&db.pool)
+        .await?;
+    Ok(())
+}
+
+/// A gym preset: a named, ordered list of exercises to work through.
+pub async fn add_exercise_preset(db: &Db, name: &str, items: Vec<i64>) -> Res<i64> {
+    let name = name.trim();
+    if name.is_empty() {
+        Err("A preset needs a name.".to_string())?;
+    }
+    if items.is_empty() {
+        Err("A preset needs at least one exercise.".to_string())?;
+    }
+    let mut tx = db.pool.begin().await?;
+    let id = sqlx::query_scalar!(
+        r#"INSERT INTO exercise_list (name) VALUES (?1) RETURNING id AS "id!""#,
+        name
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    for (position, exercise) in items.iter().enumerate() {
+        sqlx::query!(
+            "INSERT INTO exercise_list_item (list, exercise, position) VALUES (?1, ?2, ?3)",
+            id,
+            exercise,
+            position as i64
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(id)
+}
+
+pub async fn delete_exercise_preset(db: &Db, id: i64) -> Res<()> {
+    sqlx::query!("DELETE FROM exercise_list WHERE id = ?1", id)
         .execute(&db.pool)
         .await?;
     Ok(())

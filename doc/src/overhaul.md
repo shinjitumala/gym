@@ -212,10 +212,22 @@ the archive of the TOML era.
 
 ## What has shipped
 
-Step 2 is in place as well: `gym web` serves the six tabs, the hydrated bundle
-is embedded in the binary, and the daily food tab records meals, presets and
-weigh-ins. The charts are inline SVG; the statistics live in `src/stats.rs` with
-their own tests.
+Steps 2 to 5 are in place. `gym web` serves the three modes — gym, food, weight —
+each with its daily, edit and analyse pages, and every page writes. The hydrated
+bundle is embedded in the binary, so an install is still one file.
+
+The daily gym page is a live session: a place, a checklist from a preset or the
+exercise list, and one exercise window that records a set with its effort and
+the time it was saved, against the last three sessions of that exercise. Effort
+is part of what is compared: `src/train.rs` decides the next set, and it reads
+effort before load and reps because a set taken closer to failure at the same
+numbers is progress. Supersets and the deload target's half-sets are the parts of
+step 4 that remain.
+
+The statistics are `src/stats.rs` with their own tests, and the weight pages
+print their verdicts: a slope with its band, a goal judged on the whole band, a
+maintenance estimate withheld until enough days were logged, and the days the
+trend cannot explain. The charts are inline SVG.
 
 ## What shipped first
 
@@ -240,14 +252,18 @@ starts.
    retired git sync left with it: the `act` crate is gone, and `gym sync` is
    the rsync described below.
 2. **`gym web`. Done.** The Leptos shell in the chat3 look, the embedded
-   hydrated assets, and all six tabs. The analysis and intervention tabs are
-   read-only for now; the daily tabs already write meals, presets and
-   weigh-ins.
-3. **Food writes from the UI.** Daily recording, meal presets, weigh-ins.
-4. **Gym writes from the UI.** Daily recording, supersets, effort presets,
-   lists, and the intervention tab's edits and merges.
-5. **Statistics.** Trend, band, maintenance, day inconsistency, phase goals.
-6. **PR badges, deload reminders, and the video link.**
+   hydrated assets, and the three modes with their daily, edit and analyse
+   pages.
+3. **Food writes from the UI. Done.** Daily recording as a previewed set of
+   rows, meal presets, weigh-ins on their own page.
+4. **Gym writes from the UI. Done but for supersets.** The live session, the
+   checklist, the exercise window with effort, the edit page's edits and merges,
+   and gym presets.
+5. **Statistics. Done.** Trend, band, maintenance, day inconsistency, phase
+   goals, and the intake bars under the weight line.
+6. **PR badges, deload reminders, and the video link. Done.** A PR is marked
+   against every earlier session, the reminder counts the weeks since the last
+   deload, and an exercise carries its video link.
 
 Cross-cutting from step 1: a `test/` fixture database, because the current
 program has no tests at all and "the prompts still work" is otherwise an

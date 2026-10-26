@@ -1,0 +1,69 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT e.id AS \"id!\", e.name AS \"name!\", e.note AS \"note!\", e.video_url AS \"video_url\",\n                  (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = e.id) AS \"last\"\n           FROM exercise e\n           ORDER BY COALESCE(julianday((SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = e.id)), 0.0) DESC,\n                    e.name",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "note!",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "name": "video_url",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "video_url"
+          }
+        }
+      },
+      {
+        "name": "last",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "694bff9e1e8f2711dc228afabc7f5a751ac67952b50b1969b75c16ea4e92597e"
+}

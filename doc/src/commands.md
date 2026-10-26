@@ -160,7 +160,7 @@ copy is an archive, never a second writer.
 
 ## `gym web`
 
-Serves the six tabs on loopback:
+Serves the gym, food and weight pages on loopback:
 
 ```text
 $ gym web
@@ -169,4 +169,5 @@ gym web on http://127.0.0.1:8080
 
 `--addr` moves it. A build without the embedded bundle — a plain `cargo build`,
 rather than `./install.sh` or `cargo leptos build` — refuses to start and says
-so. See [the web UI](web.md) for the tabs and what they show.
+so. See [the web UI](web.md) for the pages and what they show, and
+[the requirements](requirements.md) for the behaviour they are judged against.

@@ -4,6 +4,7 @@
 - [Configuration](configuration.md)
 - [Commands](commands.md)
 - [The web UI](web.md)
+- [Requirements for the web UI](requirements.md)
 - [Features and acceptance criteria](features.md)
 - [The SQLite schema](sqlite-schema.md)
 - [The overhaul](overhaul.md)

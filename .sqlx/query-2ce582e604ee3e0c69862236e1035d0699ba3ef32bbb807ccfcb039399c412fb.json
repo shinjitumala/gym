@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT m.id AS \"id!\", m.date, f.name AS \"food!\", m.amount AS \"amount!\",\n       m.note AS \"note!\", f.calories AS \"kcal!\",\n       COALESCE(f.protein, 0.0) AS \"protein!: f64\",\n       COALESCE(f.fat, 0.0) AS \"fat!: f64\",\n       COALESCE(f.carbohydrate, 0.0) AS \"carbohydrate!: f64\"\nFROM meal m JOIN food f ON f.id = m.food\nWHERE julianday(m.date) >= julianday(?1) AND julianday(m.date) < julianday(?2)\nORDER BY julianday(m.date)\n",
+  "query": "\nSELECT m.id AS \"id!\", m.date, f.name AS \"food!\", m.amount AS \"amount!\",\n       m.note AS \"note!\", f.calories AS \"kcal!\",\n       COALESCE(f.protein, 0.0) AS \"protein!: f64\",\n       COALESCE(f.fat, 0.0) AS \"fat!: f64\",\n       COALESCE(f.carbohydrate, 0.0) AS \"carbohydrate!: f64\"\nFROM meal m JOIN food f ON f.id = m.food\nWHERE julianday(m.date) >= julianday(?1) AND julianday(m.date) < julianday(?2)\nORDER BY julianday(m.date), m.id\n",
   "describe": {
     "columns": [
       {
@@ -103,5 +103,5 @@
       false
     ]
   },
-  "hash": "21e6f92ad0a5a99b0845c59bc46ad32ce60fc6d425cb7a3a4989176aa96649d3"
+  "hash": "2ce582e604ee3e0c69862236e1035d0699ba3ef32bbb807ccfcb039399c412fb"
 }

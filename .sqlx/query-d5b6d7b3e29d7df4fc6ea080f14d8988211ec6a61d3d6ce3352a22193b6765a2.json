@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT ended FROM session WHERE id = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "ended",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "session",
+            "name": "ended"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "d5b6d7b3e29d7df4fc6ea080f14d8988211ec6a61d3d6ce3352a22193b6765a2"
+}

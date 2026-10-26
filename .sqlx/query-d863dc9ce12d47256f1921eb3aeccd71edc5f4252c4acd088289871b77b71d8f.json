@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT exercise AS \"exercise!\" FROM exercise_list_item WHERE list = ?1 ORDER BY position",
+  "describe": {
+    "columns": [
+      {
+        "name": "exercise!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise_list_item",
+            "name": "exercise"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d863dc9ce12d47256f1921eb3aeccd71edc5f4252c4acd088289871b77b71d8f"
+}

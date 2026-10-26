@@ -4,12 +4,17 @@
 //! are stored as RFC3339 with whatever offset they were written with, so every
 //! day boundary is computed here, in the machine's local zone, rather than in
 //! SQL — one place for the rule, and the same rule the CLI's `gym food` uses.
+//!
+//! The pickers are ordered here: a list shown "sorted by recency" is sorted by
+//! the query, not by the browser, and `last_used` is carried along so the page
+//! can say how long ago the row was used.
 
 use crate::db::Db;
 use crate::stats::{self, DayIntake, Goal, Point};
+use crate::train::{self, SetEffort};
 use crate::util::{to_one_rep_max, Res};
 use crate::web::dto::*;
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
 use std::collections::{BTreeMap, HashMap};
 
 pub struct Settings {
@@ -63,7 +68,6 @@ fn clock() -> String {
 /// the zone's offset — nine hours here — and drop every row written after local
 /// midnight but before UTC midnight. An instant has no such ambiguity.
 fn midnight(d: NaiveDate) -> String {
-    use chrono::TimeZone;
     Local
         .from_local_datetime(&d.and_hms_opt(0, 0, 0).expect("midnight exists"))
         .earliest()
@@ -128,6 +132,31 @@ pub async fn phase(db: &Db) -> Res<Option<PhaseRow>> {
     }))
 }
 
+/// Every phase in the log, as a closed span in day numbers: a phase ends the
+/// day before the next one starts, and the newest one is open-ended.
+async fn phase_spans(db: &Db, today: NaiveDate) -> Res<Vec<PhaseSpan>> {
+    let rows = sqlx::query!(
+        r#"SELECT kind AS "kind!", start AS "start!" FROM phase ORDER BY julianday(start)"#
+    )
+    .fetch_all(&db.pool)
+    .await?;
+    let mut out: Vec<PhaseSpan> = Vec::new();
+    for r in &rows {
+        let Some(from) = local_date(&r.start) else {
+            continue;
+        };
+        if let Some(last) = out.last_mut() {
+            last.to = days(from) - 1;
+        }
+        out.push(PhaseSpan {
+            kind: r.kind.clone(),
+            from: days(from),
+            to: days(today),
+        });
+    }
+    Ok(out)
+}
+
 fn goal_of(p: &Option<PhaseRow>) -> Option<Goal> {
     p.as_ref().map(|p| match p.kind.as_str() {
         "cut" => Goal::Cut,
@@ -169,6 +198,7 @@ fn trend_view(
         }
         None => (None, None),
     };
+    let first = window.first().map(|(d, _)| *d);
     TrendView {
         points: t
             .points
@@ -178,6 +208,18 @@ fn trend_view(
                 kg: *kg,
             })
             .collect(),
+        fit: fit
+            .zip(first)
+            .map(|(f, first)| {
+                t.points
+                    .iter()
+                    .map(|(d, _)| PointRow {
+                        day: days(*d),
+                        kg: f.at(first, *d),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
         per_week: fit.map(|f| f.per_week()),
         band: fit.map(|f| f.band_per_week()),
         have: t.have,
@@ -189,7 +231,7 @@ fn trend_view(
     }
 }
 
-/// Weigh-ins in a window, oldest first, with the row the edit tab shows.
+/// Weigh-ins in a window, oldest first, with the row the edit page shows.
 async fn weights_between(
     db: &Db,
     from: NaiveDate,
@@ -199,7 +241,7 @@ async fn weights_between(
         r#"SELECT id AS "id!", date, kg AS "kg!", bodyfat, note
            FROM weight
            WHERE julianday(date) >= julianday(?1) AND julianday(date) < julianday(?2)
-           ORDER BY julianday(date)"#,
+           ORDER BY julianday(date), id"#,
         midnight(from),
         midnight(to + Duration::days(1))
     )
@@ -215,11 +257,34 @@ async fn weights_between(
                 WeightRow {
                     id: r.id,
                     date: iso(d),
+                    time: local_time(&r.date),
                     kg: r.kg,
                     bodyfat: r.bodyfat,
                     note: r.note,
                 },
             ))
+        })
+        .collect())
+}
+
+/// The last `limit` weigh-ins, newest first.
+async fn recent_weights(db: &Db, limit: i64) -> Res<Vec<WeightRow>> {
+    let rows = sqlx::query!(
+        r#"SELECT id AS "id!", date, kg AS "kg!", bodyfat, note
+           FROM weight ORDER BY julianday(date) DESC, id DESC LIMIT ?1"#,
+        limit
+    )
+    .fetch_all(&db.pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| WeightRow {
+            id: r.id,
+            date: local_date(&r.date).map(iso).unwrap_or_default(),
+            time: local_time(&r.date),
+            kg: r.kg,
+            bodyfat: r.bodyfat,
+            note: r.note,
         })
         .collect())
 }
@@ -235,7 +300,7 @@ SELECT m.id AS "id!", m.date, f.name AS "food!", m.amount AS "amount!",
        COALESCE(f.carbohydrate, 0.0) AS "carbohydrate!: f64"
 FROM meal m JOIN food f ON f.id = m.food
 WHERE julianday(m.date) >= julianday(?1) AND julianday(m.date) < julianday(?2)
-ORDER BY julianday(m.date)
+ORDER BY julianday(m.date), m.id
 "#,
         midnight(from),
         midnight(to + Duration::days(1))
@@ -259,6 +324,7 @@ ORDER BY julianday(m.date)
         .collect())
 }
 
+/// Every food, most recently eaten first: the picker's order.
 async fn foods(db: &Db) -> Res<Vec<FoodRow>> {
     let rows = sqlx::query!(
         r#"
@@ -267,8 +333,11 @@ SELECT f.id AS "id!", f.name AS "name!", f.calories AS "kcal!",
        COALESCE(f.fat, 0.0) AS "fat!: f64",
        COALESCE(f.carbohydrate, 0.0) AS "carbohydrate!: f64",
        f.note AS "note!",
-       (SELECT count(*) FROM meal m WHERE m.food = f.id) AS "eaten!"
-FROM food f ORDER BY f.id
+       (SELECT count(*) FROM meal m WHERE m.food = f.id) AS "eaten!",
+       (SELECT MAX(m.date) FROM meal m WHERE m.food = f.id) AS "last"
+FROM food f
+ORDER BY COALESCE(julianday((SELECT MAX(m.date) FROM meal m WHERE m.food = f.id)), 0.0) DESC,
+         f.name
 "#
     )
     .fetch_all(&db.pool)
@@ -286,6 +355,7 @@ FROM food f ORDER BY f.id
             },
             note: r.note,
             eaten: r.eaten,
+            last_used: r.last.as_deref().and_then(|d| local_date(d)).map(iso),
         })
         .collect())
 }
@@ -310,33 +380,74 @@ fn day_map(meals: &[MealRow]) -> BTreeMap<NaiveDate, Vec<&MealRow>> {
     by_day
 }
 
-pub async fn food_daily(db: &Db) -> Res<FoodDaily> {
-    let today = Local::now().date_naive();
-    let s = settings(db).await?;
-    let p = phase(db).await?;
-    let meals = meals_between(db, today, today).await?;
+/// A day of intake, split by food, with the macros each food contributed.
+fn day_rows(meals: &[MealRow]) -> Vec<DayRow> {
+    let mut out = Vec::new();
+    for (d, ms) in day_map(meals) {
+        let t = sum(ms.iter().copied());
+        let mut per_food: HashMap<&str, Totals> = HashMap::new();
+        for m in &ms {
+            let e = per_food.entry(m.food.as_str()).or_default();
+            e.kcal += m.kcal;
+            e.protein += m.protein;
+            e.fat += m.fat;
+            e.carbohydrate += m.carbohydrate;
+        }
+        let mut split: Vec<SplitRow> = per_food
+            .into_iter()
+            .map(|(food, t)| SplitRow {
+                food: food.to_owned(),
+                kcal: t.kcal,
+                protein: t.protein,
+                fat: t.fat,
+                carbohydrate: t.carbohydrate,
+            })
+            .collect();
+        split.sort_by(|a, b| {
+            b.kcal
+                .partial_cmp(&a.kcal)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        split.truncate(8);
+        out.push(DayRow {
+            date: iso(d),
+            day: days(d),
+            logged: t.kcal >= stats::LOGGED_DAY_KCAL,
+            totals: t,
+            split,
+        });
+    }
+    out
+}
+
+/// The maintenance estimate and the days it cannot explain, from the weight
+/// trend and the logged intake in the same window.
+fn intake_health(
+    meals: &[MealRow],
+    weights: &[(NaiveDate, f64)],
+    s: &Settings,
+    today: NaiveDate,
+) -> (
+    Option<MaintenanceView>,
+    usize,
+    Vec<OutlierRow>,
+    Option<stats::Fit>,
+) {
     let span = Duration::days(s.trend_window_days.max(30));
-    let window_meals = meals_between(db, today - span, today).await?;
-    let weights = weights_between(db, today - Duration::days(365), today).await?;
-    let flat: Vec<(NaiveDate, f64)> = weights.iter().map(|(d, kg, _)| (*d, *kg)).collect();
-    let trend = trend_view(&flat, &s, &p, today);
-
-    let by_day = day_map(&window_meals);
-    let intake: Vec<DayIntake> = by_day
-        .iter()
-        .map(|(d, ms)| DayIntake::new(*d, sum(ms.iter().copied()).kcal))
-        .collect();
-    let logged_days = intake.iter().filter(|d| d.logged).count();
-
-    let mut w: Vec<Point> = flat
+    let mut w: Vec<Point> = weights
         .iter()
         .filter(|(d, _)| *d > today - span)
         .copied()
         .collect();
     w.sort_by_key(|(d, _)| *d);
     let fit = stats::trend(&w, s.trend_min_weighins).shown();
-    let m = fit.and_then(|f| stats::maintenance(&intake, f, s.maintenance_min_days));
-    let outliers = m
+    let intake: Vec<DayIntake> = day_map(meals)
+        .iter()
+        .map(|(d, ms)| DayIntake::new(*d, sum(ms.iter().copied()).kcal))
+        .collect();
+    let logged = intake.iter().filter(|d| d.logged).count();
+    let maintenance = fit.and_then(|f| stats::maintenance(&intake, f, s.maintenance_min_days));
+    let outliers = maintenance
         .map(|m| {
             stats::outliers(&intake, m)
                 .into_iter()
@@ -349,6 +460,29 @@ pub async fn food_daily(db: &Db) -> Res<FoodDaily> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    (
+        maintenance.map(|m| MaintenanceView {
+            kcal: m.kcal,
+            days: m.days,
+            intake: m.intake,
+        }),
+        logged,
+        outliers,
+        fit,
+    )
+}
+
+pub async fn food_daily(db: &Db) -> Res<FoodDaily> {
+    let today = Local::now().date_naive();
+    let s = settings(db).await?;
+    let p = phase(db).await?;
+    let meals = meals_between(db, today, today).await?;
+    let span = Duration::days(s.trend_window_days.max(30));
+    let window_meals = meals_between(db, today - span, today).await?;
+    let weights = weights_between(db, today - Duration::days(365), today).await?;
+    let flat: Vec<(NaiveDate, f64)> = weights.iter().map(|(d, kg, _)| (*d, *kg)).collect();
+    let trend = trend_view(&flat, &s, &p, today);
+    let (maintenance, logged_days, outliers, _) = intake_health(&window_meals, &flat, &s, today);
 
     Ok(FoodDaily {
         today: iso(today),
@@ -358,11 +492,7 @@ pub async fn food_daily(db: &Db) -> Res<FoodDaily> {
         foods: foods(db).await?,
         last_weight: weights.last().map(|(_, _, w)| w.clone()),
         trend,
-        maintenance: m.map(|m| MaintenanceView {
-            kcal: m.kcal,
-            days: m.days,
-            intake: m.intake,
-        }),
+        maintenance,
         logged_days,
         need_days: s.maintenance_min_days,
         outliers,
@@ -375,79 +505,79 @@ pub async fn food_edit(db: &Db) -> Res<FoodEdit> {
     let today = Local::now().date_naive();
     let mut meals = meals_between(db, today - Duration::days(120), today).await?;
     meals.reverse();
-    let mut weights: Vec<WeightRow> = weights_between(db, today - Duration::days(120), today)
-        .await?
-        .into_iter()
-        .map(|(_, _, w)| w)
-        .collect();
-    weights.reverse();
     Ok(FoodEdit {
         today: iso(today),
         now: clock(),
         presets: crate::web::actions::presets(db).await?,
         meals,
-        weights,
         foods: foods(db).await?,
     })
 }
 
-pub async fn food_analysis(db: &Db) -> Res<FoodAnalysis> {
+pub async fn weight_daily(db: &Db) -> Res<WeightDaily> {
     let today = Local::now().date_naive();
-    let span = 90i64;
     let s = settings(db).await?;
     let p = phase(db).await?;
-    let meals = meals_between(db, today - Duration::days(span), today).await?;
+    let span = Duration::days(s.trend_window_days.max(30));
+    let window_meals = meals_between(db, today - span, today).await?;
     let weights = weights_between(db, today - Duration::days(365), today).await?;
     let flat: Vec<(NaiveDate, f64)> = weights.iter().map(|(d, kg, _)| (*d, *kg)).collect();
+    let trend = trend_view(&flat, &s, &p, today);
+    let (_, _, outliers, _) = intake_health(&window_meals, &flat, &s, today);
+    let recent = recent_weights(db, 30).await?;
+    Ok(WeightDaily {
+        today: iso(today),
+        now: clock(),
+        last_weight: recent.first().cloned(),
+        weights: recent,
+        trend,
+        phase: p,
+        outliers,
+    })
+}
 
-    let mut out = Vec::new();
-    for (d, ms) in day_map(&meals) {
-        let t = sum(ms.iter().copied());
-        let mut per_food: HashMap<&str, f64> = HashMap::new();
-        for m in &ms {
-            *per_food.entry(m.food.as_str()).or_default() += m.kcal;
-        }
-        let mut split: Vec<SplitRow> = per_food
-            .into_iter()
-            .map(|(food, kcal)| SplitRow {
-                food: food.to_owned(),
-                kcal,
-            })
-            .collect();
-        split.sort_by(|a, b| {
-            b.kcal
-                .partial_cmp(&a.kcal)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        split.truncate(6);
-        out.push(DayRow {
-            date: iso(d),
-            logged: t.kcal >= stats::LOGGED_DAY_KCAL,
-            totals: t,
-            split,
-        });
+pub async fn weight_edit(db: &Db) -> Res<WeightEdit> {
+    Ok(WeightEdit {
+        today: iso(Local::now().date_naive()),
+        now: clock(),
+        weights: recent_weights(db, 120).await?,
+    })
+}
+
+/// Weight · analyse: the trend split by phase, body fat, and the intake bars
+/// underneath.
+pub async fn weight_analysis(db: &Db, span_days: i64) -> Res<WeightAnalysis> {
+    let today = Local::now().date_naive();
+    let span_days = span_days.clamp(7, 730);
+    let s = settings(db).await?;
+    let p = phase(db).await?;
+    let from = today - Duration::days(span_days);
+    let meals = meals_between(db, from, today).await?;
+    let weights = weights_between(db, from, today).await?;
+    let flat: Vec<(NaiveDate, f64)> = weights.iter().map(|(d, kg, _)| (*d, *kg)).collect();
+    let mut trend = trend_view(&flat, &s, &p, today);
+    if span_days > s.trend_window_days {
+        trend.points.retain(|q| q.day >= days(from));
+        trend.fit.retain(|q| q.day >= days(from));
     }
-
-    let all = foods(db).await?;
-    let mut favourite = all.clone();
-    favourite.sort_by(|a, b| b.eaten.cmp(&a.eaten).then(a.name.cmp(&b.name)));
-    favourite.retain(|f| f.eaten > 0);
-    let mut by_calories = all;
-    by_calories.sort_by(|a, b| {
-        (b.per_unit.kcal * b.eaten as f64)
-            .partial_cmp(&(a.per_unit.kcal * a.eaten as f64))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    by_calories.retain(|f| f.eaten > 0);
-
-    Ok(FoodAnalysis {
-        logged_days: out.iter().filter(|d| d.logged).count(),
-        days: out,
-        trend: trend_view(&flat, &s, &p, today),
-        favourite,
-        by_calories,
+    let (maintenance, _, _, _) = intake_health(&meals, &flat, &s, today);
+    Ok(WeightAnalysis {
+        phases: phase_spans(db, today).await?,
+        bodyfat: weights
+            .iter()
+            .filter_map(|(d, _, w)| {
+                w.bodyfat.map(|b| PointRow {
+                    day: days(*d),
+                    kg: b,
+                })
+            })
+            .collect(),
+        days: day_rows(&meals),
+        logged_days: day_rows(&meals).iter().filter(|d| d.logged).count(),
+        trend,
         weights: weights.into_iter().map(|(_, _, w)| w).collect(),
-        span: span as usize,
+        span: span_days as usize,
+        maintenance,
     })
 }
 
@@ -456,19 +586,50 @@ pub struct RawSet {
     pub session: i64,
     pub exercise: i64,
     pub position: i64,
+    pub date: String,
     pub load: f64,
     pub rep: f64,
     pub note: String,
     pub superset: Option<i64>,
     pub inferred: bool,
+    pub effort: Option<String>,
+    pub effort_rank: Option<i64>,
 }
 
-pub async fn all_sets(db: &Db) -> Res<Vec<RawSet>> {
+impl RawSet {
+    fn row(&self, index: &HashMap<i64, String>) -> SetRow {
+        SetRow {
+            id: self.id,
+            position: self.position,
+            exercise: index.get(&self.exercise).cloned().unwrap_or_default(),
+            load: self.load,
+            rep: self.rep,
+            note: self.note.clone(),
+            superset: self.superset,
+            inferred: self.inferred,
+            effort: self.effort.clone(),
+            effort_rank: self.effort_rank,
+            time: local_time(&self.date),
+        }
+    }
+
+    fn effort(&self) -> Option<SetEffort> {
+        Some(SetEffort {
+            load: self.load,
+            rep: self.rep,
+            effort: self.effort_rank,
+        })
+    }
+}
+
+async fn all_sets(db: &Db) -> Res<Vec<RawSet>> {
     let rows = sqlx::query!(
-        r#"SELECT id AS "id!", session AS "session!", exercise AS "exercise!",
-                  position AS "position!", load AS "load!", rep AS "rep!",
-                  note AS "note!", superset, inferred AS "inferred!"
-           FROM training_set ORDER BY session, position"#
+        r#"SELECT ts.id AS "id!", ts.session AS "session!", ts.exercise AS "exercise!",
+                  ts.position AS "position!", ts.date, ts.load AS "load!", ts.rep AS "rep!",
+                  ts.note AS "note!", ts.superset, ts.inferred AS "inferred!",
+                  e.name AS "effort", e.sort AS "effort_rank"
+           FROM training_set ts LEFT JOIN effort e ON e.id = ts.effort
+           ORDER BY ts.session, ts.position"#
     )
     .fetch_all(&db.pool)
     .await?;
@@ -479,18 +640,25 @@ pub async fn all_sets(db: &Db) -> Res<Vec<RawSet>> {
             session: r.session,
             exercise: r.exercise,
             position: r.position,
+            date: r.date,
             load: r.load,
             rep: r.rep,
             note: r.note,
             superset: r.superset,
             inferred: r.inferred != 0,
+            effort: r.effort,
+            effort_rank: r.effort_rank,
         })
         .collect())
 }
 
 pub async fn exercise_index(db: &Db) -> Res<(HashMap<i64, String>, Vec<ExerciseRow>)> {
     let rows = sqlx::query!(
-        r#"SELECT id AS "id!", name AS "name!", note AS "note!", video_url FROM exercise ORDER BY name"#
+        r#"SELECT e.id AS "id!", e.name AS "name!", e.note AS "note!", e.video_url AS "video_url",
+                  (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = e.id) AS "last"
+           FROM exercise e
+           ORDER BY COALESCE(julianday((SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = e.id)), 0.0) DESC,
+                    e.name"#
     )
     .fetch_all(&db.pool)
     .await?;
@@ -519,6 +687,7 @@ pub async fn exercise_index(db: &Db) -> Res<(HashMap<i64, String>, Vec<ExerciseR
             note: r.note,
             video_url: r.video_url,
             groups: by_ex.remove(&r.id).unwrap_or_default(),
+            last_used: r.last.as_deref().and_then(local_date).map(iso),
         });
     }
     Ok((index, out))
@@ -526,7 +695,11 @@ pub async fn exercise_index(db: &Db) -> Res<(HashMap<i64, String>, Vec<ExerciseR
 
 pub async fn places(db: &Db) -> Res<Vec<PlaceRow>> {
     let rows = sqlx::query!(
-        r#"SELECT id AS "id!", name AS "name!", note AS "note!" FROM place ORDER BY name"#
+        r#"SELECT p.id AS "id!", p.name AS "name!", p.note AS "note!",
+                  (SELECT MAX(s.date) FROM session s WHERE s.place = p.id) AS "last"
+           FROM place p
+           ORDER BY COALESCE(julianday((SELECT MAX(s.date) FROM session s WHERE s.place = p.id)), 0.0) DESC,
+                    p.name"#
     )
     .fetch_all(&db.pool)
     .await?;
@@ -536,6 +709,32 @@ pub async fn places(db: &Db) -> Res<Vec<PlaceRow>> {
             id: r.id,
             name: r.name,
             note: r.note,
+            last_used: r.last.as_deref().and_then(local_date).map(iso),
+        })
+        .collect())
+}
+
+/// The efforts the window offers, hardest first: the three the log defines,
+/// which is what the dropdown is for. A set recorded with one of the older
+/// levels still shows its own name.
+async fn efforts(db: &Db) -> Res<Vec<EffortRow>> {
+    let rows = sqlx::query!(
+        r#"SELECT id AS "id!", name AS "name!", sort AS "sort!"
+           FROM effort WHERE name IN ('hard', 'form fail', 'fail') ORDER BY sort"#
+    )
+    .fetch_all(&db.pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| EffortRow {
+            id: r.id,
+            hint: match r.name.as_str() {
+                "hard" => "3+ reps from failure".to_string(),
+                "form fail" => "1–2 reps from failure".to_string(),
+                _ => "0 reps from failure".to_string(),
+            },
+            name: r.name,
+            rank: r.sort,
         })
         .collect())
 }
@@ -574,6 +773,7 @@ pub async fn sessions_with_sets(db: &Db, limit: Option<i64>) -> Res<Sessions> {
         out.push(SessionRow {
             id: r.id,
             date: iso(d),
+            time: local_time(&r.date),
             place: r.place,
             note: r.note,
             deload: r.deload != 0,
@@ -636,16 +836,7 @@ pub async fn sessions_with_sets(db: &Db, limit: Option<i64>) -> Res<Sessions> {
         let date = dates[&row.id];
         if let Some(ms) = by_session.get(&row.id) {
             for s in ms {
-                row.sets.push(SetRow {
-                    id: s.id,
-                    position: s.position,
-                    exercise: index.get(&s.exercise).cloned().unwrap_or_default(),
-                    load: s.load,
-                    rep: s.rep,
-                    note: s.note.clone(),
-                    superset: s.superset,
-                    inferred: s.inferred,
-                });
+                row.sets.push(s.row(&index));
             }
         }
         let mut prs: Vec<PrRow> = Vec::new();
@@ -689,11 +880,69 @@ async fn session_dates(db: &Db) -> Res<HashMap<i64, NaiveDate>> {
         .collect())
 }
 
+/// The session currently being recorded: the newest one that has not been
+/// ended.
+async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveSession>> {
+    let row = sqlx::query!(
+        r#"SELECT s.id AS "id!", s.date, p.name AS "place!", s.note AS "note!",
+                  s.deload AS "deload!"
+           FROM session s JOIN place p ON p.id = s.place
+           WHERE s.ended IS NULL
+           ORDER BY julianday(s.date) DESC, s.id DESC LIMIT 1"#
+    )
+    .fetch_optional(&db.pool)
+    .await?;
+    let Some(r) = row else {
+        return Ok(None);
+    };
+    let items = sqlx::query!(
+        r#"SELECT sli.exercise AS "exercise!", e.name AS "name!",
+                  (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = sli.exercise) AS "last"
+           FROM session_list_item sli JOIN exercise e ON e.id = sli.exercise
+           WHERE sli.session = ?1 ORDER BY sli.position"#,
+        r.id
+    )
+    .fetch_all(&db.pool)
+    .await?;
+    let sets = all_sets(db)
+        .await?
+        .into_iter()
+        .filter(|s| s.session == r.id)
+        .map(|s| s.row(index))
+        .collect::<Vec<SetRow>>();
+    let mut list: Vec<ChecklistRow> = items
+        .into_iter()
+        .map(|i| ChecklistRow {
+            exercise: i.exercise,
+            name: i.name,
+            last_used: i.last.as_deref().and_then(local_date).map(iso),
+            sets: 0,
+        })
+        .collect();
+    for s in &sets {
+        if let Some(item) = list.iter_mut().find(|i| i.name == s.exercise) {
+            item.sets += 1;
+        }
+    }
+    let date = local_date(&r.date).map(iso).unwrap_or_default();
+    Ok(Some(LiveSession {
+        id: r.id,
+        time: local_time(&r.date),
+        date,
+        place: r.place,
+        deload: r.deload != 0,
+        note: r.note,
+        list,
+        sets,
+    }))
+}
+
 pub async fn gym_daily(db: &Db) -> Res<GymDaily> {
     let s = settings(db).await?;
     let p = phase(db).await?;
+    let (index, exercises) = exercise_index(db).await?;
+    let open = live_session(db, &index).await?;
     let sessions = sessions_with_sets(db, Some(8)).await?;
-    let (_, exercises) = exercise_index(db).await?;
     let last_deload = sessions
         .rows
         .iter()
@@ -704,21 +953,147 @@ pub async fn gym_daily(db: &Db) -> Res<GymDaily> {
         .as_ref()
         .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
         .map(|d| (today - d).num_days() / 7);
-    let last_set = sqlx::query_scalar!("SELECT COALESCE(MAX(id), 0) FROM training_set")
-        .fetch_one(&db.pool)
-        .await?;
     Ok(GymDaily {
-        today: iso(Local::now().date_naive()),
+        today: iso(today),
         now: clock(),
-        last_set,
         places: places(db).await?,
         exercises,
+        presets: gym_presets(db).await?,
+        efforts: efforts(db).await?,
+        open,
         sessions: sessions.rows,
         last_deload,
         deload_weeks: s.deload_weeks,
         weeks_since_deload: weeks_since,
         phase: p,
-        place: None,
+    })
+}
+
+/// The gym's presets: a named list of exercises to work through.
+pub async fn gym_presets(db: &Db) -> Res<Vec<GymPreset>> {
+    let lists =
+        sqlx::query!(r#"SELECT id AS "id!", name AS "name!" FROM exercise_list ORDER BY name"#)
+            .fetch_all(&db.pool)
+            .await?;
+    let items = sqlx::query!(
+        r#"SELECT li.list AS "list!", li.exercise AS "exercise!", e.name AS "name!"
+           FROM exercise_list_item li JOIN exercise e ON e.id = li.exercise
+           ORDER BY li.list, li.position"#
+    )
+    .fetch_all(&db.pool)
+    .await?;
+    let mut by_list: HashMap<i64, Vec<PresetExercise>> = HashMap::new();
+    for i in items {
+        by_list.entry(i.list).or_default().push(PresetExercise {
+            exercise: i.exercise,
+            name: i.name,
+        });
+    }
+    Ok(lists
+        .into_iter()
+        .map(|l| GymPreset {
+            items: by_list.remove(&l.id).unwrap_or_default(),
+            id: l.id,
+            name: l.name,
+        })
+        .collect())
+}
+
+/// One exercise while it is being recorded: this session's sets, the last
+/// completed sessions of it, and what to attempt next.
+pub async fn exercise_window(db: &Db, session: i64, exercise: i64) -> Res<ExerciseWindow> {
+    let live = sqlx::query!(
+        r#"SELECT s.deload AS "deload!", s.date FROM session s WHERE s.id = ?1"#,
+        session
+    )
+    .fetch_optional(&db.pool)
+    .await?
+    .ok_or_else(|| format!("No session with id '{session}'."))?;
+    let (index, exercises) = exercise_index(db).await?;
+    let row = exercises
+        .iter()
+        .find(|e| e.id == exercise)
+        .ok_or_else(|| format!("No exercise with id '{exercise}'."))?;
+    let group = row
+        .groups
+        .first()
+        .map(|g| g.name.clone())
+        .unwrap_or_else(|| "ungrouped".to_string());
+    let p = phase(db).await?;
+    let target_rep = p.as_ref().map(|p| p.target_rep).unwrap_or(8);
+
+    let all = all_sets(db).await?;
+    let mut by_session: BTreeMap<NaiveDate, Vec<&RawSet>> = BTreeMap::new();
+    for s in all
+        .iter()
+        .filter(|s| s.exercise == exercise && s.session != session)
+    {
+        if let Some(d) = local_date(&s.date) {
+            by_session.entry(d).or_default().push(s);
+        }
+    }
+    let mut finished: Vec<(NaiveDate, Vec<&RawSet>)> = by_session.into_iter().collect();
+    finished.reverse();
+
+    // The best set of a session is the one with the highest estimated 1RM: one
+    // number that compares a heavy single with a light set of many.
+    let best = |sets: &[&RawSet]| -> Option<SetEffort> {
+        sets.iter()
+            .filter_map(|s| {
+                let e1rm = to_one_rep_max(s.load, s.rep).ok()?;
+                Some((e1rm, s.effort()?))
+            })
+            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(_, e)| e)
+    };
+    let last = finished.first().and_then(|(_, s)| best(s));
+    let prev = finished.get(1).and_then(|(_, s)| best(s));
+    let advice = if live.deload != 0 {
+        last.map(|l| {
+            format!(
+                "Deload session: {:.1} kg at half the sets, then rebuild from there.",
+                l.load / 2.0
+            )
+        })
+    } else {
+        train::recommend(prev, last, target_rep).map(|a| a.why)
+    };
+    let history: Vec<HistorySession> = finished
+        .iter()
+        .take(3)
+        .map(|(d, sets)| HistorySession {
+            date: iso(*d),
+            place: String::new(),
+            effort: sets.iter().filter_map(|s| s.effort.clone()).next(),
+            sets: sets
+                .iter()
+                .map(|s| HistorySet {
+                    load: s.load,
+                    rep: s.rep,
+                    note: s.note.clone(),
+                    time: local_time(&s.date),
+                    effort: s.effort.clone(),
+                })
+                .collect(),
+        })
+        .collect();
+
+    let sets = all
+        .iter()
+        .filter(|s| s.session == session && s.exercise == exercise)
+        .map(|s| s.row(&index))
+        .collect::<Vec<SetRow>>();
+    Ok(ExerciseWindow {
+        exercise,
+        name: row.name.clone(),
+        group,
+        target_rep,
+        deload: live.deload != 0,
+        last_load: last.map(|l| l.load),
+        last_effort: last.and_then(|l| l.effort),
+        advice,
+        history,
+        sets,
     })
 }
 
@@ -739,189 +1114,22 @@ pub async fn gym_edit(db: &Db) -> Res<GymEdit> {
                 name: g.name,
             })
             .collect(),
+        presets: gym_presets(db).await?,
+        efforts: efforts(db).await?,
         sessions: sessions.rows,
     })
 }
 
-pub async fn gym_analysis(db: &Db) -> Res<GymAnalysis> {
+/// Gym · analyse: one exercise's strength, and sets per week for it and for
+/// the exercises that share its main muscle group.
+pub async fn gym_analysis(db: &Db, span_days: i64, want: Option<i64>) -> Res<GymAnalysis> {
+    let span_days = span_days.clamp(7, 730);
+    let today = Local::now().date_naive();
+    let from = today - Duration::days(span_days);
     let (index, exercises) = exercise_index(db).await?;
     let sets = all_sets(db).await?;
     let dates = session_dates(db).await?;
-    let deload_sessions = sqlx::query!(r#"SELECT id AS "id!" FROM session WHERE deload = 1"#)
-        .fetch_all(&db.pool)
-        .await?;
-    let deloads: Vec<i64> = deload_sessions
-        .iter()
-        .filter_map(|r| dates.get(&r.id))
-        .map(|d| days(*d))
-        .collect();
 
-    let primary: HashMap<i64, String> = exercises
-        .iter()
-        .map(|e| {
-            (
-                e.id,
-                e.groups
-                    .first()
-                    .map(|g| g.name.clone())
-                    .unwrap_or_else(|| "ungrouped".to_string()),
-            )
-        })
-        .collect();
-    let ungrouped: Vec<String> = exercises
-        .iter()
-        .filter(|e| e.groups.is_empty())
-        .map(|e| e.name.clone())
-        .collect();
-
-    let mut best: BTreeMap<(i64, NaiveDate), f64> = BTreeMap::new();
-    for s in &sets {
-        let Some(d) = dates.get(&s.session) else {
-            continue;
-        };
-        if let Ok(e) = to_one_rep_max(s.load, s.rep) {
-            let v = best.entry((s.exercise, *d)).or_insert(0.0);
-            if e > *v {
-                *v = e;
-            }
-        }
-    }
-    let mut per_ex: HashMap<i64, Vec<StrengthPoint>> = HashMap::new();
-    for ((ex, d), e1rm) in best {
-        per_ex
-            .entry(ex)
-            .or_default()
-            .push(StrengthPoint { day: days(d), e1rm });
-    }
-    let mut strength: Vec<StrengthSeries> = per_ex
-        .into_iter()
-        .filter_map(|(ex, mut points)| {
-            points.sort_by_key(|p| p.day);
-            (points.len() >= 2).then(|| StrengthSeries {
-                exercise: index.get(&ex).cloned().unwrap_or_default(),
-                group: primary
-                    .get(&ex)
-                    .cloned()
-                    .unwrap_or_else(|| "ungrouped".to_string()),
-                points,
-            })
-        })
-        .collect();
-    strength.sort_by(|a, b| a.group.cmp(&b.group).then(a.exercise.cmp(&b.exercise)));
-
-    let shares: HashMap<i64, Vec<(String, f64)>> = exercises
-        .iter()
-        .map(|e| {
-            (
-                e.id,
-                e.groups
-                    .iter()
-                    .map(|g| (g.name.clone(), g.amount))
-                    .collect(),
-            )
-        })
-        .collect();
-    let mut vol: HashMap<String, BTreeMap<NaiveDate, f64>> = HashMap::new();
-    for s in &sets {
-        let Some(d) = dates.get(&s.session) else {
-            continue;
-        };
-        let week = *d - Duration::days(d.weekday().num_days_from_monday() as i64);
-        for (name, amount) in shares.get(&s.exercise).cloned().unwrap_or_default() {
-            *vol.entry(name).or_default().entry(week).or_insert(0.0) += amount;
-        }
-    }
-    let mut volume: Vec<VolumeSeries> = vol
-        .into_iter()
-        .map(|(group, points)| VolumeSeries {
-            group,
-            points: points
-                .into_iter()
-                .map(|(d, sets)| VolumePoint { day: days(d), sets })
-                .collect(),
-        })
-        .collect();
-    volume.sort_by(|a, b| a.group.cmp(&b.group));
-
-    Ok(GymAnalysis {
-        strength,
-        volume,
-        ungrouped,
-        deloads,
-        span: 180,
-    })
-}
-
-/// The last `limit` sessions of one exercise at one place, newest first.
-///
-/// The recording form asks for this when an exercise is chosen, so the page
-/// shows the numbers to beat without printing the whole log.
-pub async fn exercise_history(db: &Db, exercise: i64, place: i64, limit: i64) -> Res<History> {
-    let name = sqlx::query_scalar!(
-        r#"SELECT name AS "name!" FROM exercise WHERE id = ?1"#,
-        exercise
-    )
-    .fetch_optional(&db.pool)
-    .await?
-    .ok_or_else(|| format!("No exercise with id '{exercise}'."))?;
-    let rows = sqlx::query!(
-        r#"
-SELECT s.date, p.name AS "place!", ts.load AS "load!", ts.rep AS "rep!", ts.note AS "note!"
-FROM training_set ts
-JOIN session s ON s.id = ts.session
-JOIN place p ON p.id = s.place
-WHERE ts.exercise = ?1 AND s.place = ?2
-  AND ts.session IN (
-      SELECT ts2.session FROM training_set ts2
-      JOIN session s2 ON s2.id = ts2.session
-      WHERE ts2.exercise = ?1 AND s2.place = ?2
-      GROUP BY ts2.session
-      ORDER BY MAX(julianday(s2.date)) DESC
-      LIMIT ?3
-  )
-ORDER BY julianday(s.date) DESC, ts.position
-"#,
-        exercise,
-        place,
-        limit
-    )
-    .fetch_all(&db.pool)
-    .await?;
-
-    let mut sessions: Vec<HistorySession> = Vec::new();
-    for r in rows {
-        let date = iso(local_date(&r.date).unwrap_or_default());
-        match sessions.last_mut() {
-            Some(last) if last.date == date => last.sets.push(HistorySet {
-                load: r.load,
-                rep: r.rep,
-                note: r.note,
-            }),
-            _ => sessions.push(HistorySession {
-                date,
-                place: r.place,
-                sets: vec![HistorySet {
-                    load: r.load,
-                    rep: r.rep,
-                    note: r.note,
-                }],
-            }),
-        }
-    }
-    Ok(History {
-        exercise: name,
-        sessions,
-    })
-}
-
-/// The exercises the analysis dropdown offers, with one series chosen.
-///
-/// `chosen` is the requested exercise, or the one with the most sessions when
-/// none was requested: a tab that opens on an empty chart is a tab the reader
-/// has to work out before it says anything.
-pub async fn exercise_picker(db: &Db, want: Option<i64>) -> Res<ExercisePicker> {
-    let (_, exercises) = exercise_index(db).await?;
-    let full = gym_analysis(db).await?;
     let counts: HashMap<i64, i64> = sqlx::query!(
         r#"SELECT exercise AS "exercise!", count(DISTINCT session) AS "n!" FROM training_set GROUP BY exercise"#
     )
@@ -930,7 +1138,6 @@ pub async fn exercise_picker(db: &Db, want: Option<i64>) -> Res<ExercisePicker> 
     .into_iter()
     .map(|r| (r.exercise, r.n))
     .collect();
-
     let group_of: HashMap<i64, String> = exercises
         .iter()
         .map(|e| {
@@ -943,7 +1150,6 @@ pub async fn exercise_picker(db: &Db, want: Option<i64>) -> Res<ExercisePicker> 
             )
         })
         .collect();
-
     let mut rows: Vec<PickRow> = exercises
         .iter()
         .filter(|e| counts.get(&e.id).copied().unwrap_or(0) >= 2)
@@ -956,18 +1162,146 @@ pub async fn exercise_picker(db: &Db, want: Option<i64>) -> Res<ExercisePicker> 
         .collect();
     rows.sort_by(|a, b| a.group.cmp(&b.group).then(a.name.cmp(&b.name)));
 
-    // Default to the exercise trained in the most sessions: the tab should
-    // open on a trend the reader recognizes, not on whatever sorts first.
+    // Open on the exercise trained in the most sessions: a chart that opens
+    // empty is a chart the reader has to work out first.
     let pick = want
         .or_else(|| rows.iter().max_by_key(|r| r.sessions).map(|r| r.id))
         .filter(|id| rows.iter().any(|r| r.id == *id));
-    let chosen = pick.and_then(|id| {
-        let name = rows.iter().find(|r| r.id == id)?.name.clone();
-        full.strength.into_iter().find(|s| s.exercise == name)
+
+    let in_window = |s: &RawSet| -> Option<NaiveDate> {
+        let d = *dates.get(&s.session)?;
+        (d >= from).then_some(d)
+    };
+    let week_of = |d: NaiveDate| d - Duration::days(d.weekday().num_days_from_monday() as i64);
+
+    let week_sets = |ex: i64| -> Vec<VolumePoint> {
+        let mut by_week: BTreeMap<NaiveDate, f64> = BTreeMap::new();
+        for s in sets.iter().filter(|s| s.exercise == ex) {
+            if let Some(d) = in_window(s) {
+                *by_week.entry(week_of(d)).or_insert(0.0) += 1.0;
+            }
+        }
+        by_week
+            .into_iter()
+            .map(|(d, sets)| VolumePoint { day: days(d), sets })
+            .collect()
+    };
+
+    let chosen = pick.map(|id| {
+        let name = index.get(&id).cloned().unwrap_or_default();
+        let group = group_of.get(&id).cloned().unwrap_or_default();
+        let mut best: BTreeMap<NaiveDate, f64> = BTreeMap::new();
+        for s in sets.iter().filter(|s| s.exercise == id) {
+            if let Some(d) = in_window(s) {
+                if let Ok(e) = to_one_rep_max(s.load, s.rep) {
+                    let v = best.entry(d).or_insert(0.0);
+                    if e > *v {
+                        *v = e;
+                    }
+                }
+            }
+        }
+        let overlaps = exercises
+            .iter()
+            .filter(|e| e.id != id && group_of.get(&e.id) == Some(&group))
+            .filter(|e| counts.get(&e.id).copied().unwrap_or(0) > 0)
+            .map(|e| (e.id, e.name.clone()))
+            .map(|(eid, ename)| OverlapSeries {
+                exercise: ename,
+                sets: week_sets(eid),
+            })
+            .filter(|o| !o.sets.is_empty())
+            .collect();
+        AnalysisSeries {
+            strength: best
+                .into_iter()
+                .map(|(d, e1rm)| StrengthPoint { day: days(d), e1rm })
+                .collect(),
+            sets: week_sets(id),
+            overlaps,
+            exercise: name,
+            group,
+        }
     });
 
-    Ok(ExercisePicker {
+    let deloads: Vec<i64> = sqlx::query!(r#"SELECT id AS "id!" FROM session WHERE deload = 1"#)
+        .fetch_all(&db.pool)
+        .await?
+        .iter()
+        .filter_map(|r| dates.get(&r.id))
+        .filter(|d| **d >= from)
+        .map(|d| days(*d))
+        .collect();
+
+    Ok(GymAnalysis {
         exercises: rows,
         chosen,
+        span: span_days as usize,
+        deloads,
+    })
+}
+
+/// The last `limit` sessions of one exercise, newest first, wherever it was
+/// trained: the window's context does not depend on today's place.
+pub async fn exercise_history(db: &Db, exercise: i64, limit: i64) -> Res<History> {
+    let name = sqlx::query_scalar!(
+        r#"SELECT name AS "name!" FROM exercise WHERE id = ?1"#,
+        exercise
+    )
+    .fetch_optional(&db.pool)
+    .await?
+    .ok_or_else(|| format!("No exercise with id '{exercise}'."))?;
+    let rows = sqlx::query!(
+        r#"
+SELECT s.date, p.name AS "place!", ts.load AS "load!", ts.rep AS "rep!", ts.note AS "note!",
+       e.name AS "effort"
+FROM training_set ts
+JOIN session s ON s.id = ts.session
+JOIN place p ON p.id = s.place
+LEFT JOIN effort e ON e.id = ts.effort
+WHERE ts.exercise = ?1
+  AND ts.session IN (
+      SELECT ts2.session FROM training_set ts2
+      WHERE ts2.exercise = ?1
+      GROUP BY ts2.session
+      ORDER BY MAX(julianday(ts2.date)) DESC
+      LIMIT ?2
+  )
+ORDER BY julianday(s.date) DESC, ts.position
+"#,
+        exercise,
+        limit
+    )
+    .fetch_all(&db.pool)
+    .await?;
+
+    let mut sessions: Vec<HistorySession> = Vec::new();
+    for r in rows {
+        let date = iso(local_date(&r.date).unwrap_or_default());
+        let set = HistorySet {
+            load: r.load,
+            rep: r.rep,
+            note: r.note,
+            time: local_time(&r.date),
+            effort: r.effort.clone(),
+        };
+        match sessions.last_mut() {
+            Some(last) if last.date == date => {
+                if last.effort.is_none() {
+                    last.effort = r.effort;
+                }
+                last.sets.push(set);
+            }
+            _ => sessions.push(HistorySession {
+                date,
+                place: r.place,
+                effort: r.effort,
+                sets: vec![set],
+            }),
+        }
+    }
+    Ok(History {
+        exercise: name,
+        sessions,
     })
 }

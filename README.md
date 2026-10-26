@@ -70,7 +70,7 @@ for what the import reconstructs.
 | `gym weight`| A weigh-in: kilograms, body fat (optional), note.                |
 | `gym sync`  | Snapshot the database and `rsync` it to `remote`.                |
 | `gym db`    | `init` a new database, `import` the TOML archive into one.       |
-| `gym web`   | The same log in a browser, on loopback: six tabs.                |
+| `gym web`   | The same log in a browser, on loopback: gym, food and weight.    |
 
 Run `gym` with no command for a menu of them. Every command is interactive and
 ESC backs out of the current question. For the browser instead:
@@ -86,7 +86,9 @@ $ gym web      # http://127.0.0.1:8080
   [feature list with acceptance criteria](doc/src/features.md).
 - [The SQLite schema](doc/src/sqlite-schema.md) — the tables, and the migration
   from the TOML archive.
-- [The web UI](doc/src/web.md) — `gym web`, the six tabs, and how it is built.
+- [The web UI](doc/src/web.md) — `gym web`, its pages, and how it is built.
+- [Requirements for the web UI](doc/src/requirements.md) — the scenarios the
+  pages are judged against, and the two definitions they rest on.
 - [The overhaul](doc/src/overhaul.md) — the decisions behind the rebuild, and
   what is still planned.
 

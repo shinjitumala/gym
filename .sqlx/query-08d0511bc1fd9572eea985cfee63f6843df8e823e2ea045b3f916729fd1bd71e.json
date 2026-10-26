@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT name AS \"name!\", sort AS \"sort!\" FROM effort",
+  "describe": {
+    "columns": [
+      {
+        "name": "name!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "effort",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "sort!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "effort",
+            "name": "sort"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "08d0511bc1fd9572eea985cfee63f6843df8e823e2ea045b3f916729fd1bd71e"
+}

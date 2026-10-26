@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT li.list AS \"list!\", li.exercise AS \"exercise!\", e.name AS \"name!\"\n           FROM exercise_list_item li JOIN exercise e ON e.id = li.exercise\n           ORDER BY li.list, li.position",
+  "describe": {
+    "columns": [
+      {
+        "name": "list!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise_list_item",
+            "name": "list"
+          }
+        }
+      },
+      {
+        "name": "exercise!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise_list_item",
+            "name": "exercise"
+          }
+        }
+      },
+      {
+        "name": "name!",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ddb87dde8ec4fd5f1598fa29dda1b7f29e47f9379ef05d20aebe571b2eeeb5e7"
+}

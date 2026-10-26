@@ -136,9 +136,13 @@ RETURNING id AS "id!", name, note
         .await?)
     }
 
+    /// A session the CLI records: finished as soon as it is written, because the
+    /// prompts have already asked for every set. The web's live session is the
+    /// other kind — it stays open until it is ended — so a row written here must
+    /// not look like one that is still being filled in.
     pub async fn new_session(&self, place: i64, date: &str, note: &str) -> Res<i64> {
         Ok(sqlx::query_scalar!(
-            r#"INSERT INTO session (date, place, note) VALUES (?1, ?2, ?3) RETURNING id AS "id!""#,
+            r#"INSERT INTO session (date, place, note, ended) VALUES (?1, ?2, ?3, ?1) RETURNING id AS "id!""#,
             date,
             place,
             note

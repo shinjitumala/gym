@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!\", name AS \"name!\", note AS \"note!\", video_url FROM exercise ORDER BY name",
+  "query": "SELECT id AS \"id!\", name AS \"name!\", sort AS \"sort!\"\n           FROM effort WHERE name IN ('hard', 'form fail', 'fail') ORDER BY sort",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Integer",
         "origin": {
           "Table": {
-            "table": "exercise",
+            "table": "effort",
             "name": "id"
           }
         }
@@ -20,30 +20,19 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "exercise",
+            "table": "effort",
             "name": "name"
           }
         }
       },
       {
-        "name": "note!",
+        "name": "sort!",
         "ordinal": 2,
-        "type_info": "Text",
+        "type_info": "Integer",
         "origin": {
           "Table": {
-            "table": "exercise",
-            "name": "note"
-          }
-        }
-      },
-      {
-        "name": "video_url",
-        "ordinal": 3,
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "exercise",
-            "name": "video_url"
+            "table": "effort",
+            "name": "sort"
           }
         }
       }
@@ -54,9 +43,8 @@
     "nullable": [
       false,
       false,
-      false,
-      true
+      false
     ]
   },
-  "hash": "4a056a592b4a5a120b18cd23cb469b40aed49504760f497cb5026cd1086c79fa"
+  "hash": "ad82adad0437aff00e257755fb8bc391f411474c3cdacc05a20649ff58be975b"
 }

@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!\", date, kg AS \"kg!\", bodyfat, note\n           FROM weight\n           WHERE julianday(date) >= julianday(?1) AND julianday(date) < julianday(?2)\n           ORDER BY julianday(date), id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "weight",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "date",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "weight",
+            "name": "date"
+          }
+        }
+      },
+      {
+        "name": "kg!",
+        "ordinal": 2,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "weight",
+            "name": "kg"
+          }
+        }
+      },
+      {
+        "name": "bodyfat",
+        "ordinal": 3,
+        "type_info": "Float",
+        "origin": {
+          "Table": {
+            "table": "weight",
+            "name": "bodyfat"
+          }
+        }
+      },
+      {
+        "name": "note",
+        "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "weight",
+            "name": "note"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "c1df2ac391b15ed122115b632dc9672ca16a0c6126c9256eaf3c40ea3ce9db9c"
+}

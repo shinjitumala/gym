@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT kind AS \"kind!\", start AS \"start!\" FROM phase ORDER BY julianday(start)",
+  "describe": {
+    "columns": [
+      {
+        "name": "kind!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "phase",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "name": "start!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "phase",
+            "name": "start"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "f3950325bd68f8fb06eb5c0bd046292080716356896898776773e8b48a7c0324"
+}

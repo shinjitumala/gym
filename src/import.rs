@@ -435,8 +435,10 @@ pub async fn import(db: &Db, dir: &Path, map_path: Option<&Path>) -> Res<ImportR
     }
 
     for (sid, s) in &sessions {
+        // An imported session is finished: the archive only holds sessions
+        // whose prompts ran to the end.
         sqlx::query!(
-            "INSERT INTO session (id, date, place, note) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO session (id, date, place, note, ended) VALUES (?1, ?2, ?3, ?4, ?2)",
             sid,
             s.date,
             s.place,

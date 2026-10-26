@@ -4,6 +4,10 @@
 //! into the WASM half and into the server. Everything is formatted on the
 //! server: a page that needs `chrono` or `sqlx` in the browser would drag both
 //! into the WASM bundle for nothing.
+//!
+//! Recency is decided here too, as `last_used` on each row: a picker shows the
+//! list the server sorted, so the browser never re-sorts a list it cannot
+//! query.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +18,17 @@ pub struct Totals {
     pub protein: f64,
     pub fat: f64,
     pub carbohydrate: f64,
+}
+
+impl Totals {
+    pub fn plus(&self, other: &Totals) -> Totals {
+        Totals {
+            kcal: self.kcal + other.kcal,
+            protein: self.protein + other.protein,
+            fat: self.fat + other.fat,
+            carbohydrate: self.carbohydrate + other.carbohydrate,
+        }
+    }
 }
 
 /// One meal, joined with the food it points at.
@@ -38,8 +53,10 @@ pub struct FoodRow {
     pub name: String,
     pub per_unit: Totals,
     pub note: String,
-    /// Times it was eaten, for the ranking on the analysis tab.
+    /// Times it was eaten, for the ranking on the analysis page.
     pub eaten: i64,
+    /// The last day it was eaten, `YYYY-MM-DD`, or `None` if never.
+    pub last_used: Option<String>,
 }
 
 /// A weigh-in.
@@ -47,6 +64,7 @@ pub struct FoodRow {
 pub struct WeightRow {
     pub id: i64,
     pub date: String,
+    pub time: String,
     pub kg: f64,
     pub bodyfat: Option<f64>,
     pub note: String,
@@ -56,6 +74,7 @@ pub struct WeightRow {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DayRow {
     pub date: String,
+    pub day: i64,
     pub totals: Totals,
     /// The top contributors, largest first.
     pub split: Vec<SplitRow>,
@@ -66,6 +85,9 @@ pub struct DayRow {
 pub struct SplitRow {
     pub food: String,
     pub kcal: f64,
+    pub protein: f64,
+    pub fat: f64,
+    pub carbohydrate: f64,
 }
 
 /// The trend, ready to display.
@@ -73,6 +95,8 @@ pub struct SplitRow {
 pub struct TrendView {
     /// Oldest first.
     pub points: Vec<PointRow>,
+    /// The fitted line, at the same x values as `points`.
+    pub fit: Vec<PointRow>,
     pub per_week: Option<f64>,
     pub band: Option<f64>,
     pub have: usize,
@@ -124,6 +148,14 @@ pub struct PhaseRow {
     pub target_weight: Option<f64>,
 }
 
+/// A stretch of the log trained in one phase, in day numbers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PhaseSpan {
+    pub kind: String,
+    pub from: i64,
+    pub to: i64,
+}
+
 /// Food · daily.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FoodDaily {
@@ -133,6 +165,7 @@ pub struct FoodDaily {
     pub now: String,
     pub totals: Totals,
     pub meals: Vec<MealRow>,
+    /// Ordered by last use, the most recent first.
     pub foods: Vec<FoodRow>,
     pub last_weight: Option<WeightRow>,
     pub trend: TrendView,
@@ -162,6 +195,17 @@ pub struct PresetPart {
     pub amount: f64,
 }
 
+/// An effort level the exercise window offers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EffortRow {
+    pub id: i64,
+    pub name: String,
+    /// What the level means, in reps from failure.
+    pub hint: String,
+    /// A smaller rank is closer to failure, so a smaller rank is harder.
+    pub rank: i64,
+}
+
 /// The last few sessions of one exercise, for the recording form.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct History {
@@ -173,6 +217,7 @@ pub struct History {
 pub struct HistorySession {
     pub date: String,
     pub place: String,
+    pub effort: Option<String>,
     pub sets: Vec<HistorySet>,
 }
 
@@ -181,13 +226,15 @@ pub struct HistorySet {
     pub load: f64,
     pub rep: f64,
     pub note: String,
+    pub time: String,
+    pub effort: Option<String>,
 }
 
 /// The exercises the analysis dropdown offers, and one exercise's own series.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ExercisePicker {
     pub exercises: Vec<PickRow>,
-    pub chosen: Option<StrengthSeries>,
+    pub chosen: Option<AnalysisSeries>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -199,27 +246,50 @@ pub struct PickRow {
     pub sessions: i64,
 }
 
-/// Food · intervention.
+/// Food · edit.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FoodEdit {
     pub today: String,
     pub now: String,
     pub presets: Vec<PresetRow>,
     pub meals: Vec<MealRow>,
-    pub weights: Vec<WeightRow>,
     pub foods: Vec<FoodRow>,
 }
 
-/// Food · analysis.
+/// Weight · daily.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct FoodAnalysis {
-    pub days: Vec<DayRow>,
-    pub trend: TrendView,
-    pub favourite: Vec<FoodRow>,
-    pub by_calories: Vec<FoodRow>,
+pub struct WeightDaily {
+    pub today: String,
+    pub now: String,
+    /// The last handful of weigh-ins, newest first.
     pub weights: Vec<WeightRow>,
-    pub logged_days: usize,
+    pub last_weight: Option<WeightRow>,
+    pub trend: TrendView,
+    pub phase: Option<PhaseRow>,
+    pub outliers: Vec<OutlierRow>,
+}
+
+/// Weight · edit.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WeightEdit {
+    pub today: String,
+    pub now: String,
+    pub weights: Vec<WeightRow>,
+}
+
+/// Weight · analyse: the trend, the phases it ran through, and the intake bars
+/// underneath it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WeightAnalysis {
+    pub trend: TrendView,
+    pub phases: Vec<PhaseSpan>,
+    /// Body fat percentage, oldest first, when it was measured.
+    pub bodyfat: Vec<PointRow>,
+    pub days: Vec<DayRow>,
+    pub weights: Vec<WeightRow>,
     pub span: usize,
+    pub logged_days: usize,
+    pub maintenance: Option<MaintenanceView>,
 }
 
 /// A set, as the pages show it.
@@ -233,6 +303,12 @@ pub struct SetRow {
     pub note: String,
     pub superset: Option<i64>,
     pub inferred: bool,
+    /// The effort's name, when one was recorded.
+    pub effort: Option<String>,
+    /// The effort's rank: smaller is harder.
+    pub effort_rank: Option<i64>,
+    /// The wall clock time it was recorded, `HH:MM`.
+    pub time: String,
 }
 
 /// A session with its sets.
@@ -240,6 +316,7 @@ pub struct SetRow {
 pub struct SessionRow {
     pub id: i64,
     pub date: String,
+    pub time: String,
     pub place: String,
     pub note: String,
     pub deload: bool,
@@ -262,6 +339,8 @@ pub struct PlaceRow {
     pub id: i64,
     pub name: String,
     pub note: String,
+    /// The last day a session happened here, `YYYY-MM-DD`.
+    pub last_used: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -271,6 +350,8 @@ pub struct ExerciseRow {
     pub note: String,
     pub video_url: Option<String>,
     pub groups: Vec<GroupRow>,
+    /// The last day it was trained, `YYYY-MM-DD`.
+    pub last_used: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -286,28 +367,93 @@ pub struct MuscleRow {
     pub name: String,
 }
 
+/// One line of a session's checklist: an exercise the session intends to do,
+/// and how many sets it has recorded so far.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChecklistRow {
+    pub exercise: i64,
+    pub name: String,
+    pub last_used: Option<String>,
+    /// Sets recorded for this exercise in this session.
+    pub sets: i64,
+}
+
+/// The session being recorded.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LiveSession {
+    pub id: i64,
+    pub date: String,
+    pub time: String,
+    pub place: String,
+    pub deload: bool,
+    pub note: String,
+    /// The checklist, in the order the exercises were added.
+    pub list: Vec<ChecklistRow>,
+    pub sets: Vec<SetRow>,
+}
+
+/// A named list of exercises: the gym's preset, applied to a session as its
+/// checklist.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GymPreset {
+    pub id: i64,
+    pub name: String,
+    pub items: Vec<PresetExercise>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PresetExercise {
+    pub exercise: i64,
+    pub name: String,
+}
+
 /// Gym · daily.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct GymDaily {
     pub today: String,
     pub now: String,
-    pub last_set: i64,
+    /// Ordered by the last session at each place, most recent first.
     pub places: Vec<PlaceRow>,
+    /// Ordered by the last set of each exercise, most recent first.
     pub exercises: Vec<ExerciseRow>,
+    pub presets: Vec<GymPreset>,
+    pub efforts: Vec<EffortRow>,
+    pub open: Option<LiveSession>,
+    /// Recent finished sessions, newest first.
     pub sessions: Vec<SessionRow>,
     pub last_deload: Option<String>,
     pub deload_weeks: i64,
     pub weeks_since_deload: Option<i64>,
     pub phase: Option<PhaseRow>,
-    pub place: Option<i64>,
 }
 
-/// Gym · intervention.
+/// One exercise, while it is being recorded: its sets in this session, the
+/// numbers to beat, and what to attempt next.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ExerciseWindow {
+    pub exercise: i64,
+    pub name: String,
+    pub group: String,
+    pub target_rep: i64,
+    pub deload: bool,
+    /// This session's sets of this exercise.
+    pub sets: Vec<SetRow>,
+    /// The last load used for it here, which the first row defaults to.
+    pub last_load: Option<f64>,
+    /// The last effort used for it, defaulted in the dropdown.
+    pub last_effort: Option<i64>,
+    pub advice: Option<String>,
+    pub history: Vec<HistorySession>,
+}
+
+/// Gym · edit.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct GymEdit {
     pub exercises: Vec<ExerciseRow>,
     pub places: Vec<PlaceRow>,
     pub groups: Vec<MuscleRow>,
+    pub presets: Vec<GymPreset>,
+    pub efforts: Vec<EffortRow>,
     pub sessions: Vec<SessionRow>,
 }
 
@@ -325,7 +471,8 @@ pub struct StrengthSeries {
     pub points: Vec<StrengthPoint>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// Sets in a week.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolumePoint {
     pub day: i64,
     pub sets: f64,
@@ -337,14 +484,31 @@ pub struct VolumeSeries {
     pub points: Vec<VolumePoint>,
 }
 
-/// Gym · analysis.
+/// A company of sets per week for one exercise, drawn beside the chosen one.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OverlapSeries {
+    pub exercise: String,
+    pub sets: Vec<VolumePoint>,
+}
+
+/// Gym · analyse: one exercise's strength, its sets per week, and the sets per
+/// week of the exercises that share its main muscle group.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AnalysisSeries {
+    pub exercise: String,
+    pub group: String,
+    pub strength: Vec<StrengthPoint>,
+    pub sets: Vec<VolumePoint>,
+    pub overlaps: Vec<OverlapSeries>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct GymAnalysis {
-    pub strength: Vec<StrengthSeries>,
-    pub volume: Vec<VolumeSeries>,
-    pub ungrouped: Vec<String>,
-    pub deloads: Vec<i64>,
+    pub exercises: Vec<PickRow>,
+    pub chosen: Option<AnalysisSeries>,
     pub span: usize,
+    /// The deload sessions in the window, so the chart can mark them.
+    pub deloads: Vec<i64>,
 }
 
 /// The database the server is reading, for the header.

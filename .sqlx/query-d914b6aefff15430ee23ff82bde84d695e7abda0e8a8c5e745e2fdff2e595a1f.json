@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!\", name AS \"name!\", note AS \"note!\" FROM place ORDER BY name",
+  "query": "SELECT p.id AS \"id!\", p.name AS \"name!\", p.note AS \"note!\",\n                  (SELECT MAX(s.date) FROM session s WHERE s.place = p.id) AS \"last\"\n           FROM place p\n           ORDER BY COALESCE(julianday((SELECT MAX(s.date) FROM session s WHERE s.place = p.id)), 0.0) DESC,\n                    p.name",
   "describe": {
     "columns": [
       {
@@ -35,6 +35,12 @@
             "name": "note"
           }
         }
+      },
+      {
+        "name": "last",
+        "ordinal": 3,
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -43,8 +49,9 @@
     "nullable": [
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "b73d1ac71225d3362733bf695e9f3a22462ba74d923bf1fbbfec20a68ebb5a43"
+  "hash": "d914b6aefff15430ee23ff82bde84d695e7abda0e8a8c5e745e2fdff2e595a1f"
 }

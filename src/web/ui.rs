@@ -1,14 +1,15 @@
-//! The pieces every page is built from: the header, the two-row tab bar, a
-//! section, a key figure, a segmented switch, and the form helpers.
+//! The pieces every page is built from: the header, the three tabs, the bottom
+//! action row, a section, a key figure, a segmented switch, and the form
+//! helpers.
 //!
 //! The look is the one on [the overhaul](overhaul) page: black background, a
 //! green ramp, blocky 2px borders and no rounded corners. It lives in
-//! `style/main.css`; these components only supply the class names.
+//! `style/main.scss`; these components only supply the class names.
 //!
-//! The tab bar is two rows on purpose. The first row picks the **domain**
-//! (food or gym), the second picks the **intent** (daily, edit, analysis), so
-//! the six pages read as a grid rather than a list of six, and the row that
-//! wraps on a phone is the short one.
+//! The tab bar has exactly three tabs — **gym**, **food**, **weight** — because
+//! those are the three things the log records. A mode's **edit** and **analyse**
+//! pages are not tabs: they are buttons at the bottom of the mode's daily page,
+//! so the bar never grows a second row and a phone never gets a menu.
 
 use leptos::prelude::*;
 
@@ -44,6 +45,10 @@ pub const WARN: &str = "text-amber-400";
 pub const NOW: &str = "text-green-500";
 pub const SEGMENTED: &str = "flex flex-wrap [&_button]:grow [&_button]:font-normal [&_button]:text-gray-500 [&_button]:border-r-0 [&_button:last-child]:border-r-2 [&_button.on]:font-bold [&_button.on]:text-green-500 [&_button.on]:bg-green-950";
 pub const ERROR: &str = "border-2 border-red-500 bg-red-950 text-gray-200 px-2 py-1";
+/// The list a picker shows: one button per row, full width, newest first.
+pub const PICKER: &str = "flex flex-col gap-0.5 max-h-64 overflow-auto";
+pub const PICK: &str =
+    "flex items-baseline gap-2 text-left font-normal [&>span:last-child]:ml-auto [&>span:last-child]:text-gray-500";
 
 /// A date that a chart or a list can show, from its day number.
 pub fn day_label(day: i64) -> String {
@@ -74,6 +79,20 @@ pub fn opt(v: Option<f64>, f: fn(f64) -> String) -> String {
         Some(v) => f(v),
         None => "—".to_string(),
     }
+}
+
+/// How long ago a `YYYY-MM-DD` was, in words, or `None` for a row never used.
+pub fn ago(day: &str, today: &str) -> Option<String> {
+    let a = chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").ok()?;
+    let b = chrono::NaiveDate::parse_from_str(today, "%Y-%m-%d").ok()?;
+    let n = (b - a).num_days();
+    Some(match n {
+        0 => "today".to_string(),
+        1 => "yesterday".to_string(),
+        n if n < 7 => format!("{n} days ago"),
+        n if n < 30 => format!("{}w ago", n / 7),
+        _ => format!("{}mo ago", n / 30),
+    })
 }
 
 #[component]
@@ -128,81 +147,98 @@ const TABS: &str =
 const TAB: &str = "flex-none px-2 py-0.5 border-2 border-green-900 text-green-400 hover:border-green-500 hover:bg-green-950";
 const TAB_ON: &str =
     "flex-none px-2 py-0.5 border-2 border-green-500 bg-green-950 text-green-500 font-bold";
+const ACTIONS: &str =
+    "flex gap-1 px-2 py-1 border-t-2 border-green-900 overflow-x-auto whitespace-nowrap";
 
-fn domain_of(here: &str) -> &'static str {
-    if here.starts_with("/gym") {
-        "/gym"
-    } else if here.starts_with("/status") {
-        "/status"
-    } else {
-        "/food"
-    }
+/// The three modes, in the order a day uses them.
+const MODES: [(&str, &str); 3] = [("/gym", "gym"), ("/food", "food"), ("/weight", "weight")];
+
+fn mode_of(here: &str) -> &'static str {
+    MODES
+        .iter()
+        .find(|(href, _)| here.starts_with(href))
+        .map(|(href, _)| *href)
+        .unwrap_or("/food")
 }
 
-fn intent_of(here: &str) -> &'static str {
+/// Which page of a mode this is: `daily`, `edit` or `analyse`.
+fn page_of(here: &str) -> &'static str {
     if here.ends_with("/edit") {
         "edit"
-    } else if here.ends_with("/analysis") {
-        "analysis"
+    } else if here.ends_with("/analyse") {
+        "analyse"
     } else {
         "daily"
     }
 }
 
-/// The two rows: domain, then intent.
+/// Every page of a mode, and the href for it.
+fn href(mode: &str, page: &str) -> String {
+    if page == "daily" {
+        mode.to_string()
+    } else {
+        format!("{mode}/{page}")
+    }
+}
+
+/// The three tabs.
 #[component]
 pub fn Nav(#[prop(into)] here: String) -> impl IntoView {
-    let domain = domain_of(&here);
-    let intent = intent_of(&here);
-    let domains = [("/food", "food"), ("/gym", "gym"), ("/status", "status")];
-    let intents = [
-        ("daily", "daily"),
-        ("edit", "edit"),
-        ("analysis", "analysis"),
-    ];
+    let mode = mode_of(&here);
     view! {
         <nav class=TABS>
-            {domains
+            {MODES
                 .iter()
                 .map(|(href, label)| {
-                    let on = *href == domain;
+                    let on = *href == mode;
+                    let class = if on { TAB_ON } else { TAB };
                     view! {
-                        <a href=*href class=if on { TAB_ON } else { TAB }>
+                        <a href=*href class=class>
                             {*label}
                         </a>
                     }
                 })
                 .collect_view()}
         </nav>
-        {if domain == "/status" {
-            ().into_any()
-        } else {
-            view! {
-                <nav class="flex gap-1 px-2 py-1 pt-0 border-b-2 border-green-900 overflow-x-auto">
-                    {intents
-                        .iter()
-                        .map(|(i, label)| {
-                            let href = if *i == "daily" {
-                                domain.to_string()
-                            } else {
-                                format!("{domain}/{i}")
-                            };
-                            let on = *i == intent;
-                            view! {
-                                <a href=href class=if on { TAB_ON } else { TAB }>
-                                    {*label}
-                                </a>
-                            }
-                        })
-                        .collect_view()}
-                </nav>
-            }
-                .into_any()
-        }}
     }
 }
 
-/// The page frame: a header with the page it is on, then the tab rows.
+/// The buttons at the bottom: the other pages of this mode.
+///
+/// Food has no analysis page of its own — the intake chart lives under weight,
+/// beside the trend it belongs with — so food's row has one button.
+#[component]
+pub fn Actions(#[prop(into)] here: String) -> impl IntoView {
+    let mode = mode_of(&here);
+    let page = page_of(&here);
+    let mut links: Vec<(String, &'static str)> = Vec::new();
+    if page != "daily" {
+        links.push((href(mode, "daily"), "session"));
+    }
+    if page != "edit" {
+        links.push((href(mode, "edit"), "edit"));
+    }
+    if page != "analyse" && mode != "/food" {
+        links.push((href(mode, "analyse"), "analyse"));
+    }
+    view! {
+        <nav class=ACTIONS>
+            {links
+                .into_iter()
+                .map(|(href, label)| view! { <a href=href class=TAB>{label}</a> })
+                .collect_view()}
+        </nav>
+    }
+}
+
+/// The page frame: a header with the page it is on, the three tabs, the page,
+/// and the way to the mode's other pages.
+///
+/// The frame is fixed rather than conditional on the page: a conditional at the
+/// root of a hydrated view stands for sibling nodes the server renders through
+/// a `<template>`, and a browser that rewrites the document on the way out
+/// leaves nothing for the client to hydrate against. A page without tabs gets
+/// its own frame instead.
 #[component]
 pub fn Page(
     #[prop(into)] title: String,
@@ -211,20 +247,40 @@ pub fn Page(
 ) -> impl IntoView {
     view! {
         <div class=APP_CLASS>
-            <header class="flex items-center gap-2 px-2 py-1 border-b-2 border-green-900 bg-black">
-                <span class="font-bold text-green-400 tracking-wide">{title}</span>
-                <span class="grow"></span>
-                <span class="text-gray-600 text-xs max-sm:hidden">{here.clone()}</span>
-            </header>
-            <Nav here=here />
-            <main>{children()}</main>
+            <Header title=title />
+            <Nav here=here.clone() />
+            <main class="flex flex-col gap-2 p-2">{children()}</main>
+            <Actions here=here.clone() />
         </div>
     }
 }
 
-/// A switch between the views of one page (meals and weight, sets and
-/// exercises). It is client state, not a route: the six routes stay the six
-/// routes, and a second axis of navigation would make the phone bar a menu.
+/// A page with no tabs: the header and the page, nothing else. It is what the
+/// status page uses.
+#[component]
+pub fn Bare(#[prop(into)] title: String, children: Children) -> impl IntoView {
+    view! {
+        <div class=APP_CLASS>
+            <Header title=title />
+            <main class="flex flex-col gap-2 p-2">{children()}</main>
+        </div>
+    }
+}
+
+#[component]
+fn Header(#[prop(into)] title: String) -> impl IntoView {
+    view! {
+        <header class="flex items-center gap-2 px-2 py-1 border-b-2 border-green-900 bg-black">
+            <span class="font-bold text-green-400 tracking-wide">{title}</span>
+            <span class="grow"></span>
+            <a href="/status" class="text-gray-600 text-xs hover:text-green-500">
+                "status"
+            </a>
+        </header>
+    }
+}
+
+/// A switch between the views of one page. It is client state, not a route.
 #[component]
 pub fn Segmented(
     #[prop(into)] options: Vec<(&'static str, &'static str)>,
@@ -302,6 +358,10 @@ pub fn selected(r: NodeRef<leptos::html::Select>, initial: i64) -> i64 {
         .unwrap_or(initial)
 }
 
+pub fn chosen(r: NodeRef<leptos::html::Select>) -> String {
+    read_select(r).unwrap_or_default()
+}
+
 pub fn checked(r: NodeRef<leptos::html::Input>) -> bool {
     read_check(r).unwrap_or(false)
 }
@@ -370,5 +430,59 @@ pub fn Outcome(outcome: ReadSignal<Option<Result<String, ServerFnError>>>) -> im
                     Err(e) => view! { <span class=BAD>{e.to_string()}</span> }.into_any(),
                 })
         }}
+    }
+}
+
+/// A searchable picker: a filter box over a list of buttons.
+///
+/// The list arrives already sorted — by recency, for the pickers that are about
+/// what you did last — and the filter only narrows it. Nothing re-sorts in the
+/// browser, so the order the server chose is the order the reader sees.
+#[component]
+pub fn Picker(
+    #[prop(into)] label: String,
+    #[prop(into)] placeholder: String,
+    /// `(value, label, note)` per row; `note` is the right-hand hint.
+    #[prop(into)]
+    rows: Vec<(i64, String, String)>,
+    #[prop(into)] on_pick: Callback<i64>,
+) -> impl IntoView {
+    let (filter, set_filter) = signal(String::new());
+    let rows = StoredValue::new(rows);
+    view! {
+        <label>
+            {label}
+            <input
+                type="text"
+                placeholder=placeholder
+                on:input=move |e| set_filter.set(event_target_value(&e))
+            />
+        </label>
+        <div class=PICKER>
+            {move || {
+                let f = filter.get().to_lowercase();
+                let on_pick = on_pick;
+                rows.with_value(|rows| {
+                    rows.iter()
+                        .filter(|(_, name, _)| f.is_empty() || name.to_lowercase().contains(&f))
+                        .map(|(id, name, note)| {
+                            let id = *id;
+                            let name = name.clone();
+                            let note = note.clone();
+                            view! {
+                                <button
+                                    type="button"
+                                    class=PICK
+                                    on:click=move |_| on_pick.run(id)
+                                >
+                                    <span class=OK>{name}</span>
+                                    <span>{note}</span>
+                                </button>
+                            }
+                        })
+                        .collect_view()
+                })
+            }}
+        </div>
     }
 }

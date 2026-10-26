@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!\", session AS \"session!\", exercise AS \"exercise!\",\n                  position AS \"position!\", load AS \"load!\", rep AS \"rep!\",\n                  note AS \"note!\", superset, inferred AS \"inferred!\"\n           FROM training_set ORDER BY session, position",
+  "query": "SELECT ts.id AS \"id!\", ts.session AS \"session!\", ts.exercise AS \"exercise!\",\n                  ts.position AS \"position!\", ts.date, ts.load AS \"load!\", ts.rep AS \"rep!\",\n                  ts.note AS \"note!\", ts.superset, ts.inferred AS \"inferred!\",\n                  e.name AS \"effort\", e.sort AS \"effort_rank\"\n           FROM training_set ts LEFT JOIN effort e ON e.id = ts.effort\n           ORDER BY ts.session, ts.position",
   "describe": {
     "columns": [
       {
@@ -48,8 +48,19 @@
         }
       },
       {
-        "name": "load!",
+        "name": "date",
         "ordinal": 4,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "training_set",
+            "name": "date"
+          }
+        }
+      },
+      {
+        "name": "load!",
+        "ordinal": 5,
         "type_info": "Float",
         "origin": {
           "Table": {
@@ -60,7 +71,7 @@
       },
       {
         "name": "rep!",
-        "ordinal": 5,
+        "ordinal": 6,
         "type_info": "Float",
         "origin": {
           "Table": {
@@ -71,7 +82,7 @@
       },
       {
         "name": "note!",
-        "ordinal": 6,
+        "ordinal": 7,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -82,7 +93,7 @@
       },
       {
         "name": "superset",
-        "ordinal": 7,
+        "ordinal": 8,
         "type_info": "Integer",
         "origin": {
           "Table": {
@@ -93,12 +104,34 @@
       },
       {
         "name": "inferred!",
-        "ordinal": 8,
+        "ordinal": 9,
         "type_info": "Integer",
         "origin": {
           "Table": {
             "table": "training_set",
             "name": "inferred"
+          }
+        }
+      },
+      {
+        "name": "effort",
+        "ordinal": 10,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "effort",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "effort_rank",
+        "ordinal": 11,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "effort",
+            "name": "sort"
           }
         }
       }
@@ -114,9 +147,12 @@
       false,
       false,
       false,
+      false,
       true,
-      false
+      false,
+      true,
+      true
     ]
   },
-  "hash": "f4dbb77d2be3d45b88fc8c6f362b9484586b6355c84754ddde02afa4b97870ef"
+  "hash": "d6b38401428531e3b416bc961e395e8237d369445bccef5d60b1d28a281c9aac"
 }

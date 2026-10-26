@@ -17,44 +17,59 @@ The default is `127.0.0.1:8080`: loopback, so nothing on the network can reach
 it. Passing another address makes it reachable from wherever that address is —
 there is no authentication, so only do that on a network you trust.
 
-## Six pages, two navigation rows
+The behaviour the pages are judged against is on
+[Requirements for the web UI](requirements.md), one scenario per section.
 
-The bar is two rows because the six pages are a grid: **food** or **gym** on the
-first row, **daily**, **edit** or **analysis** on the second. On a phone the
-rows scroll sideways instead of wrapping, so the bar keeps one height.
+## Three tabs, and the mode's other pages at the bottom
 
-| Domain | Daily | Edit | Analysis |
-|--------|-------|------|----------|
-| Food | Record meals and weigh-ins; today's totals; the trend. | Meals, weigh-ins, foods, presets. | Intake split by food, the trend, the rankings. |
-| Gym | Record a session; switch phase; the deload reminder. | Sets, exercises, places, muscle groups. | One exercise's strength trend; sets per muscle group. |
+The log records three things, so the bar has three tabs: **gym**, **food** and
+**weight**. A mode's **edit** and **analyse** pages are not tabs. They are
+buttons at the bottom of that mode's daily page, so the bar never grows and a
+phone never gets a menu:
+
+| Tab | Daily | Edit (bottom) | Analyse (bottom) |
+|-----|-------|---------------|------------------|
+| gym | Start a session, the checklist, the exercise window, the phase switch, recent sessions. | Sessions and sets, exercises and muscle groups, gym presets, places. | One exercise's strength, overlaid with sets per week for it and its muscle group. |
+| food | Today's totals against maintenance, the meal being entered, the day's meals. | Meals, foods, meal presets. | — the intake chart lives under weight, beside the trend it is read against. |
+| weight | The trend and the last weigh-in, the weigh-in form, recent weigh-ins. | Past weigh-ins. | Weight and body fat by phase, with the intake bars underneath. |
 
 `/status` shows the database file, the remote, and the row counts.
 
-A page with more than one subject — meals and weight, sets and exercises — puts
-them behind a **segmented switch** rather than a route, so the six routes stay
-six and a phone never gets a third navigation bar.
+A page with more than one subject puts them behind a **segmented switch** rather
+than a route, so the three routes stay three.
 
 Each page is one query against the server, so it shows what the database held
 when it was asked. A form that saves bumps a counter and the page re-runs its
-query, so the row you just wrote is there.
+query, so the row you just wrote is there — and the one-line reply the save
+returns is gone with the re-render, which is why the test waits for the row and
+not for the message.
 
 ## Recording
 
-- **A meal is one screen, three rows.** Fill as many rows as the meal has
-  parts; a row left on `—` is not recorded, so the common case is still one
-  click. The date defaults to today and **now** fills the time from the
-  server's clock.
-- **A preset is one button.** A preset is a named set of foods with amounts;
-  tapping it records every item at once, at the current date and time. They are
-  defined on `edit → presets`, and the daily tab lists them by last use.
-- **A weigh-in is separate from a meal.** Body fat left blank is stored as
+- **A session is open until it is ended.** Starting one writes a session row;
+  the sets of each exercise are appended to it as they are saved, each stamped
+  with the minute it was saved. `end session` closes it, and a session with no
+  sets is discarded instead of stored as an empty one.
+- **The checklist is the session's plan.** Applying a gym preset puts its
+  exercises on the checklist in the preset's order; picking an exercise from the
+  list adds it. ☐ and ☑ say what still has to be done, so the next exercise is a
+  tap away rather than a search.
+- **The exercise window is where a set is recorded.** It opens on the last load
+  used for that exercise, offers the three efforts with what each means, and
+  prints the advice for the next set beside the last three sessions of that
+  exercise. `✕` goes back to the checklist.
+- **Effort is part of the record, not a note.** A set's effort is a row in
+  `effort`, so its rank (closer to failure is a smaller number) is what the
+  recommendation compares before load and reps. See
+  [effort before weight](requirements.md#effort-is-compared-before-weight).
+- **A meal is a draft until it is saved.** Rows are added from a food list and
+  previewed as they are typed; `save` writes them in one transaction. A preset is
+  one button and records all of its foods at once.
+- **A weigh-in is separate from a meal**, and body fat left blank is stored as
   `NULL`, which is not the same as a measured `0`.
-- **A session is four exercise rows.** A row left empty is not recorded.
-  Picking an exercise asks for the last three sessions of *that exercise at
-  that place* and shows them under the form, so the numbers to beat are one
-  glance away instead of a wall of history.
-- **The phase switch is on the gym daily tab.** Starting a phase ends the old
-  one from that date; past sessions keep the phase they were trained in.
+- **The phase switch is on the gym daily page.** Starting a phase ends the old
+  one from that date; past sessions keep the phase they were trained in, which is
+  what colours the weight analysis.
 
 ## Editing
 
@@ -104,6 +119,12 @@ A build without the bundle — a plain `cargo build` — is still a working CLI;
 `gym web` then refuses to start and says to rebuild, instead of serving an empty
 page.
 
+**Build in release to look at the site.** Leptos's debug build of the WASM emits
+`<!>` comment markers inside every element to keep positions stable while it
+renders, and the server's debug build does not; a debug bundle therefore
+hydrates against a DOM that has no markers and panics inside `tachys` on the
+first element. The release build, which `install.sh` makes, does not carry them.
+
 ## Why the forms read the DOM
 
 A field's value is read from the element when the form is submitted, not from a
@@ -115,7 +136,8 @@ and the submit reads them.
 
 The server functions take a JSON body (`#[server(input = Json)]`). The default
 codec is URL-encoded, which cannot carry a list of rows, and a form here
-regularly sends one — the meal rows, a session's sets, a set of muscle groups.
+regularly sends one — the meal rows, a preset's exercises, a set of muscle
+groups.
 
 ## Caching
 
@@ -124,3 +146,17 @@ across builds, so a browser that kept a script and paired it with a newly built
 WASM would hydrate two different DOM shapes and panic inside `tachys`.
 `no-cache` still allows a 304; it only forces the check, so half of a previous
 build cannot survive an install.
+
+## Testing it
+
+`test/web/drive.py` drives the real site in a headless browser: it builds,
+seeds a scratch database, starts `gym web` on a free port and walks the
+scenarios on [the requirements page](requirements.md). It needs only Python's
+standard library and one Chromium-based browser.
+
+```bash
+$ python3 test/web/drive.py
+```
+
+Screenshots and the scratch database go under `$FPR_SCRATCH_DIR`, never into the
+repository.

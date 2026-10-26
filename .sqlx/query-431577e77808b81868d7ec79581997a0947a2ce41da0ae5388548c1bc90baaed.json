@@ -1,21 +1,21 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT COALESCE(MAX(id), 0) FROM training_set",
+  "query": "SELECT count(*) FROM training_set WHERE session = ?1",
   "describe": {
     "columns": [
       {
-        "name": "COALESCE(MAX(id), 0)",
+        "name": "count(*)",
         "ordinal": 0,
         "type_info": "Integer",
         "origin": "Expression"
       }
     ],
     "parameters": {
-      "Right": 0
+      "Right": 1
     },
     "nullable": [
       false
     ]
   },
-  "hash": "6b71e5ba6bf18d0c3460de4cd49ec11276a8e1dcdaa7d3794e609b3edc0fe0e2"
+  "hash": "431577e77808b81868d7ec79581997a0947a2ce41da0ae5388548c1bc90baaed"
 }

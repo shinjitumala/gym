@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "INSERT INTO session (date, place, phase, deload, note) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id AS \"id!\"",
+  "query": "INSERT INTO session (date, place, note, ended) VALUES (?1, ?2, ?3, ?1) RETURNING id AS \"id!\"",
   "describe": {
     "columns": [
       {
@@ -16,11 +16,11 @@
       }
     ],
     "parameters": {
-      "Right": 5
+      "Right": 3
     },
     "nullable": [
       null
     ]
   },
-  "hash": "859265024bcc31753e098335254bc2f01eceb4d0210c445f3a82f4d6905f011d"
+  "hash": "02eea944aff5ee033ce1ef66c1806d01035db2e3142a1f6d42fbb7e2d1a4bb90"
 }

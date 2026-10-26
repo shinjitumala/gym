@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!\", date, kg AS \"kg!\", bodyfat, note\n           FROM weight\n           WHERE julianday(date) >= julianday(?1) AND julianday(date) < julianday(?2)\n           ORDER BY julianday(date)",
+  "query": "SELECT id AS \"id!\", date, kg AS \"kg!\", bodyfat, note\n           FROM weight ORDER BY julianday(date) DESC, id DESC LIMIT ?1",
   "describe": {
     "columns": [
       {
@@ -60,7 +60,7 @@
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 1
     },
     "nullable": [
       false,
@@ -70,5 +70,5 @@
       false
     ]
   },
-  "hash": "b007cda8340a553e3105d2c135aaf9207322bb79d2a3e78278e4911818821a08"
+  "hash": "990255325e3b71927125fb164b7d0fc0400e6a8fac09d81ac21237ef6d1fa7da"
 }
