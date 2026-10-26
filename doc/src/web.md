@@ -115,11 +115,15 @@ the refusal says how many rows use it.
   the muscle groups, and deletes the other. There is no undo, so the button
   says so.
 - **A gym preset is edited in place.** Its row folds out into a name and a list
-  of exercises, one row each, with `add exercise` growing the list and `remove`
-  dropping a row; saving rewrites the preset in one transaction. A new preset
-  starts with the one exercise it must have and grows from there. Finished
-  sessions store the exercises they recorded, not the preset, so rewriting one
-  never rewrites history.
+  of exercises: the filter box above the candidates narrows them by name or
+  muscle group, a click appends a row, and `remove` drops one. Saving rewrites
+  the preset in one transaction. A new preset starts empty and grows a row per
+  pick. Finished sessions store the exercises they recorded, not the preset, so
+  rewriting one never rewrites history.
+- **A meal preset is built the same way.** The filter box narrows the food list,
+  each click adds a row, and the amount beside it is typed on the row. The
+  preset keeps the order the foods were picked in, which is the order the daily
+  page loads them in.
 - **A deload is a session's flag**, not a set's: the toggle sits on the session
   row, because a deload is a week's plan.
 
@@ -275,6 +279,14 @@ codec is URL-encoded, which cannot carry a list of rows, and a form here
 regularly sends one — the meal rows, a preset's exercises, a set of muscle
 groups.
 
+A filter box is the one place a signal mirrors the DOM as it is typed, and it
+does so only to narrow a list: the rows are the server's, the order is the
+server's, and one predicate in `src/web/ui.rs` decides which of them stay —
+see [what the search box matches](requirements.md#what-the-search-box-matches).
+A preset form keeps the filter box mounted while its picks change, because a
+box that was rebuilt on every pick would lose the query as soon as the reader
+used it.
+
 ## Caching
 
 Every response carries `Cache-Control: no-cache`. The bundle's URLs are stable
@@ -311,3 +323,8 @@ scenario reads a date back, it asks the seeded database for the day it wrote
 
 Screenshots and the scratch database go under `$FPR_SCRATCH_DIR`, never into the
 repository.
+
+The search scenarios type what a substring test cannot match — `press chest` for
+the two chest presses, `sqt` for the squat, `chikn` for the chicken — because a
+query that already worked would pass whether the rule changed or not. The rule's
+own cases are unit tests beside it in `src/web/ui.rs`.

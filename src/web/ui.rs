@@ -442,6 +442,27 @@ pub fn Outcome(outcome: ReadSignal<Option<Result<String, ServerFnError>>>) -> im
     }
 }
 
+/// Does a row answer what was typed into a search box?
+///
+/// The query is split on whitespace and every word must be found in the row's
+/// text, in any order — so `press chest` finds `bench press · chest`, which a
+/// plain substring test misses. A word is found when its letters appear as a
+/// run, or, failing that, in order with letters missing, so `bnch` still finds
+/// `bench press`. Case is ignored.
+pub fn narrows(text: &str, query: &str) -> bool {
+    let text = text.to_lowercase();
+    query.split_whitespace().all(|word| {
+        let word = word.to_lowercase();
+        text.contains(&word) || letters_in_order(&text, &word)
+    })
+}
+
+/// Every letter of `word` in `text`, in order and not necessarily adjacent.
+fn letters_in_order(text: &str, word: &str) -> bool {
+    let mut letters = text.chars();
+    word.chars().all(|w| letters.any(|c| c == w))
+}
+
 /// A searchable picker: a filter box over a list of buttons.
 ///
 /// The list arrives already sorted — by recency, for the pickers that are about
@@ -469,11 +490,11 @@ pub fn Picker(
         </label>
         <div class=PICKER>
             {move || {
-                let f = filter.get().to_lowercase();
+                let f = filter.get();
                 let on_pick = on_pick;
                 rows.with_value(|rows| {
                     rows.iter()
-                        .filter(|(_, name, _)| f.is_empty() || name.to_lowercase().contains(&f))
+                        .filter(|(_, name, _)| narrows(name, &f))
                         .map(|(id, name, note)| {
                             let id = *id;
                             let name = name.clone();
@@ -493,5 +514,39 @@ pub fn Picker(
                 })
             }}
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_query_keeps_every_row() {
+        assert!(narrows("bench press", ""));
+        assert!(narrows("bench press", "   "));
+    }
+
+    #[test]
+    fn words_match_in_any_order() {
+        // A plain substring test asks for "press chest" in that order, which
+        // no row says; the picker's word-at-a-time rule finds the exercise
+        // whose group is chest and whose name ends in press.
+        assert!(narrows("bench press · chest", "press chest"));
+        assert!(narrows("bench press · chest", "chest press"));
+        assert!(!narrows("bench press · chest", "press back"));
+    }
+
+    #[test]
+    fn a_word_may_lose_letters_but_not_their_order() {
+        assert!(narrows("bench press", "bnch"));
+        assert!(narrows("incline press", "inc prs"));
+        assert!(!narrows("bench press", "hcneb"));
+    }
+
+    #[test]
+    fn case_is_ignored_on_both_sides() {
+        assert!(narrows("Bench Press", "ben"));
+        assert!(narrows("bench press", "PRESS"));
     }
 }

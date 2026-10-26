@@ -10,7 +10,7 @@ The rules that decide *which* number or *which* row to show are stated here
 rather than left to the implementation, because they are what the screens are
 judged against.
 
-## Two definitions the screens depend on
+## Three definitions the screens depend on
 
 ### Sorted by recency
 
@@ -30,6 +30,26 @@ the same information when the list is what you pick from.
 The order is computed on the server, in the query. The search box above a list
 only narrows it; it never re-sorts, so what the reader sees is the order the
 database chose.
+
+### What the search box matches
+
+Every box that narrows a list — the food, place, exercise and analysis pickers,
+and the ones that build a preset — uses one rule, `narrows` in
+`src/web/ui.rs`:
+
+- The query is split on whitespace, and every word must be found in the row's
+  text, in any order. A row's text is its name and, for an exercise, its muscle
+  group, which is what makes `press chest` find `bench press · chest` — a plain
+  substring test finds nothing, because no row says those two words in that
+  order.
+- A word is found when its letters appear as a run, or, failing that, in order
+  with letters missing: `bnch` finds `bench press`, `sqt` finds `squat`, and
+  `chikn` finds `chicken`. A two-word query still needs both words.
+- Case is ignored.
+
+Each word has to be found in one row's own text, so a query narrows a list of
+rows; it does not search across rows. What it changes is which rows match, not
+which order they come in: the ordering above is still the query's.
 
 ### Effort is compared before weight
 
@@ -185,11 +205,16 @@ Acceptance criteria:
 - [x] **Gym · edit** manages sessions and sets (load, reps, effort, note), the
       deload flag, exercises with their muscle groups and video link, gym
       presets (a named list of exercises), places and muscle groups.
-- [x] **A gym preset starts with one exercise and grows a row at a time**, and an
-      existing preset is edited where it is: its name and its exercise rows are
-      rewritten in one transaction, and a finished session keeps the exercises it
-      recorded.
+- [x] **A gym preset is built from a searchable exercise list**: a filter box
+      over the exercises, searchable by name or muscle group, a click for each
+      one that belongs in the preset, and `remove` on a row that does not. A new
+      preset starts with no rows and an existing one opens with its own, in its
+      own order, and saving rewrites the list in one transaction; a finished
+      session keeps the exercises it recorded.
 - [x] **Food · edit** manages meals, foods and meal presets.
+- [x] **A meal preset is built from the same searchable food list**: a click
+      per food, an amount beside each row it adds, and the preset keeps the
+      order they were picked in.
 - [x] **Weight · edit** manages past weigh-ins.
 - [x] **A row is edited in place**, and a delete that the log still depends on
       is refused with the count of rows that use it.
