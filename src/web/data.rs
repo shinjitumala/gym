@@ -15,7 +15,7 @@ use crate::train::{self, SetEffort};
 use crate::util::{to_one_rep_max, Res};
 use crate::web::dto::*;
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub struct Settings {
     pub deload_weeks: i64,
@@ -155,6 +155,36 @@ async fn phase_spans(db: &Db, today: NaiveDate) -> Res<Vec<PhaseSpan>> {
         });
     }
     Ok(out)
+}
+
+/// The weeks a deload fell in, as closed spans of day numbers, Monday to
+/// Sunday, clipped to `from` and deduplicated.
+///
+/// A deload is a week's plan, so shading the whole week says more than a mark
+/// on the single session that happened to be logged: the trend keeps every
+/// point and the reader sees why the loads dipped.
+async fn deload_spans(db: &Db, from: NaiveDate) -> Res<Vec<Span>> {
+    let rows = sqlx::query!(r#"SELECT date FROM session WHERE deload = 1"#)
+        .fetch_all(&db.pool)
+        .await?;
+    let mut weeks: BTreeSet<(NaiveDate, NaiveDate)> = BTreeSet::new();
+    for r in &rows {
+        let Some(d) = local_date(&r.date) else {
+            continue;
+        };
+        let monday = d - Duration::days(d.weekday().num_days_from_monday() as i64);
+        let sunday = monday + Duration::days(6);
+        if sunday >= from {
+            weeks.insert((monday.max(from), sunday));
+        }
+    }
+    Ok(weeks
+        .into_iter()
+        .map(|(start, end)| Span {
+            from: days(start),
+            to: days(end),
+        })
+        .collect())
 }
 
 fn goal_of(p: &Option<PhaseRow>) -> Option<Goal> {
@@ -420,6 +450,37 @@ fn day_rows(meals: &[MealRow]) -> Vec<DayRow> {
     out
 }
 
+/// Every food's contribution over a stretch of meals, added up and ordered by
+/// calories: the ranking's data, which a day's split cannot be, since a day
+/// keeps only its top few foods.
+fn split_by_food(meals: &[MealRow]) -> Vec<SplitRow> {
+    let mut per_food: HashMap<&str, Totals> = HashMap::new();
+    for m in meals {
+        let e = per_food.entry(m.food.as_str()).or_default();
+        e.kcal += m.kcal;
+        e.protein += m.protein;
+        e.fat += m.fat;
+        e.carbohydrate += m.carbohydrate;
+    }
+    let mut out: Vec<SplitRow> = per_food
+        .into_iter()
+        .map(|(food, t)| SplitRow {
+            food: food.to_owned(),
+            kcal: t.kcal,
+            protein: t.protein,
+            fat: t.fat,
+            carbohydrate: t.carbohydrate,
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.kcal
+            .partial_cmp(&a.kcal)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.food.cmp(&b.food))
+    });
+    out
+}
+
 /// The maintenance estimate and the days it cannot explain, from the weight
 /// trend and the logged intake in the same window.
 fn intake_health(
@@ -574,6 +635,8 @@ pub async fn weight_analysis(db: &Db, span_days: i64) -> Res<WeightAnalysis> {
             .collect(),
         days: day_rows(&meals),
         logged_days: day_rows(&meals).iter().filter(|d| d.logged).count(),
+        ranking: split_by_food(&meals),
+        deloads: deload_spans(db, from).await?,
         trend,
         weights: weights.into_iter().map(|(_, _, w)| w).collect(),
         span: span_days as usize,
@@ -897,7 +960,10 @@ async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveS
     };
     let items = sqlx::query!(
         r#"SELECT sli.exercise AS "exercise!", e.name AS "name!",
-                  (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = sli.exercise) AS "last"
+                  (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = sli.exercise) AS "last",
+                  (SELECT e2.sort FROM training_set ts JOIN effort e2 ON e2.id = ts.effort
+                   WHERE ts.exercise = sli.exercise
+                   ORDER BY julianday(ts.date) DESC, ts.id DESC LIMIT 1) AS last_effort_rank
            FROM session_list_item sli JOIN exercise e ON e.id = sli.exercise
            WHERE sli.session = ?1 ORDER BY sli.position"#,
         r.id
@@ -917,6 +983,7 @@ async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveS
             name: i.name,
             last_used: i.last.as_deref().and_then(local_date).map(iso),
             sets: 0,
+            last_effort: i.last_effort_rank,
         })
         .collect();
     for s in &sets {
@@ -1023,16 +1090,35 @@ pub async fn exercise_window(db: &Db, session: i64, exercise: i64) -> Res<Exerci
     let target_rep = p.as_ref().map(|p| p.target_rep).unwrap_or(8);
 
     let all = all_sets(db).await?;
-    let mut by_session: BTreeMap<NaiveDate, Vec<&RawSet>> = BTreeMap::new();
+    // A deload session's rows are shown in the history but are not the numbers
+    // to beat: its lighter load is deliberate, and treating it as the last
+    // performance would read the planned dip as a regression.
+    let deloaded: HashMap<i64, bool> =
+        sqlx::query!(r#"SELECT id AS "id!", deload AS "deload!" FROM session"#)
+            .fetch_all(&db.pool)
+            .await?
+            .into_iter()
+            .map(|r| (r.id, r.deload != 0))
+            .collect();
+    let mut by_session: BTreeMap<NaiveDate, (bool, Vec<&RawSet>)> = BTreeMap::new();
     for s in all
         .iter()
         .filter(|s| s.exercise == exercise && s.session != session)
     {
         if let Some(d) = local_date(&s.date) {
-            by_session.entry(d).or_default().push(s);
+            let entry = by_session.entry(d).or_insert_with(|| {
+                (
+                    deloaded.get(&s.session).copied().unwrap_or(false),
+                    Vec::new(),
+                )
+            });
+            entry.1.push(s);
         }
     }
-    let mut finished: Vec<(NaiveDate, Vec<&RawSet>)> = by_session.into_iter().collect();
+    let mut finished: Vec<(NaiveDate, bool, Vec<&RawSet>)> = by_session
+        .into_iter()
+        .map(|(d, (deload, sets))| (d, deload, sets))
+        .collect();
     finished.reverse();
 
     // The best set of a session is the one with the highest estimated 1RM: one
@@ -1046,13 +1132,23 @@ pub async fn exercise_window(db: &Db, session: i64, exercise: i64) -> Res<Exerci
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(_, e)| e)
     };
-    let last = finished.first().and_then(|(_, s)| best(s));
-    let prev = finished.get(1).and_then(|(_, s)| best(s));
+    let normal: Vec<&(NaiveDate, bool, Vec<&RawSet>)> =
+        finished.iter().filter(|(_, deload, _)| !*deload).collect();
+    let last = normal.first().and_then(|(_, _, s)| best(s));
+    let prev = normal.get(1).and_then(|(_, _, s)| best(s));
+    let last_sets = normal.first().map(|(_, _, s)| s.len() as i64).unwrap_or(0);
+    let last_date = normal.first().map(|(d, _, _)| iso(*d)).unwrap_or_default();
     let advice = if live.deload != 0 {
         last.map(|l| {
+            // Half the sets, rounded up: half of three sets is a session of
+            // two, and a deload of no sets is not a session.
+            let half_sets = ((last_sets + 1) / 2).max(1);
             format!(
-                "Deload session: {:.1} kg at half the sets, then rebuild from there.",
-                l.load / 2.0
+                "Deload session: {:.1} kg for {} set(s) — half of {:.1} kg × {} set(s) from {last_date}. Rebuild from the normal numbers afterwards.",
+                l.load / 2.0,
+                half_sets,
+                l.load,
+                last_sets,
             )
         })
     } else {
@@ -1061,10 +1157,11 @@ pub async fn exercise_window(db: &Db, session: i64, exercise: i64) -> Res<Exerci
     let history: Vec<HistorySession> = finished
         .iter()
         .take(3)
-        .map(|(d, sets)| HistorySession {
+        .map(|(d, deload, sets)| HistorySession {
             date: iso(*d),
             place: String::new(),
             effort: sets.iter().filter_map(|s| s.effort.clone()).next(),
+            deload: *deload,
             sets: sets
                 .iter()
                 .map(|s| HistorySet {
@@ -1224,14 +1321,7 @@ pub async fn gym_analysis(db: &Db, span_days: i64, want: Option<i64>) -> Res<Gym
         }
     });
 
-    let deloads: Vec<i64> = sqlx::query!(r#"SELECT id AS "id!" FROM session WHERE deload = 1"#)
-        .fetch_all(&db.pool)
-        .await?
-        .iter()
-        .filter_map(|r| dates.get(&r.id))
-        .filter(|d| **d >= from)
-        .map(|d| days(*d))
-        .collect();
+    let deloads = deload_spans(db, from).await?;
 
     Ok(GymAnalysis {
         exercises: rows,
@@ -1254,7 +1344,7 @@ pub async fn exercise_history(db: &Db, exercise: i64, limit: i64) -> Res<History
     let rows = sqlx::query!(
         r#"
 SELECT s.date, p.name AS "place!", ts.load AS "load!", ts.rep AS "rep!", ts.note AS "note!",
-       e.name AS "effort"
+       s.deload AS "deload!", e.name AS "effort"
 FROM training_set ts
 JOIN session s ON s.id = ts.session
 JOIN place p ON p.id = s.place
@@ -1296,6 +1386,7 @@ ORDER BY julianday(s.date) DESC, ts.position
                 date,
                 place: r.place,
                 effort: r.effort,
+                deload: r.deload != 0,
                 sets: vec![set],
             }),
         }

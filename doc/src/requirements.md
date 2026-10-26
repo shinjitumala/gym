@@ -92,7 +92,17 @@ Acceptance criteria:
 - [x] **The cut/bulk switch is on this page**, and starting a phase records it
       from that date; past sessions keep the phase they were trained in.
 - [x] **A session can be marked as a deload after it starts**, on the session
-      row, and a deload session's advice is half the last load.
+      row, so entering one is a choice and nothing switches by itself; the
+      reminder stays visible whether or not it is taken up.
+- [x] **A deload session's advice is half the last load and half the sets**,
+      drawn from the last session trained normally and naming its numbers, so
+      the reader can see what the halving is half of. The deload's own rows are
+      shown in the history but are never the numbers to beat afterwards: the
+      session after it compares against the normal session again.
+- [x] **A superset records two or more exercises as one unit**: one load for the
+      group, a rep count for each exercise, saved in one action. A blank rep row
+      keeps that exercise out, so the group is exactly the exercises that were
+      given reps, and the checklist marks each of them done.
 
 ## Daily · food
 
@@ -154,12 +164,32 @@ Acceptance criteria:
 - [x] **Gym · analyse** plots one chosen exercise's estimated 1RM, overlaid with
       sets per week for that exercise and for the exercises that share its main
       muscle group on a second scale, and the time range can be changed.
+- [x] **Gym · analyse shades the deload weeks** behind the strength line rather
+      than dropping them, so the trend keeps every session's point, and the
+      legend names the band.
 - [x] **Weight · analyse** plots weight and body fat over a chosen range, with
-      the weight line coloured by the phase each weigh-in was taken in.
+      the weight line coloured by the phase each weigh-in was taken in, and the
+      deload weeks shaded behind it.
 - [x] **Under the weight line, the intake bars** are drawn per day, switchable
       between calories and each macro, and pressing or hovering a bar names the
       foods that made that day.
+- [x] **Under the bars, the foods in the range are ranked** by what they
+      contributed to the metric on show — calories or one of the macros — with
+      each food's share of the range beside it. The ranking covers the whole
+      chosen range, not the picked day.
 - [x] **The analysis pages write nothing**: every request from them is a read.
+
+### The per-food ranking has no page of its own
+
+The redesign retired the food analysis page, and the ranking moved with the
+intake chart instead of returning as a page: the chart is read against the
+weight trend over one window, and a ranking is the same window summed by food,
+so putting it under the bars answers "which food is supplying my calories"
+beside the day-by-day question without a second query or a fourth analysis
+surface. Food still has no analysis page, and the food list on food's edit page
+stays ordered by recency, because that list is a picker's order and not a
+ranking. A ranking that needed its own window would be a second analysis page
+for food, and that is the thing this design refuses.
 
 ## How it is tested
 

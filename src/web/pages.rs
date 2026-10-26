@@ -1640,10 +1640,35 @@ fn WeightAnalysisView(d: WeightAnalysis) -> impl IntoView {
             .collect()
     };
     let days = d.days.clone();
+    let ranking = d.ranking.clone();
     let chosen = move || {
         day.get()
             .or(Some(last))
             .and_then(|d| days.iter().find(|x| x.day == d).cloned())
+    };
+    // The ranking is the range's answer, not one day's: every food's total over
+    // the whole window, re-sorted by the metric the bars are showing.
+    let ranked = move || -> Vec<(String, f64)> {
+        let m = metric.get();
+        let mut rows: Vec<(String, f64)> = ranking
+            .iter()
+            .map(|s| {
+                let v = match m.as_str() {
+                    "protein" => s.protein,
+                    "fat" => s.fat,
+                    "carbohydrate" => s.carbohydrate,
+                    _ => s.kcal,
+                };
+                (s.food.clone(), v)
+            })
+            .filter(|(_, v)| *v > 0.0)
+            .collect();
+        rows.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        rows
     };
     view! {
         <Section title="Weight by phase">
@@ -1654,6 +1679,7 @@ fn WeightAnalysisView(d: WeightAnalysis) -> impl IntoView {
                     <charts::PhaseLine
                         points=points
                         phases=d.phases.clone()
+                        deloads=d.deloads.clone()
                         unit="kg"
                     />
                 }
@@ -1759,6 +1785,57 @@ fn WeightAnalysisView(d: WeightAnalysis) -> impl IntoView {
                 }
                 None => view! { <Hint text="No day has intake in the window." /> }.into_any(),
             }}
+            <div class=PANEL id="food-ranking">
+                <div class=ROW>
+                    <span class=OK>"Foods over the range"</span>
+                    <span class=DIM>
+                        {move || match metric.get().as_str() {
+                            "protein" => "ranked by protein",
+                            "fat" => "ranked by fat",
+                            "carbohydrate" => "ranked by carbohydrate",
+                            _ => "ranked by calories",
+                        }}
+                    </span>
+                </div>
+                {move || {
+                    let rows = ranked();
+                    let unit = if metric.get() == "kcal" { "kcal" } else { "g" };
+                    if rows.is_empty() {
+                        view! { <Hint text="No meal in the window, so there is nothing to rank." /> }
+                            .into_any()
+                    } else {
+                        let total: f64 = rows.iter().map(|(_, v)| *v).sum();
+                        view! {
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>"food"</th>
+                                        <th class=RIGHT>{format!("{unit}")}</th>
+                                        <th class=RIGHT>"share"</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rows
+                                        .iter()
+                                        .map(|(name, v)| {
+                                            let share = if total > 0.0 { v / total * 100.0 } else { 0.0 };
+                                            view! {
+                                                <tr>
+                                                    <td>{name.clone()}</td>
+                                                    <td class=RIGHT>{kcal(*v)}</td>
+                                                    <td class=RIGHT>{format!("{share:.0}%")}</td>
+                                                </tr>
+                                            }
+                                        })
+                                        .collect_view()}
+                                </tbody>
+                            </table>
+                        }
+                            .into_any()
+                    }
+                }}
+                <Hint text="The ranking is the whole range, so it answers which food the calories or the protein came from, not just what one day held." />
+            </div>
         </Section>
     }
 }
@@ -1887,6 +1964,7 @@ fn GymDailyView(
                                         live=live
                                         presets=presets
                                         exercises=exercises
+                                        efforts=efforts
                                         today=today
                                         saved=saved
                                         on_open=choose
@@ -2052,6 +2130,7 @@ fn LiveSessionView(
     live: LiveSession,
     presets: Vec<GymPreset>,
     exercises: Vec<ExerciseRow>,
+    efforts: Vec<EffortRow>,
     today: String,
     saved: Callback<()>,
     on_open: Callback<i64>,
@@ -2197,6 +2276,8 @@ fn LiveSessionView(
             }}
         </div>
 
+        <SupersetPanel live=live.clone() efforts=efforts saved=saved />
+
         <Picker
             label="add an exercise · most recently trained first"
             placeholder="filter exercises"
@@ -2217,6 +2298,169 @@ fn LiveSessionView(
             <Outcome outcome=outcome />
         </div>
         <Hint text="Ending a session with no sets discards it. The exercise window is where a set is recorded, with its effort and the time it was saved." />
+    }
+}
+
+/// Two or more checklist exercises recorded as one superset: one group, one
+/// load, and a rep count per exercise.
+///
+/// A superset is a unit, not two adjacent rows, so it is written in one action
+/// and the sets carry the group's id. A blank rep row keeps that exercise out
+/// of the group: the superset is exactly the exercises that were given reps.
+#[component]
+fn SupersetPanel(live: LiveSession, efforts: Vec<EffortRow>, saved: Callback<()>) -> impl IntoView {
+    let session = live.id;
+    let items = live.list.clone();
+    // The effort defaults to the last one recorded for the group's first
+    // exercise, the same way a single set's form defaults: the group's effort is
+    // one judgement about the round, and an absent one would leave the rows out
+    // of every later comparison.
+    let effort0 = items.first().and_then(|i| i.last_effort);
+    let load = NodeRef::<leptos::html::Input>::new();
+    let effort = NodeRef::<leptos::html::Select>::new();
+    let note = NodeRef::<leptos::html::Input>::new();
+    let reps: Vec<NodeRef<leptos::html::Input>> =
+        (0..items.len()).map(|_| NodeRef::new()).collect();
+    let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
+    let action = Action::new(move |args: &(i64, String, String, String, String)| {
+        let (session, load, reps, effort, note) = args.clone();
+        async move { crate::web::api::act_log_superset(session, load, reps, effort, note).await }
+    });
+    Effect::new(move |_| {
+        if let Some(r) = action.value().get() {
+            if r.is_ok() {
+                saved.run(());
+            }
+            set_outcome.set(Some(r));
+        }
+    });
+    // The groups already in this session, in the order they were saved.
+    let mut groups: Vec<(i64, f64, Vec<(String, f64)>)> = Vec::new();
+    for s in &live.sets {
+        if let Some(group) = s.superset {
+            match groups.iter_mut().find(|(id, _, _)| *id == group) {
+                Some((_, _, rows)) => rows.push((s.exercise.clone(), s.rep)),
+                None => groups.push((group, s.load, vec![(s.exercise.clone(), s.rep)])),
+            }
+        }
+    }
+    let reps_for_submit = reps.clone();
+    let items_for_submit = items.clone();
+    view! {
+        <div class=PANEL>
+            <div class=ROW>
+                <span class=OK>"superset"</span>
+                <span class=DIM>
+                    "one load for a group of exercises, and a rep count for each"
+                </span>
+            </div>
+            {groups
+                .iter()
+                .enumerate()
+                .map(|(n, (_, load, rows))| {
+                    view! {
+                        <div class=ROW>
+                            <span class=WARN>
+                                {format!("superset {} · {:.1} kg", n + 1, load)}
+                            </span>
+                            <span class=DIM>
+                                {rows
+                                    .iter()
+                                    .map(|(name, rep)| format!("{name} × {}", one(*rep)))
+                                    .collect::<Vec<_>>()
+                                    .join("  ")}
+                            </span>
+                        </div>
+                    }
+                })
+                .collect_view()}
+            {if items.len() < 2 {
+                view! {
+                    <Hint text="A superset needs two exercises on the checklist: apply a preset or add them above." />
+                }
+                    .into_any()
+            } else {
+                view! {
+                    <form on:submit=move |e| {
+                        e.prevent_default();
+                        let reps = items_for_submit
+                            .iter()
+                            .zip(reps_for_submit.iter())
+                            .filter_map(|(item, r)| {
+                                let v = value_of(r.clone(), "");
+                                let v = v.trim().to_string();
+                                (!v.is_empty()).then(|| format!("{}:{}", item.exercise, v))
+                            })
+                            .collect::<Vec<_>>()
+                            .join(";");
+                        action
+                            .dispatch((
+                                session,
+                                value_of(load, ""),
+                                reps,
+                                chosen(effort),
+                                value_of(note, ""),
+                            ));
+                    }>
+                        <div class=LINE>
+                            <label class=NARROW>
+                                "load"
+                                <input type="text" class="ss-load" size="5" value="" node_ref=load />
+                            </label>
+                            <label class=GROW>
+                                "effort"
+                                <select class="ss-effort" node_ref=effort>
+                                    {efforts
+                                        .iter()
+                                        .map(|x| {
+                                            let sel = effort0 == Some(x.rank);
+                                            view! {
+                                                <option value=x.name.clone() selected=sel title=x.hint.clone()>
+                                                    {format!("{} · {}", x.name, x.hint)}
+                                                </option>
+                                            }
+                                        })
+                                        .collect_view()}
+                                </select>
+                            </label>
+                            <label class=GROW>
+                                "note (optional)"
+                                <input type="text" class="ss-note" size="10" value="" node_ref=note />
+                            </label>
+                        </div>
+                        <div class=ROW>
+                            {items
+                                .iter()
+                                .zip(reps.iter())
+                                .map(|(item, r)| {
+                                    let r = r.clone();
+                                    view! {
+                                        <label class=NARROW>
+                                            {item.name.clone()}
+                                            <input
+                                                type="text"
+                                                class="ss-rep"
+                                                size="3"
+                                                placeholder="reps"
+                                                value=""
+                                                node_ref=r
+                                            />
+                                        </label>
+                                    }
+                                })
+                                .collect_view()}
+                        </div>
+                        <div class=ROW>
+                            <button type="submit" disabled=move || action.pending().get()>
+                                "save superset"
+                            </button>
+                            <Outcome outcome=outcome />
+                        </div>
+                    </form>
+                }
+                    .into_any()
+            }}
+        </div>
     }
 }
 
@@ -2347,6 +2591,11 @@ fn WindowBody(
                             view! {
                                 <div class=ROW>
                                     <span class=DIM>{h.date.clone()}</span>
+                                    {if h.deload {
+                                        view! { <span class=WARN>"deload"</span> }.into_any()
+                                    } else {
+                                        ().into_any()
+                                    }}
                                     <span class=GROW>
                                         {h
                                             .sets
@@ -3523,6 +3772,7 @@ fn GymAnalysisView(a: GymAnalysis, on_pick: Callback<i64>) -> impl IntoView {
                                     strength_unit="kg".to_string()
                                     volume=series
                                     volume_unit="sets/wk".to_string()
+                                    deloads=a.deloads.clone()
                                 />
                             }
                                 .into_any()
@@ -3542,7 +3792,10 @@ fn GymAnalysisView(a: GymAnalysis, on_pick: Callback<i64>) -> impl IntoView {
             } else {
                 view! {
                     <div class=ROW>
-                        <span class=WARN>{format!("{} deload session(s) in the window", a.deloads.len())}</span>
+                        <span class=WARN>{format!(
+                            "{} deload week(s) in the window, shaded rather than dropped",
+                            a.deloads.len(),
+                        )}</span>
                     </div>
                 }
                     .into_any()

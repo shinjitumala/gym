@@ -234,12 +234,15 @@ Acceptance criteria:
 
 Status: superseded by [Weight · analysis](#feature-weight--analysis). The intake
 chart is read against the weight trend, so it is drawn under it rather than on a
-page of its own, and the food rankings moved to food's edit page.
+page of its own, and the per-food view is the range's ranking under that chart:
+food keeps no analysis page, so the ranking moved beside the bars instead of
+returning as one. What that decision buys is on
+[the requirements page](requirements.md#the-per-food-ranking-has-no-page-of-its-own).
 
 ## Feature: Weight · analysis
 
 Status: works. Weight and body fat over a chosen range, with the intake bars
-underneath.
+underneath, the range's foods ranked beside them, and the deload weeks shaded.
 
 Acceptance criteria:
 
@@ -252,13 +255,15 @@ Acceptance criteria:
       each contributed.
 - [x] A range can be chosen, and the page states the range and how many of its
       days count as logged.
-- [ ] The chart marks deload sessions and phase boundaries.
+- [x] The chart marks deload sessions and phase boundaries: the weight line is
+      coloured per phase, and the deload weeks are shaded behind it.
 
 ## Feature: Gym · daily
 
 Status: works. A session is started from a place, filled from a preset or from
 the exercise list, recorded one exercise at a time through the exercise window,
-and ended. Supersets and inferred rows are still missing.
+and ended; a deload is marked on the session and a superset is recorded as one
+group. Inferred rows from the migration are still missing from the analysis.
 
 Acceptance criteria:
 
@@ -279,13 +284,14 @@ Acceptance criteria:
       sets above 30 reps.
 - [ ] The phase's target is shown beside the last performance: more load in a
       bulk, the same load at more reps in a cut.
-- [ ] A deload reminder appears once `deload_weeks` has passed since the last
+- [x] A deload reminder appears once `deload_weeks` has passed since the last
       deload session, and the week count and the reminder are both visible.
-- [ ] Entering deload mode is an explicit opt-in on the session; nothing switches
+- [x] Entering deload mode is an explicit opt-in on the session; nothing switches
       by itself, and declining leaves the reminder in place.
-- [ ] A deload session's suggested target is half the load and half the sets, for
-      that session only.
-- [ ] Two or more exercises can be recorded as one superset group, each with
+- [x] A deload session's suggested target is half the load and half the sets,
+      drawn from the last session trained normally, for that session only: the
+      deload's rows are shown in the history but are not the numbers to beat.
+- [x] Two or more exercises can be recorded as one superset group, each with
       its own reps, sharing the load.
 - [x] A preset can be applied as the session's checklist, items can be completed
       in any order, and the checklist is stored per session, so editing the
@@ -326,7 +332,7 @@ Acceptance criteria:
       strength line, so the question "did strength move when the volume did" is
       one chart.
 - [x] The time range can be changed.
-- [ ] Deload weeks are shaded rather than dropped, so the trend keeps its
+- [x] Deload weeks are shaded rather than dropped, so the trend keeps its
       points.
 - [ ] Inferred rows from the migration are included and marked as inferred.
 - [x] Exercises with no muscle group are listed, so an empty analysis is

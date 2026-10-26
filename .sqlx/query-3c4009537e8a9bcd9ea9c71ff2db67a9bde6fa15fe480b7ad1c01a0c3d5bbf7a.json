@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT s.date, p.name AS \"place!\", ts.load AS \"load!\", ts.rep AS \"rep!\", ts.note AS \"note!\",\n       e.name AS \"effort\"\nFROM training_set ts\nJOIN session s ON s.id = ts.session\nJOIN place p ON p.id = s.place\nLEFT JOIN effort e ON e.id = ts.effort\nWHERE ts.exercise = ?1\n  AND ts.session IN (\n      SELECT ts2.session FROM training_set ts2\n      WHERE ts2.exercise = ?1\n      GROUP BY ts2.session\n      ORDER BY MAX(julianday(ts2.date)) DESC\n      LIMIT ?2\n  )\nORDER BY julianday(s.date) DESC, ts.position\n",
+  "query": "\nSELECT s.date, p.name AS \"place!\", ts.load AS \"load!\", ts.rep AS \"rep!\", ts.note AS \"note!\",\n       s.deload AS \"deload!\", e.name AS \"effort\"\nFROM training_set ts\nJOIN session s ON s.id = ts.session\nJOIN place p ON p.id = s.place\nLEFT JOIN effort e ON e.id = ts.effort\nWHERE ts.exercise = ?1\n  AND ts.session IN (\n      SELECT ts2.session FROM training_set ts2\n      WHERE ts2.exercise = ?1\n      GROUP BY ts2.session\n      ORDER BY MAX(julianday(ts2.date)) DESC\n      LIMIT ?2\n  )\nORDER BY julianday(s.date) DESC, ts.position\n",
   "describe": {
     "columns": [
       {
@@ -59,8 +59,19 @@
         }
       },
       {
-        "name": "effort",
+        "name": "deload!",
         "ordinal": 5,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "session",
+            "name": "deload"
+          }
+        }
+      },
+      {
+        "name": "effort",
+        "ordinal": 6,
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -79,8 +90,9 @@
       false,
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "ffb8dcfec9703c4cf4c80014c4032f32f59c6f461c90f3316c5289736d9a5be3"
+  "hash": "3c4009537e8a9bcd9ea9c71ff2db67a9bde6fa15fe480b7ad1c01a0c3d5bbf7a"
 }

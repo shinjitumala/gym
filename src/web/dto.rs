@@ -53,7 +53,7 @@ pub struct FoodRow {
     pub name: String,
     pub per_unit: Totals,
     pub note: String,
-    /// Times it was eaten, for the ranking on the analysis page.
+    /// Times it was eaten, shown beside the food on the edit page.
     pub eaten: i64,
     /// The last day it was eaten, `YYYY-MM-DD`, or `None` if never.
     pub last_used: Option<String>,
@@ -156,6 +156,13 @@ pub struct PhaseSpan {
     pub to: i64,
 }
 
+/// A stretch of days a chart marks, such as the week a deload fell in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Span {
+    pub from: i64,
+    pub to: i64,
+}
+
 /// Food · daily.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FoodDaily {
@@ -218,6 +225,8 @@ pub struct HistorySession {
     pub date: String,
     pub place: String,
     pub effort: Option<String>,
+    /// A deload session is shown, but not used as the numbers to beat.
+    pub deload: bool,
     pub sets: Vec<HistorySet>,
 }
 
@@ -287,6 +296,11 @@ pub struct WeightAnalysis {
     pub bodyfat: Vec<PointRow>,
     pub days: Vec<DayRow>,
     pub weights: Vec<WeightRow>,
+    /// Every food in the range and what it contributed, complete rather than
+    /// cut to a day's top few, for the ranking under the bars.
+    pub ranking: Vec<SplitRow>,
+    /// The deload weeks in the window, so the line can shade them.
+    pub deloads: Vec<Span>,
     pub span: usize,
     pub logged_days: usize,
     pub maintenance: Option<MaintenanceView>,
@@ -376,6 +390,8 @@ pub struct ChecklistRow {
     pub last_used: Option<String>,
     /// Sets recorded for this exercise in this session.
     pub sets: i64,
+    /// The effort of the last set recorded for it, for the default.
+    pub last_effort: Option<i64>,
 }
 
 /// The session being recorded.
@@ -507,8 +523,8 @@ pub struct GymAnalysis {
     pub exercises: Vec<PickRow>,
     pub chosen: Option<AnalysisSeries>,
     pub span: usize,
-    /// The deload sessions in the window, so the chart can mark them.
-    pub deloads: Vec<i64>,
+    /// The deload weeks in the window, so the chart can shade them.
+    pub deloads: Vec<Span>,
 }
 
 /// The database the server is reading, for the header.

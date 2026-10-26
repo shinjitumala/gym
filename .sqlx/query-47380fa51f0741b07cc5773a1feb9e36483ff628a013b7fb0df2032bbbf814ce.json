@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COALESCE(MAX(position), -1) FROM training_set WHERE session = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "COALESCE(MAX(position), -1)",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "47380fa51f0741b07cc5773a1feb9e36483ff628a013b7fb0df2032bbbf814ce"
+}

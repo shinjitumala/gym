@@ -416,6 +416,27 @@ pub async fn apply_exercise_preset(db: &Db, session: i64, preset: i64) -> Res<us
     Ok(added)
 }
 
+/// Refuse to write to a session that has ended, or that does not exist.
+///
+/// Every set and every superset group goes through here, so a page left open
+/// on a finished session fails with a sentence rather than tucking a row into
+/// yesterday's log.
+async fn open_session(db: &Db, session: i64) -> Res<()> {
+    let ended: Option<Option<String>> =
+        sqlx::query_scalar!(r#"SELECT ended FROM session WHERE id = ?1"#, session)
+            .fetch_optional(&db.pool)
+            .await?;
+    match ended {
+        None => Err(crate::util::Err::Str(format!(
+            "No session with id '{session}'."
+        ))),
+        Some(Some(_)) => Err(crate::util::Err::Str(
+            "That session has ended; start a new one.".to_string(),
+        )),
+        Some(None) => Ok(()),
+    }
+}
+
 /// Record one set: the row is stamped with the moment it was saved.
 ///
 /// The effort is stored as a row, so the ranking lives in the database rather
@@ -432,15 +453,7 @@ pub async fn log_set(
     if load < 0.0 || rep <= 0.0 {
         Err("A set needs a load of at least zero and at least one rep.".to_string())?;
     }
-    let ended: Option<Option<String>> =
-        sqlx::query_scalar!(r#"SELECT ended FROM session WHERE id = ?1"#, session)
-            .fetch_optional(&db.pool)
-            .await?;
-    match ended {
-        None => Err(format!("No session with id '{session}'."))?,
-        Some(Some(_)) => Err("That session has ended; start a new one.".to_string())?,
-        Some(None) => {}
-    }
+    open_session(db, session).await?;
     let at = Local::now().to_rfc3339();
     let mut tx = db.pool.begin().await?;
     sqlx::query!(
@@ -469,6 +482,79 @@ pub async fn log_set(
     .await?;
     tx.commit().await?;
     Ok(id)
+}
+
+/// Record two or more exercises as one superset: one group row and one set per
+/// exercise, sharing the load and each with its own reps.
+///
+/// The group is what makes a superset more than two adjacent rows: the sets
+/// carry its id, so the log can say they were done back to back with no rest
+/// between them.
+pub async fn log_superset(
+    db: &Db,
+    session: i64,
+    load: f64,
+    reps: &[(i64, f64)],
+    effort: &str,
+    note: &str,
+) -> Res<i64> {
+    if load < 0.0 {
+        Err("A superset needs a load of at least zero.".to_string())?;
+    }
+    if reps.len() < 2 {
+        Err(
+            "A superset is two or more exercises: give a rep count for at least two of them."
+                .to_string(),
+        )?;
+    }
+    if reps.iter().any(|(_, rep)| *rep <= 0.0) {
+        Err("Every set of a superset needs at least one rep.".to_string())?;
+    }
+    open_session(db, session).await?;
+    let at = Local::now().to_rfc3339();
+    let mut tx = db.pool.begin().await?;
+    let group = sqlx::query_scalar!(
+        r#"INSERT INTO superset (session) VALUES (?1) RETURNING id AS "id!""#,
+        session
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let effort = effort_id(&mut *tx, effort).await?;
+    let mut position: i64 = sqlx::query_scalar!(
+        "SELECT COALESCE(MAX(position), -1) FROM training_set WHERE session = ?1",
+        session
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    for (exercise, rep) in reps {
+        position += 1;
+        sqlx::query!(
+            r#"INSERT INTO session_list_item (session, exercise, position)
+               SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1 FROM session_list_item WHERE session = ?1
+               ON CONFLICT (session, exercise) DO NOTHING"#,
+            session,
+            exercise
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query!(
+            r#"INSERT INTO training_set (session, exercise, position, date, load, rep, note, effort, superset)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"#,
+            session,
+            exercise,
+            position,
+            at,
+            load,
+            rep,
+            note,
+            effort,
+            group
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(group)
 }
 
 /// End the open session.

@@ -29,9 +29,9 @@ phone never gets a menu:
 
 | Tab | Daily | Edit (bottom) | Analyse (bottom) |
 |-----|-------|---------------|------------------|
-| gym | Start a session, the checklist, the exercise window, the phase switch, recent sessions. | Sessions and sets, exercises and muscle groups, gym presets, places. | One exercise's strength, overlaid with sets per week for it and its muscle group. |
+| gym | Start a session, the checklist, the exercise window, the superset form, the phase switch, recent sessions. | Sessions and sets, exercises and muscle groups, gym presets, places. | One exercise's strength, overlaid with sets per week for it and its muscle group, and the deload weeks shaded. |
 | food | Today's totals against maintenance, the meal being entered, the day's meals. | Meals, foods, meal presets. | — the intake chart lives under weight, beside the trend it is read against. |
-| weight | The trend and the last weigh-in, the weigh-in form, recent weigh-ins. | Past weigh-ins. | Weight and body fat by phase, with the intake bars underneath. |
+| weight | The trend and the last weigh-in, the weigh-in form, recent weigh-ins. | Past weigh-ins. | Weight and body fat by phase, with the intake bars underneath and the range's foods ranked beside them. |
 
 `/status` shows the database file, the remote, and the row counts.
 
@@ -58,6 +58,17 @@ not for the message.
   used for that exercise, offers the three efforts with what each means, and
   prints the advice for the next set beside the last three sessions of that
   exercise. `✕` goes back to the checklist.
+- **A superset is one unit.** Two or more checklist exercises are given one
+  load and a rep count each, and saved together: the sets share the group's id,
+  so the log can say they were done back to back. A blank rep row keeps that
+  exercise out of the group.
+- **A deload is marked on the session**, never entered automatically: when the
+  configured number of weeks has passed since the last one, the daily page says
+  so and leaves the decision to the reader. A deload session's advice is half
+  the last load and half its sets, named from the last session trained
+  normally. The deload's rows stay in the history, marked, but the sessions
+  after it compare against the normal numbers again — a planned dip is not a
+  regression.
 - **Effort is part of the record, not a note.** A set's effort is a row in
   `effort`, so its rank (closer to failure is a smaller number) is what the
   recommendation compares before load and reps. See
@@ -83,6 +94,20 @@ the refusal says how many rows use it.
   says so.
 - **A deload is a session's flag**, not a set's: the toggle sits on the session
   row, because a deload is a week's plan.
+
+## Charts
+
+Both analysis pages draw with inline SVG, and both say what their range is. A
+deload week is a band behind the line rather than a gap in it: the session still
+has its point and the band says why the load dipped. The weight line's colour
+comes from the phase each weigh-in was taken in, so a phase boundary is visible
+without a second mark.
+
+Under the weight line, the intake bars show one day at a time. Beneath them, the
+foods in the whole range are ranked by the metric the bars are showing, with each
+one's share — the same window summed by food, which is what the per-food view is
+now. Food has no analysis page; the reason the ranking lives here is written down
+on [the requirements page](requirements.md#the-per-food-ranking-has-no-page-of-its-own).
 
 ## What the numbers mean
 

@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!\", deload AS \"deload!\" FROM session",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "session",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "deload!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "session",
+            "name": "deload"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a8292a32548f941bcde32e0464464bb9757082748f6f23bf95f7871c4892a207"
+}

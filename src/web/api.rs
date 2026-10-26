@@ -382,6 +382,38 @@ pub async fn act_log_set(
 }
 
 #[server(input = Json)]
+pub async fn act_log_superset(
+    session: i64,
+    load: String,
+    reps: String,
+    effort: String,
+    note: String,
+) -> Result<String, ServerFnError> {
+    let db = open().await?;
+    let load = crate::web::actions::num(&load, "load").map_err(error)?;
+    // `exercise:reps` pairs, one per exercise in the group.
+    let mut pairs: Vec<(i64, f64)> = Vec::new();
+    for pair in reps.split(';').filter(|p| !p.trim().is_empty()) {
+        let (exercise, rep) = pair
+            .split_once(':')
+            .ok_or_else(|| error(format!("'{pair}' is not an exercise and a rep count.")))?;
+        let exercise: i64 = exercise
+            .trim()
+            .parse()
+            .map_err(|_| error(format!("'{exercise}' is not an exercise id.")))?;
+        let rep = crate::web::actions::num(rep, "rep").map_err(error)?;
+        pairs.push((exercise, rep));
+    }
+    let group = crate::web::actions::log_superset(&db, session, load, &pairs, &effort, &note)
+        .await
+        .map_err(error)?;
+    Ok(format!(
+        "Recorded superset #{group}: {load} kg for {} exercise(s).",
+        pairs.len()
+    ))
+}
+
+#[server(input = Json)]
 pub async fn act_end_session(session: i64) -> Result<String, ServerFnError> {
     let db = open().await?;
     crate::web::actions::end_session(&db, session)

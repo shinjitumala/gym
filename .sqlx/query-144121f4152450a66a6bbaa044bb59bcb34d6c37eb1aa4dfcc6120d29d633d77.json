@@ -1,16 +1,16 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!\" FROM session WHERE deload = 1",
+  "query": "SELECT date FROM session WHERE deload = 1",
   "describe": {
     "columns": [
       {
-        "name": "id!",
+        "name": "date",
         "ordinal": 0,
-        "type_info": "Integer",
+        "type_info": "Text",
         "origin": {
           "Table": {
             "table": "session",
-            "name": "id"
+            "name": "date"
           }
         }
       }
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "f4f0a881a744ddd63b6ed457e74d97cdf259d647b1f06fe02432e2757cbed0b1"
+  "hash": "144121f4152450a66a6bbaa044bb59bcb34d6c37eb1aa4dfcc6120d29d633d77"
 }

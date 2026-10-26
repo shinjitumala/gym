@@ -5,8 +5,8 @@
 //! chart here says what its range is, and the ones that must not draw a line
 //! (too few weigh-ins) simply do not.
 
-use crate::web::dto::PhaseSpan;
-use crate::web::ui::{day_label, DIM, OK, ROW};
+use crate::web::dto::{PhaseSpan, Span};
+use crate::web::ui::{day_label, DIM, OK, ROW, WARN};
 use leptos::prelude::*;
 
 const W: f64 = 720.0;
@@ -49,6 +49,34 @@ fn path(points: &[(i64, f64)], x0: f64, x1: f64, y0: f64, y1: f64) -> String {
         .map(|(x, y)| format!("{:.1},{:.1}", px(*x as f64, x0, x1), py(*y, y0, y1)))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// The deload weeks, as bands behind a chart's line.
+///
+/// Shading rather than dropping: the deload's points stay on the line, and the
+/// band says why they are where they are. A week is a stretch of days, so the
+/// band runs from the Monday to the Sunday, clipped to the chart's x range.
+#[component]
+fn Shade(#[prop(into)] spans: Vec<Span>, x0: f64, x1: f64) -> impl IntoView {
+    spans
+        .into_iter()
+        .map(|s| {
+            let left = px(s.from as f64, x0, x1).max(PAD);
+            let right = px((s.to + 1) as f64, x0, x1).min(W - PAD);
+            view! {
+                <rect
+                    class="deload-week"
+                    x=left
+                    y=PAD
+                    width=(right - left).max(2.0)
+                    height=H - 2.0 * PAD
+                    fill="#3f2f0a"
+                >
+                    <title>{format!("deload week from {}", day_label(s.from))}</title>
+                </rect>
+            }
+        })
+        .collect_view()
 }
 
 /// A line chart of `points`, with a dashed fitted line when one was given.
@@ -117,6 +145,9 @@ pub fn PhaseLine(
     #[prop(into)] points: Vec<(i64, f64)>,
     #[prop(into)] phases: Vec<PhaseSpan>,
     #[prop(into)] unit: String,
+    /// The deload weeks to shade behind the line.
+    #[prop(optional, into)]
+    deloads: Vec<Span>,
 ) -> impl IntoView {
     let x0 = x_range(&points).0;
     let x1 = x_range(&points).1;
@@ -174,12 +205,15 @@ pub fn PhaseLine(
         .collect();
     let first = x0 as i64;
     let last = x1 as i64;
+    let shaded = !deloads.is_empty();
+    let spells = deloads.clone();
     view! {
         <svg
             class="w-full h-auto block border border-green-900 bg-black text-gray-500 text-[9px]"
             viewBox=format!("0 0 {W} {H}")
             preserveAspectRatio="none"
         >
+            <Shade spans=spells x0=x0 x1=x1 />
             <line stroke="#14532d" stroke-width="1" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
             <line stroke="#14532d" stroke-width="1" x1=PAD y1=PAD x2=PAD y2=H - PAD />
             <text x=PAD y=14.0>{format!("{:.1} {unit}", high(&points))}</text>
@@ -202,6 +236,15 @@ pub fn PhaseLine(
                 <span style="color: #60a5fa">"■ " </span>
                 "before the first phase"
             </span>
+            {shaded
+                .then(|| {
+                    view! {
+                        <span class=DIM>
+                            <span style="color: #3f2f0a">"■ " </span>
+                            "deload week"
+                        </span>
+                    }
+                })}
         </div>
     }
 }
@@ -225,6 +268,9 @@ pub fn Overlay(
     #[prop(into)] strength_unit: String,
     #[prop(into)] volume: Vec<Series>,
     #[prop(into)] volume_unit: String,
+    /// The deload weeks to shade behind the lines.
+    #[prop(optional, into)]
+    deloads: Vec<Span>,
 ) -> impl IntoView {
     let all: Vec<(i64, f64)> = strength
         .iter()
@@ -244,12 +290,15 @@ pub fn Overlay(
     let vy1 = vmax * 1.1;
     let first = x0 as i64;
     let last = x1 as i64;
+    let shaded = !deloads.is_empty();
+    let spells = deloads.clone();
     view! {
         <svg
             class="w-full h-auto block border border-green-900 bg-black text-gray-500 text-[9px]"
             viewBox=format!("0 0 {W} {H}")
             preserveAspectRatio="none"
         >
+            <Shade spans=spells x0=x0 x1=x1 />
             <line stroke="#14532d" stroke-width="1" x1=PAD y1=H - PAD x2=W - PAD y2=H - PAD />
             <line stroke="#14532d" stroke-width="1" x1=PAD y1=PAD x2=PAD y2=H - PAD />
             <line stroke="#14532d" stroke-width="1" x1=W - PAD y1=PAD x2=W - PAD y2=H - PAD />
@@ -295,6 +344,15 @@ pub fn Overlay(
                     }
                 })
                 .collect_view()}
+            {shaded
+                .then(|| {
+                    view! {
+                        <span class=DIM>
+                            <span class=WARN>"■ " </span>
+                            "deload week"
+                        </span>
+                    }
+                })}
         </div>
     }
 }
@@ -359,7 +417,7 @@ pub fn Intake(
                             width=(bw - 1.0).max(1.0)
                             height=h.max(0.5)
                             fill=colour
-                            class="cursor-crosshair"
+                            class="intake-bar cursor-crosshair"
                             on:mouseenter=move |_| on_pick.run(day)
                             on:click=move |_| on_pick.run(day)
                         >

@@ -23,6 +23,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -527,6 +528,29 @@ def gym_back_and_end_session(cdp, base):
     cdp.screenshot("gym-ended")
 
 
+def gym_analysis_shades_the_deload_week(cdp, base):
+    """The strength chart shades the deload week instead of dropping its point."""
+    cdp.go(f"{base}/gym/analyse")
+    cdp.until_text("main", "estimated 1RM", "the strength chart")
+    weeks = cdp.eval("document.querySelectorAll('main svg rect.deload-week').length")
+    need(weeks == 1, f"{weeks} deload bands drawn, not the one deload week")
+    panel = cdp.text("main")
+    need("deload week" in panel, f"the legend does not say what the band is: {panel[:500]!r}")
+    # The band is drawn behind the line, not in place of a point: the strength
+    # line still has one point per session in the window.
+    counted = re.search(r"(\d+) session\(s\) in the window", panel)
+    need(counted, f"the page does not say how many sessions it drew: {panel[:400]!r}")
+    drawn = cdp.eval(
+        "document.querySelector('main svg polyline[stroke-width=\"2\"]')"
+        ".getAttribute('points').trim().split(/\\s+/).length"
+    )
+    need(
+        int(drawn) == int(counted.group(1)),
+        f"the strength line has {drawn} points for {counted.group(1)} sessions, so a point was dropped",
+    )
+    cdp.screenshot("gym-analysis-deload")
+
+
 def food_food_list_is_sorted_by_last_eaten(cdp, base):
     """The food picker is ordered by the last meal of that food."""
     cdp.go(f"{base}/food")
@@ -603,12 +627,25 @@ def weight_trend_has_a_phase_colour(cdp, base):
     need(strokes, "the weight chart drew no line")
 
 
+def weight_analysis_marks_the_deload_week(cdp, base):
+    """The weight line shades the deload week it runs through."""
+    cdp.go(f"{base}/weight/analyse")
+    cdp.until_text("main", "Weight by phase")
+    weeks = cdp.eval("document.querySelectorAll('main svg rect.deload-week').length")
+    need(weeks == 1, f"{weeks} deload bands drawn, not the one deload week")
+    need(
+        "deload week" in cdp.text("main"),
+        "the weight chart's legend does not name the deload band",
+    )
+    cdp.screenshot("weight-analysis-deload")
+
+
 def weight_intake_bar_shows_the_food(cdp, base):
     """Pressing a bar names the foods that made that day."""
-    bars = cdp.eval("document.querySelectorAll('main svg rect').length")
+    bars = cdp.eval("document.querySelectorAll('main svg rect.intake-bar').length")
     need(bars, "the intake chart drew no bars")
     cdp.eval(
-        "(() => { const r = document.querySelectorAll('main svg rect');"
+        "(() => { const r = document.querySelectorAll('main svg rect.intake-bar');"
         "r[r.length - 1].dispatchEvent(new MouseEvent('click', {bubbles: true})); return true; })()"
     )
     cdp.until_text("main", "food", "the day's foods")
@@ -618,6 +655,27 @@ def weight_intake_bar_shows_the_food(cdp, base):
         f"the picked day does not name its foods: {panel!r}",
     )
     cdp.screenshot("weight-bars")
+
+
+def weight_foods_are_ranked_over_the_range(cdp, base):
+    """Under the bars, the range's foods are ranked in the shown metric."""
+    cdp.go(f"{base}/weight/analyse")
+    cdp.until_text("#food-ranking", "ranked by calories", "the range's food ranking")
+    cdp.until_text("#food-ranking tbody tr", "oats", "the ranked foods")
+    calories = cdp.text("#food-ranking tbody")
+    need(
+        calories.index("oats") < calories.index("chicken") < calories.index("rice"),
+        f"the calories are not ranked largest first: {calories!r}",
+    )
+    cdp.click("main button", "protein")
+    cdp.until_text("#food-ranking", "ranked by protein", "the ranking to switch metric")
+    protein = cdp.text("#food-ranking tbody")
+    need(
+        protein.index("chicken") < protein.index("oats"),
+        f"the protein ranking is not re-sorted: {protein!r}",
+    )
+    need("%" in protein, f"the ranking has no share of the range: {protein!r}")
+    cdp.screenshot("weight-ranking")
 
 
 def edit_tabs_are_the_three_modes(cdp, base):
@@ -640,19 +698,120 @@ def edit_tabs_are_the_three_modes(cdp, base):
     cdp.screenshot("edit")
 
 
+def gym_a_deload_is_opted_into(cdp, base):
+    """A deload is marked on the session, and its advice halves the load and
+    the sets, drawn from the last normal session."""
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "Start a session")
+    page = cdp.text("main")
+    need(
+        "weeks since the last deload" in page,
+        f"the deload reminder is missing: {page[:400]!r}",
+    )
+    cdp.click("main button", "start session")
+    cdp.until_text("main", "checklist", "the checklist after starting")
+    need(
+        "mark deload" in cdp.text("main") and "un-deload" not in cdp.text("main"),
+        "a new session already reads as a deload, so nothing is opted into",
+    )
+    cdp.click("main button", "mark deload")
+    cdp.until_text("main", "un-deload", "the session to be marked a deload")
+    cdp.click("main button", "push · 2 exercises")
+    cdp.until_text("main", "☐ bench press", "the preset's checklist")
+    cdp.click_contains("main button", "bench press")
+    cdp.until_text("main", "deload session", "the exercise window in a deload session")
+    advice = cdp.text("main")
+    drawn = re.search(
+        r"Deload session: ([\d.]+) kg for (\d+) set\(s\) — half of ([\d.]+) kg × (\d+) set\(s\) from (\d{4}-\d{2}-\d{2})",
+        advice,
+    )
+    need(
+        drawn is not None,
+        f"no deload target drawn from the last normal session: {advice[:600]!r}",
+    )
+    half_load, half_sets, last_load, last_sets, _ = drawn.groups()
+    need(
+        abs(float(half_load) - float(last_load) / 2.0) < 0.06,
+        f"the deload target {half_load} kg is not half of {last_load} kg",
+    )
+    need(
+        int(half_sets) == max(1, (int(last_sets) + 1) // 2),
+        f"the deload target of {half_sets} set(s) is not half of {last_sets}",
+    )
+    cdp.screenshot("gym-deload")
+    cdp.click_contains("main button", "back to the checklist")
+    cdp.until_text("main", "end session")
+    cdp.click("main button", "un-deload")
+    cdp.until_text("main", "mark deload", "the flag to come back off")
+    cdp.click("main button", "end session")
+    cdp.until_text("main", "Start a session", "the session to close")
+
+
+def gym_superset_records_one_unit(cdp, base):
+    """Two exercises are recorded as one superset: one load, a rep count each."""
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "Start a session")
+    cdp.click("main button", "start session")
+    cdp.until_text("main", "checklist", "the checklist after starting")
+    cdp.click("main button", "push · 2 exercises")
+    cdp.until_text("main", "☐ bench press", "the preset's checklist")
+    effort = cdp.eval("document.querySelector('main select.ss-effort').value")
+    need(
+        effort == "hard",
+        f"the superset's effort defaulted to {effort!r}, not the last one used (hard)",
+    )
+    cdp.fill("main input.ss-load", "60")
+    cdp.fill("main input.ss-rep", "8", 0)
+    cdp.fill("main input.ss-rep", "10", 1)
+    cdp.click("main button", "save superset")
+    cdp.until_text("main", "superset 1 · 60.0 kg", "the superset group")
+    page = cdp.text("main")
+    need(
+        "bench press × 8.0" in page and "incline press × 10.0" in page,
+        f"the group does not carry both rep counts: {page[:600]!r}",
+    )
+    need("superset 2" not in page, "the two exercises were recorded as two groups")
+    need(
+        "☑ bench press · 1 set(s)" in page and "☑ incline press · 1 set(s)" in page,
+        f"the checklist did not record the group's sets: {page[:600]!r}",
+    )
+    cdp.screenshot("gym-superset")
+    cdp.click("main button", "end session")
+    cdp.until_text("main", "Start a session", "the session to close")
+    logged = cdp.text("main section:last-of-type tbody")
+    need(
+        logged.count("· ss") == 2,
+        f"the two sets are not marked as one superset in the log: {logged!r}",
+    )
+    rows = logged.splitlines()
+    need(
+        "bench press · ss" in rows[0] and "60.0" in rows[0] and "hard" in rows[0],
+        f"the group's first row is not the shared load at its own reps: {rows[:2]!r}",
+    )
+    need(
+        "incline press · ss" in rows[1] and "60.0" in rows[1] and "hard" in rows[1],
+        f"the group's second row is not the shared load at its own reps: {rows[:2]!r}",
+    )
+
+
 SCENARIOS = [
     nav_has_three_tabs,
     gym_place_is_sorted_by_last_session,
     gym_preset_fills_the_checklist,
     gym_exercise_window_records_effort_and_time,
     gym_back_and_end_session,
+    gym_analysis_shades_the_deload_week,
+    weight_trend_has_a_phase_colour,
+    weight_analysis_marks_the_deload_week,
+    weight_intake_bar_shows_the_food,
+    weight_foods_are_ranked_over_the_range,
     food_food_list_is_sorted_by_last_eaten,
     food_a_meal_is_previewed_then_saved,
     food_totals_show_the_maintenance_gap,
     weight_a_weigh_in_defaults_to_now,
-    weight_trend_has_a_phase_colour,
-    weight_intake_bar_shows_the_food,
     edit_tabs_are_the_three_modes,
+    gym_a_deload_is_opted_into,
+    gym_superset_records_one_unit,
 ]
 
 

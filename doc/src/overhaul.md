@@ -221,8 +221,9 @@ exercise list, and one exercise window that records a set with its effort and
 the time it was saved, against the last three sessions of that exercise. Effort
 is part of what is compared: `src/train.rs` decides the next set, and it reads
 effort before load and reps because a set taken closer to failure at the same
-numbers is progress. Supersets and the deload target's half-sets are the parts of
-step 4 that remain.
+numbers is progress. A superset is recorded as one group sharing a load, and a
+deload session's target is half the last normal load and half its sets; the
+analysis shades the deload week instead of dropping it.
 
 The statistics are `src/stats.rs` with their own tests, and the weight pages
 print their verdicts: a slope with its band, a goal judged on the whole band, a
@@ -256,9 +257,9 @@ starts.
    pages.
 3. **Food writes from the UI. Done.** Daily recording as a previewed set of
    rows, meal presets, weigh-ins on their own page.
-4. **Gym writes from the UI. Done but for supersets.** The live session, the
-   checklist, the exercise window with effort, the edit page's edits and merges,
-   and gym presets.
+4. **Gym writes from the UI. Done.** The live session, the checklist, the
+   exercise window with effort, supersets recorded as one group, the edit page's
+   edits and merges, and gym presets.
 5. **Statistics. Done.** Trend, band, maintenance, day inconsistency, phase
    goals, and the intake bars under the weight line.
 6. **PR badges, deload reminders, and the video link. Done.** A PR is marked

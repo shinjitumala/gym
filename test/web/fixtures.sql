@@ -1,6 +1,6 @@
 -- A fixture log for the web scenarios: two places, six exercises with muscle
--- groups, two gym presets, three finished bench sessions, five foods, a meal
--- preset, four meals and nine weigh-ins.
+-- groups, two gym presets, four bench sessions one of which is a deload, five
+-- foods, a meal preset, four meals and nine weigh-ins.
 --
 -- The dates are absolute on purpose. A scenario that asserts "sorted by
 -- recency" needs to know which row came last, and a relative fixture would
@@ -54,6 +54,21 @@ FROM session s, exercise e WHERE s.date LIKE '2026-10-12%' AND e.name = 'bench p
 INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
 SELECT s.id, e.id, 0, s.date, 70, 8, (SELECT id FROM effort WHERE name = 'hard')
 FROM session s, exercise e WHERE s.date LIKE '2026-10-19%' AND e.name = 'bench press';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 1, s.date, 70, 8, (SELECT id FROM effort WHERE name = 'hard')
+FROM session s, exercise e WHERE s.date LIKE '2026-10-19%' AND e.name = 'bench press';
+
+-- A deload week: the same exercise lighter, flagged on the session. It is shown
+-- in the history and shaded on the charts, but it is not the number to beat,
+-- so the session after it compares against the 70 kg one.
+INSERT INTO session (date, place, deload, ended)
+SELECT '2026-10-16T18:00:00+00:00', p.id, 1, '2026-10-16T19:00:00+00:00' FROM place p WHERE p.name = 'home';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 0, s.date, 40, 8, (SELECT id FROM effort WHERE name = 'hard')
+FROM session s, exercise e WHERE s.date LIKE '2026-10-16%' AND e.name = 'bench press';
+INSERT INTO training_set (session, exercise, position, date, load, rep, effort)
+SELECT s.id, e.id, 1, s.date, 40, 8, (SELECT id FROM effort WHERE name = 'hard')
+FROM session s, exercise e WHERE s.date LIKE '2026-10-16%' AND e.name = 'bench press';
 
 INSERT INTO food (name, calories, protein, fat, carbohydrate) VALUES
     ('oats', 380, 13, 7, 60),
