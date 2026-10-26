@@ -36,8 +36,7 @@ pub mod com {
     pub use crate::model::*;
     pub use crate::util::*;
     pub use chrono::{DateTime, Local, TimeZone, Utc};
-    pub use fpr_cli::*;
-    pub use fpr_cli_derives::*;
+    pub use fpr_cli_util::*;
     pub use inquire::{
         list_option::ListOption,
         validator::{StringValidator, Validation},

@@ -29,7 +29,7 @@ impl Scratch {
         self.0.join("gym.db").to_string_lossy().to_string()
     }
 
-    /// A config file the binary can be pointed at with `CONFIG_PATH`.
+    /// A config file the binary can be pointed at with `FPR_GYM_CONFIG_PATH`.
     pub fn config(&self, remote: &str) -> String {
         let p = self.0.join("gym.toml");
         std::fs::write(

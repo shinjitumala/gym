@@ -6,7 +6,7 @@ use support::{binary, Scratch};
 fn run(config: &str, home: &std::path::Path, args: &[&str]) -> std::process::Output {
     Command::new(binary())
         .args(args)
-        .env("CONFIG_PATH", config)
+        .env("FPR_GYM_CONFIG_PATH", config)
         .env("HOME", home)
         .stdin(std::process::Stdio::null())
         .output()
@@ -19,6 +19,29 @@ fn text(o: &std::process::Output) -> String {
         String::from_utf8_lossy(&o.stdout),
         String::from_utf8_lossy(&o.stderr)
     )
+}
+
+#[test]
+fn version_and_help_need_no_configuration() {
+    let s = Scratch::new("meta");
+    // No `FPR_GYM_CONFIG_PATH`, and a `HOME` with no `~/.config/gym.toml`: the
+    // questions are about the binary, so they are answered anyway.
+    for args in [&["--version"][..], &["--help"][..], &["db", "--help"][..]] {
+        let out = Command::new(binary())
+            .args(args)
+            .env("HOME", s.path())
+            .env_remove("FPR_GYM_CONFIG_PATH")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .expect("run the binary");
+        assert!(out.status.success(), "{:?}: {}", args, text(&out));
+        let t = text(&out);
+        if args[0] == "--version" {
+            assert!(t.contains("gym v"), "{t}");
+        } else {
+            assert!(t.contains("Usage:"), "{t}");
+        }
+    }
 }
 
 #[test]

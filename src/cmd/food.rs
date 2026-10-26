@@ -1,14 +1,8 @@
 use crate::com::*;
 
 #[derive(Args)]
-#[args(desc = "Add food data.")]
+#[args(f = food_act, desc = "Add food data.")]
 pub struct Food {}
-impl Run<C> for Food {
-    type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
-        Ok(food_act(c, a)?)
-    }
-}
 fn food_act(c: &C, _a: Food) -> Res<()> {
     let d = c.block_on(crate::db::Db::open(&c.cfg.db))?;
     print_today(c, &d)?;

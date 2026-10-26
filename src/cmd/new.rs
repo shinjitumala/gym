@@ -1,14 +1,8 @@
 use crate::com::*;
 
 #[derive(Args)]
-#[args(desc = "New session at the gym to the buffer.")]
+#[args(f = new_session, desc = "New session at the gym to the buffer.")]
 pub struct New {}
-impl Run<C> for New {
-    type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
-        Ok(new_session(c, a)?)
-    }
-}
 fn new_session(c: &C, _a: New) -> Res<()> {
     let d = c.block_on(crate::db::Db::open(&c.cfg.db))?;
     let (pid, _) = input_place(c, &d)?;

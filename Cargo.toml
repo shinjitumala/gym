@@ -1,7 +1,10 @@
 [package]
 name = "gym"
-version = "0.8.1"
+version = "0.9.0"
 edition = "2021"
+description = "A local-first fitness tracker for progressive overload, body weight and food."
+repository = "https://github.com/shinjitumala/gym"
+license-file = "LICENSE"
 
 # The web build needs both: `cdylib` is the WASM half, `rlib` is everything the
 # binary links against.
@@ -10,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 chrono = "0.4.38"
-itertools = "0.13.0"
+itertools = "0.14.0"
 leptos = { version = "0.8.22" }
 leptos_meta = { version = "0.8.7" }
 leptos_router = { version = "0.8.17" }
@@ -33,11 +36,13 @@ wasm-bindgen = { version = "0.2.129", optional = true }
 # after a `[target...]` header belongs to that header, so this table stays last
 # and nothing may follow it.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-fpr-cli = "0.2.6"
-fpr-cli-derives = "0.2.2"
-inquire = "0.7.5"
+fpr-cli-util = "0.4.11"
+inquire = "0.9.4"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
 tokio = { version = "1.41.1", features = ["full"] }
+
+[build-dependencies]
+built = { version = "0.8.1", features = ["git2"] }
 
 [features]
 hydrate = [

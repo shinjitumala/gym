@@ -74,8 +74,10 @@ for what the import reconstructs.
 | `gym db`    | `init` a new database, `import` the TOML archive into one.       |
 | `gym web`   | The same log in a browser, on loopback: gym, food and weight.    |
 
-Run `gym` with no command for a menu of them. Every command is interactive and
-ESC backs out of the current question. For the browser instead:
+`gym --help` lists them, `gym <command> --help` lists a command's flags, and
+`gym --version` names the build — none of the three needs a database. Every
+command is interactive and ESC backs out of the current question. For the
+browser instead:
 
 ```bash
 $ gym web      # http://127.0.0.1:8080

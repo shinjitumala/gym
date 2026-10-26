@@ -85,7 +85,8 @@ a phone, where `gym web` served the UI and it hydrated.
 Acceptance criteria:
 
 - [ ] `./install.sh` is idempotent and safe while `gym` is running.
-- [ ] The installed binary reports which build it is (`gym --version`).
+- [x] The installed binary reports which build it is (`gym --version`), and does
+      so without a configuration file.
 - [x] The hydrated web assets are inside the binary, so installing is still one
       file, and the Android build carries them: `./deploy.sh` reads the built
       script and stylesheet back out of the `aarch64-linux-android` binary.

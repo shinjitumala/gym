@@ -1,14 +1,8 @@
 use crate::com::*;
 
 #[derive(Args)]
-#[args(desc = "Add weight data.")]
+#[args(f = weight, desc = "Add weight data.")]
 pub struct Weight {}
-impl Run<C> for Weight {
-    type R = ();
-    fn run(c: &C, a: Self) -> Result<Self::R, String> {
-        Ok(weight(c, a)?)
-    }
-}
 fn weight(c: &C, _a: Weight) -> Res<()> {
     let date = input_date2("When did you measure?")?;
     let kg = CustomType::<f64>::new("Weight (kg)").prompt()?;

@@ -5,13 +5,18 @@ copy. The database is one file; the tool creates it, not its directory.
 
 ## Where the file is looked up
 
-1. `$HOME/.config/gym.toml`, if it exists.
-2. Otherwise `$CONFIG_PATH`.
+1. `$FPR_GYM_CONFIG_PATH`, if it is set.
+2. Otherwise `$HOME/.config/gym.toml`.
 
-The first rule wins unconditionally. Once `~/.config/gym.toml` exists,
-`CONFIG_PATH` is ignored — which is what makes a throwaway configuration
-possible: point `HOME` at an empty directory as well, so the lookup falls
-through to `CONFIG_PATH`.
+The variable comes first, so pointing at another file is one variable and
+nothing else: no second copy in the home directory, no shell alias.
+
+The same variable is what `gym web` reads its configuration through, so a
+browser on a throwaway database needs it on the command that starts the server,
+not on the one that opened the page.
+
+`--help` and `--version` answer without the file: they describe the binary, and
+a machine that has just installed it has no configuration yet.
 
 ## Fields
 
@@ -49,11 +54,11 @@ remote = "/mnt/backup/gym.db"
 Useful for trying a command without touching real data:
 
 ```bash
-$ mkdir -p /tmp/gym-try/home /tmp/gym-try/backup
+$ mkdir -p /tmp/gym-try/backup
 $ printf 'db = "/tmp/gym-try/gym.db"\nremote = "/tmp/gym-try/backup/gym.db"\n' \
     > /tmp/gym-try/gym.toml
-$ HOME=/tmp/gym-try/home CONFIG_PATH=/tmp/gym-try/gym.toml gym db init
-$ HOME=/tmp/gym-try/home CONFIG_PATH=/tmp/gym-try/gym.toml gym weight
+$ FPR_GYM_CONFIG_PATH=/tmp/gym-try/gym.toml gym db init
+$ FPR_GYM_CONFIG_PATH=/tmp/gym-try/gym.toml gym weight
 ```
 
 `gym db init` writes the schema, the seeded effort presets and the four
@@ -67,27 +72,27 @@ Configuration is validated before any command runs, and a failure ends the
 process with exit status 1.
 
 ```text
-$ CONFIG_PATH=/tmp/gym-try/missing.toml gym food
-Failed to read file '/tmp/gym-try/missing.toml' because 'No such file or directory (os error 2)'
+$ FPR_GYM_CONFIG_PATH=/tmp/gym-try/missing.toml gym food
+Failed to open file '/tmp/gym-try/missing.toml' because 'No such file or directory (os error 2)'.
 Aborting.
 ```
 
 ```text
-$ CONFIG_PATH=/tmp/gym-try/gym.toml gym food   # db points at a directory
+$ FPR_GYM_CONFIG_PATH=/tmp/gym-try/gym.toml gym food   # db points at a directory
 'db' is '/tmp/gym-try', a directory, but it must be the path to the database file.
 Aborting.
 ```
 
 ```text
-$ CONFIG_PATH=/tmp/gym-try/gym.toml gym food   # the database file is absent
+$ FPR_GYM_CONFIG_PATH=/tmp/gym-try/gym.toml gym food   # the database file is absent
 No database at '/tmp/gym-try/gym.db'. Create one with 'gym db init', or import the TOML archive with 'gym db import <dir>'.
 Aborting.
 ```
 
 | Symptom | Cause |
 |---------|-------|
-| `'CONFIG_PATH' not set.` | Neither `~/.config/gym.toml` nor `CONFIG_PATH` exists. |
-| `Failed to read file '<path>' ...` | The resolved file is unreadable. |
+| `Failed to get variable '$HOME'.` | Neither the variable nor `$HOME` is set, so there is no path to try. |
+| `Failed to open file '<path>' ...` | The file named by `FPR_GYM_CONFIG_PATH`, or by `$HOME/.config/gym.toml`, does not exist or cannot be read. |
 | `Failed to parse '<path>' ...` | The file is not TOML, or a field is missing or not a string. |
 | `'db' is '<path>', a directory, ...` | `db` is a directory; the database is a file. |
 | `'db' is '<path>', whose directory does not exist.` | The file's parent is missing. |

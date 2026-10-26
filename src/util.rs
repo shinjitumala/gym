@@ -89,17 +89,15 @@ impl Serialize for Date {
 }
 
 pub fn input_date2(prompt: &str) -> Res<Date> {
-    Ok(Date {
-        v: input_date(prompt)
-            .with_starting_input(
-                &Date {
-                    v: Utc::now().into(),
-                }
-                .to_string(),
-            )
-            .prompt()?
-            .into(),
-    })
+    let now = Date {
+        v: Utc::now().into(),
+    }
+    .to_string();
+    let v: DateTime<Local> = input_date::<Local>(prompt)
+        .with_starting_input(&now)
+        .prompt()?
+        .into();
+    Ok(Date { v })
 }
 
 pub fn s2t(s: &str) -> Res<DateTime<Local>> {
