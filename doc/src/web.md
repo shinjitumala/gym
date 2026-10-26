@@ -61,24 +61,39 @@ not for the message.
   exercises on the list in the preset's order, and picking an exercise from the
   picker adds it; picking one does *not* open its window. `start sets` opens the
   window on the first exercise still to do. ☐ and ☑ say what is left.
+- **An exercise the log has never had is added by name.** `add new`, beside the
+  picker, takes a name and puts that exercise on the list, creating the row in
+  the log if no exercise of that name exists yet. It arrives with no muscle
+  group and no video link, which the edit page fills in; a name the log already
+  has is reused rather than created twice.
+- **A session is the list, one exercise at a time.** Recording is a loop: open
+  an exercise from the list, save its sets, go back to the list — `✕` or Esc —
+  and open the next one. A round of exercises done back to back is that loop,
+  not a stored group: each set stands on its own exercise at its own load, and
+  the list is ticked off as it goes.
 - **The exercise window is where a set is recorded.** Its row opens on the
   numbers just done: the last working set of this session for that exercise, or
   the best set of its last session when this session has none. The effort
   dropdown offers the three rungs with what each means, and the advice for the
   next set is printed beside the last three sessions of that exercise.
+- **The recent sessions are shown in full.** The last three days of that
+  exercise are one table each: the time each set was saved, its load × reps,
+  its effort and its note. Nothing is folded into a `load × reps` list, so a
+  warmup is read as the warmup it was — the named effort beside the work it
+  prepared for — and a note taken on a set is not lost between sessions.
 - **The window says which exercise is next, and lets it be changed.** By default
-  that is the next one on the list, wrapping round — which is what makes a
-  superset alternate between its exercises — and the dropdown beside it opens
-  the window on any exercise on the list instead. The sets keep the session-wide
-  `position` they were saved in, so the alternation is recorded, not just shown.
+  that is the next one on the list, wrapping round, so the list's order is the
+  order a round is worked in; the dropdown beside it opens the window on any
+  exercise on the list instead. The sets keep the session-wide `position` they
+  were saved in, so the order they were done in is recorded, not just shown.
 - **A saved set is corrected where it is.** A typo is found the moment the row
   is saved, so the row folds out in the session's table with its load, reps,
   effort and note; saving writes that row only. Nothing has to be ended and
   re-entered to fix a number.
-- **A superset is one unit.** Two or more checklist exercises are given one
-  load and a rep count each, and saved together: the sets share the group's id,
-  so the log can say they were done back to back. A blank rep row keeps that
-  exercise out of the group.
+- **Old superset groups stay readable.** Sets recorded as one superset before
+  the affordance was dropped keep their `superset` column and the `ss` mark on
+  the edit page; nothing writes that column now, so a group is history rather
+  than something the session list offers.
 - **A deload is marked on the session**, never entered automatically: when the
   configured number of weeks has passed since the last one, the daily page says
   so and leaves the decision to the reader. A deload session's advice is half

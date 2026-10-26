@@ -2170,7 +2170,6 @@ fn SessionScreen(
                             live=live.clone()
                             presets=presets.clone()
                             exercises=exercises.clone()
-                            efforts=efforts.clone()
                             today=today.clone()
                             saved=saved
                             on_open=on_open
@@ -2328,19 +2327,19 @@ fn StartSession(
 /// button that starts recording.
 ///
 /// Picking an exercise adds it to the list and nothing else — the list comes
-/// first, so a superset can be assembled before any set is recorded — and
-/// `start sets` opens the window on the first exercise still to do.
+/// first, and the reader goes back to it between exercises — and `start sets`
+/// opens the window on the first exercise still to do.
 #[component]
 fn LiveSessionView(
     live: LiveSession,
     presets: Vec<GymPreset>,
     exercises: Vec<ExerciseRow>,
-    efforts: Vec<EffortRow>,
     today: String,
     saved: Callback<()>,
     on_open: Callback<i64>,
 ) -> impl IntoView {
     let session = live.id;
+    let new_name = NodeRef::<leptos::html::Input>::new();
     let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
     let apply = Action::new(move |args: &(i64, i64)| {
         let (session, preset) = *args;
@@ -2349,6 +2348,10 @@ fn LiveSessionView(
     let add = Action::new(move |args: &(i64, i64)| {
         let (session, ex) = *args;
         async move { crate::web::api::act_add_exercise(session, ex).await }
+    });
+    let add_new = Action::new(move |args: &(i64, String)| {
+        let (session, name) = args.clone();
+        async move { crate::web::api::act_add_named_exercise(session, name).await }
     });
     Effect::new(move |_| {
         if let Some(r) = apply.value().get() {
@@ -2360,6 +2363,14 @@ fn LiveSessionView(
     });
     Effect::new(move |_| {
         if let Some(r) = add.value().get() {
+            if r.is_ok() {
+                saved.run(());
+            }
+            set_outcome.set(Some(r));
+        }
+    });
+    Effect::new(move |_| {
+        if let Some(r) = add_new.value().get() {
             if r.is_ok() {
                 saved.run(());
             }
@@ -2478,8 +2489,6 @@ fn LiveSessionView(
             }}
         </div>
 
-        <SupersetPanel live=live.clone() efforts=efforts saved=saved />
-
         <Picker
             label="add an exercise to the list · most recently trained first"
             placeholder="filter exercises"
@@ -2487,171 +2496,29 @@ fn LiveSessionView(
             on_pick=pick
         />
 
-        <Outcome outcome=outcome />
-        <Hint text="Picking an exercise adds it to the list; it does not start recording. start sets opens the window on the first exercise still to do, and the window says which exercise is next." />
-    }
-}
-
-/// Two or more checklist exercises recorded as one superset: one group, one
-/// load, and a rep count per exercise.
-///
-/// A superset is a unit, not two adjacent rows, so it is written in one action
-/// and the sets carry the group's id. A blank rep row keeps that exercise out
-/// of the group: the superset is exactly the exercises that were given reps.
-#[component]
-fn SupersetPanel(live: LiveSession, efforts: Vec<EffortRow>, saved: Callback<()>) -> impl IntoView {
-    let session = live.id;
-    let items = live.list.clone();
-    // The effort defaults to the last one recorded for the group's first
-    // exercise, the same way a single set's form defaults: the group's effort is
-    // one judgement about the round, and an absent one would leave the rows out
-    // of every later comparison.
-    let effort0 = items.first().and_then(|i| i.last_effort);
-    let load = NodeRef::<leptos::html::Input>::new();
-    let effort = NodeRef::<leptos::html::Select>::new();
-    let note = NodeRef::<leptos::html::Input>::new();
-    let reps: Vec<NodeRef<leptos::html::Input>> =
-        (0..items.len()).map(|_| NodeRef::new()).collect();
-    let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
-    let action = Action::new(move |args: &(i64, String, String, String, String)| {
-        let (session, load, reps, effort, note) = args.clone();
-        async move { crate::web::api::act_log_superset(session, load, reps, effort, note).await }
-    });
-    Effect::new(move |_| {
-        if let Some(r) = action.value().get() {
-            if r.is_ok() {
-                saved.run(());
-            }
-            set_outcome.set(Some(r));
-        }
-    });
-    // The groups already in this session, in the order they were saved.
-    let mut groups: Vec<(i64, f64, Vec<(String, f64)>)> = Vec::new();
-    for s in &live.sets {
-        if let Some(group) = s.superset {
-            match groups.iter_mut().find(|(id, _, _)| *id == group) {
-                Some((_, _, rows)) => rows.push((s.exercise.clone(), s.rep)),
-                None => groups.push((group, s.load, vec![(s.exercise.clone(), s.rep)])),
-            }
-        }
-    }
-    let reps_for_submit = reps.clone();
-    let items_for_submit = items.clone();
-    view! {
-        <div class=PANEL>
-            <div class=ROW>
-                <span class=OK>"superset"</span>
-                <span class=DIM>
-                    "one load for a group of exercises, and a rep count for each"
-                </span>
+        <form on:submit=move |e| {
+            e.prevent_default();
+            add_new.dispatch((session, value_of(new_name, "")));
+        }>
+            <div class=LINE>
+                <label class=GROW>
+                    "an exercise the log does not have yet"
+                    <input
+                        type="text"
+                        class="new-exercise"
+                        placeholder="new exercise name"
+                        value=""
+                        node_ref=new_name
+                    />
+                </label>
+                <button type="submit" disabled=move || add_new.pending().get()>
+                    "add new"
+                </button>
             </div>
-            {groups
-                .iter()
-                .enumerate()
-                .map(|(n, (_, load, rows))| {
-                    view! {
-                        <div class=ROW>
-                            <span class=WARN>
-                                {format!("superset {} · {:.1} kg", n + 1, load)}
-                            </span>
-                            <span class=DIM>
-                                {rows
-                                    .iter()
-                                    .map(|(name, rep)| format!("{name} × {}", one(*rep)))
-                                    .collect::<Vec<_>>()
-                                    .join("  ")}
-                            </span>
-                        </div>
-                    }
-                })
-                .collect_view()}
-            {if items.len() < 2 {
-                view! {
-                    <Hint text="A superset needs two exercises on the checklist: apply a preset or add them above." />
-                }
-                    .into_any()
-            } else {
-                view! {
-                    <form on:submit=move |e| {
-                        e.prevent_default();
-                        let reps = items_for_submit
-                            .iter()
-                            .zip(reps_for_submit.iter())
-                            .filter_map(|(item, r)| {
-                                let v = value_of(r.clone(), "");
-                                let v = v.trim().to_string();
-                                (!v.is_empty()).then(|| format!("{}:{}", item.exercise, v))
-                            })
-                            .collect::<Vec<_>>()
-                            .join(";");
-                        action
-                            .dispatch((
-                                session,
-                                value_of(load, ""),
-                                reps,
-                                chosen(effort),
-                                value_of(note, ""),
-                            ));
-                    }>
-                        <div class=LINE>
-                            <label class=NARROW>
-                                "load"
-                                <input type="text" class="ss-load" size="5" value="" node_ref=load />
-                            </label>
-                            <label class=GROW>
-                                "effort"
-                                <select class="ss-effort" node_ref=effort>
-                                    {efforts
-                                        .iter()
-                                        .map(|x| {
-                                            let sel = effort0 == Some(x.rank);
-                                            view! {
-                                                <option value=x.name.clone() selected=sel title=x.hint.clone()>
-                                                    {format!("{} · {}", x.name, x.hint)}
-                                                </option>
-                                            }
-                                        })
-                                        .collect_view()}
-                                </select>
-                            </label>
-                            <label class=GROW>
-                                "note (optional)"
-                                <input type="text" class="ss-note" size="10" value="" node_ref=note />
-                            </label>
-                        </div>
-                        <div class=ROW>
-                            {items
-                                .iter()
-                                .zip(reps.iter())
-                                .map(|(item, r)| {
-                                    let r = r.clone();
-                                    view! {
-                                        <label class=NARROW>
-                                            {item.name.clone()}
-                                            <input
-                                                type="text"
-                                                class="ss-rep"
-                                                size="3"
-                                                placeholder="reps"
-                                                value=""
-                                                node_ref=r
-                                            />
-                                        </label>
-                                    }
-                                })
-                                .collect_view()}
-                        </div>
-                        <div class=ROW>
-                            <button type="submit" disabled=move || action.pending().get()>
-                                "save superset"
-                            </button>
-                            <Outcome outcome=outcome />
-                        </div>
-                    </form>
-                }
-                    .into_any()
-            }}
-        </div>
+        </form>
+
+        <Outcome outcome=outcome />
+        <Hint text="Picking an exercise adds it to the list; it does not start recording. An exercise the log does not have is added by name, with no muscle group until it is filled in on the edit page. start sets opens the window on the first exercise still to do, and the window says which exercise is next." />
     }
 }
 
@@ -2664,8 +2531,8 @@ fn ExerciseWindowView(
     efforts: Vec<EffortRow>,
     saved: Callback<()>,
     on_close: Callback<()>,
-    /// The exercise a superset or the list order leads to next, and the list
-    /// to change it from.
+    /// The exercise the list order leads to next, and the list to change it
+    /// from.
     next: Option<(i64, String)>,
     options: Vec<(i64, String)>,
     on_open: Callback<i64>,
@@ -2824,14 +2691,16 @@ fn WindowBody(
                     }
                 })}
             <span class=DIM>
-                "the default is the next exercise on the list, wrapping round, which is what makes a superset alternate"
+                "the default is the next exercise on the list, wrapping round, so the exercises can be worked in the list's order"
             </span>
         </div>
 
         <div class=PANEL>
             <div class=ROW>
                 <span class=OK>"recent sessions"</span>
-                <span class=DIM>"the numbers to beat"</span>
+                <span class=DIM>
+                    "every set of the last three sessions, warmup and all: the numbers to beat, and how the work was prepared for"
+                </span>
             </div>
             {if w.history.is_empty() {
                 view! { <Hint text="No earlier session of this exercise." /> }.into_any()
@@ -2841,32 +2710,52 @@ fn WindowBody(
                         .history
                         .iter()
                         .map(|h| {
+                            let sets = h.sets.len();
                             view! {
-                                <div class=ROW>
-                                    <span class=DIM>{h.date.clone()}</span>
-                                    {if h.deload {
-                                        view! { <span class=WARN>"deload"</span> }.into_any()
-                                    } else {
-                                        ().into_any()
-                                    }}
-                                    <span class=GROW>
+                                <div class=RECORD>
+                                    <div class=ROW>
+                                        <span class=OK>{h.date.clone()}</span>
                                         {h
-                                            .sets
-                                            .iter()
-                                            .map(|x| {
-                                                format!(
-                                                    "{}×{}{}",
-                                                    one(x.load),
-                                                    one(x.rep),
-                                                    x.effort
-                                                        .clone()
-                                                        .map(|e| format!(" {e}"))
-                                                        .unwrap_or_default(),
-                                                )
-                                            })
-                                            .collect::<Vec<_>>()
-                                            .join("  ")}
-                                    </span>
+                                            .effort
+                                            .clone()
+                                            .map(|e| {
+                                                view! { <span class=DIM>{format!("worked {e}")}</span> }
+                                            })}
+                                        {if h.deload {
+                                            view! { <span class=WARN>"deload"</span> }.into_any()
+                                        } else {
+                                            ().into_any()
+                                        }}
+                                        <span class=DIM>{format!("{sets} set(s)")}</span>
+                                    </div>
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>"time"</th>
+                                                <th class=RIGHT>"load × reps"</th>
+                                                <th>"effort"</th>
+                                                <th class="max-sm:hidden">"note"</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {h
+                                                .sets
+                                                .iter()
+                                                .map(|x| {
+                                                    view! {
+                                                        <tr>
+                                                            <td>{x.time.clone()}</td>
+                                                            <td class=RIGHT>{format!("{} × {}", one(x.load), one(x.rep))}</td>
+                                                            <td>{x.effort.clone().unwrap_or_else(|| "—".to_string())}</td>
+                                                            <td class="text-gray-500 whitespace-normal max-sm:hidden">
+                                                                {x.note.clone()}
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                })
+                                                .collect_view()}
+                                        </tbody>
+                                    </table>
                                 </div>
                             }
                         })

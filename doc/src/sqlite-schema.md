@@ -191,7 +191,10 @@ CREATE INDEX weight_date ON weight (date);
   entered.
 - **`superset` is a group.** A `NULL` `training_set.superset` is a standalone
   set. Members are ordered by their own `position`, and because a superset's
-  members share a load by definition, only reps differ between them.
+  members share a load by definition, only reps differ between them. The web UI
+  no longer records a group — a round of exercises is the session list's loop —
+  so this column is history: it is read and shown on the edit page, and nothing
+  writes it.
 - **`inferred` marks a reconstructed row**, one the importer built from a note
   rather than a recorded set. The analysis counts it; a human can correct it.
 - **`session.phase` is recorded, not derived.** Starting a new phase does not

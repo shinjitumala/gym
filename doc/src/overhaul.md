@@ -63,7 +63,7 @@ the intake chart is read against the weight trend, so it is drawn under it.
 
 | Route | Tab | Contents |
 |-------|-----|----------|
-| `/gym` | Gym · daily | A session as today: place, a list of exercises, load × reps. Effort presets beside the free-text note; a PR badge; the phase's target; the deload reminder and its opt-in; supersets. |
+| `/gym` | Gym · daily | A session as today: place, a list of exercises, load × reps. Effort presets beside the free-text note; a PR badge; the phase's target; the deload reminder and its opt-in; an exercise added by name. |
 | `/gym/edit` | Gym · intervention | Edit past sessions and sets; exercise metadata (name, muscle groups and their amounts, an optional video link); places; muscle groups; rename and merge exercises; define presets. |
 | `/gym/analyse` | Gym · analysis | Strength trend per body part by estimated 1RM; sets per muscle group over time; deload weeks shaded. |
 | `/food` | Food · daily | Record meals; today's totals against maintenance; meal presets sorted by last use. |
@@ -153,8 +153,11 @@ Two hazards come with hydration, and both are already solved in that app:
   suggested targets become half the load and half the sets for that session only.
   Declining leaves the reminder in place; the week count starts again from the
   deload that is actually logged.
-- **Supersets.** Mark two or more exercises as one group in the session; the
-  members keep their own load and reps, and the group is recorded once.
+- **Supersets.** Two or more exercises done back to back are recorded by going
+  back to the session's list and opening the next one, not as a stored group:
+  the group never had to be an explicit feature, because the list already
+  allows an exercise to be opened again. The `superset` column stays for rows
+  logged as a group before this was decided, and nothing writes it any more.
 - **Lists.** An ordered set of exercises to work through, usable in any order
   (a squat rack being busy does not block the next item). The session stores
   the list it started from, so later list edits do not rewrite history.
@@ -229,16 +232,17 @@ Steps 2 to 5 are in place. `gym web` serves the three modes — gym, food, weigh
 each with its daily, edit and analyse pages, and every page writes. The hydrated
 bundle is embedded in the binary, so an install is still one file.
 
-The daily gym page is a live session: a place, a checklist from a preset or the
-exercise list, and one exercise window that records a set with its effort and
-the time it was saved, against the last three sessions of that exercise. Effort
+The daily gym page is a live session: a place, a checklist from a preset, the
+exercise list or a name typed into `add new`, and one exercise window that
+records a set with its effort and the time it was saved, against the last three
+sessions of that exercise shown set by set. Effort
 is part of what is compared: `src/train.rs` decides the next set, and it reads
 effort before load and reps because a set taken closer to failure at the same
 numbers is progress. A warmup is recorded with its own effort and then left out
 of every comparison and count, because it is not a rung on that ladder: the
-ladder only makes sense for sets taken near failure. A superset is recorded as one group sharing a load, and a
-deload session's target is half the last normal load and half its sets; the
-analysis shades the deload week instead of dropping it.
+ladder only makes sense for sets taken near failure. A deload session's target
+is half the last normal load and half its sets; the analysis shades the deload
+week instead of dropping it.
 
 The statistics are `src/stats.rs` with their own tests, and the weight pages
 print their verdicts: a slope with its band, a goal judged on the whole band, a
@@ -273,7 +277,7 @@ starts.
 3. **Food writes from the UI. Done.** Daily recording as a previewed set of
    rows, meal presets, weigh-ins on their own page.
 4. **Gym writes from the UI. Done.** The live session, the checklist, the
-   exercise window with effort, supersets recorded as one group, the edit page's
+   exercise window with effort, an exercise added by name, the edit page's
    edits and merges, and gym presets.
 5. **Statistics. Done.** Trend, band, maintenance, day inconsistency, phase
    goals, and the intake bars under the weight line.
