@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT sli.exercise AS \"exercise!\", e.name AS \"name!\",\n                  (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = sli.exercise) AS \"last\",\n                  (SELECT e2.sort FROM training_set ts JOIN effort e2 ON e2.id = ts.effort\n                   WHERE ts.exercise = sli.exercise\n                   ORDER BY julianday(ts.date) DESC, ts.id DESC LIMIT 1) AS last_effort_rank\n           FROM session_list_item sli JOIN exercise e ON e.id = sli.exercise\n           WHERE sli.session = ?1 ORDER BY sli.position",
+  "query": "SELECT sli.exercise AS \"exercise!\", e.name AS \"name!\",\n                  (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = sli.exercise) AS \"last\",\n                  (SELECT e2.sort FROM training_set ts JOIN effort e2 ON e2.id = ts.effort\n                   WHERE ts.exercise = sli.exercise AND e2.name <> ?2\n                   ORDER BY julianday(ts.date) DESC, ts.id DESC LIMIT 1) AS last_effort_rank\n           FROM session_list_item sli JOIN exercise e ON e.id = sli.exercise\n           WHERE sli.session = ?1 ORDER BY sli.position",
   "describe": {
     "columns": [
       {
@@ -44,7 +44,7 @@
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 2
     },
     "nullable": [
       false,
@@ -53,5 +53,5 @@
       true
     ]
   },
-  "hash": "721882b85afde192fb449d3e36459b9fb992d1a1d4ebb725bb18c821791576f3"
+  "hash": "6e00723c0ed6e83e98be03f6b7730ce85b1bcf7fb52c15115c94a4b8e36967b1"
 }

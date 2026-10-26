@@ -62,7 +62,7 @@ one transaction per row, and nothing runs in the background.
 
 ## `gym db init`
 
-Creates the database at `db` with the schema, the seven seeded effort presets
+Creates the database at `db` with the schema, the eight seeded effort presets
 and the four settings:
 
 ```text

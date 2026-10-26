@@ -330,3 +330,32 @@ async fn the_effort_levels_rank_from_none_left_to_easy() {
         "effort ranks must increase as the set gets easier: fail {fail}, form fail {form_fail}, hard {hard}"
     );
 }
+
+/// A warmup is a recorded effort, not a fourth rung. The comparison skips it by
+/// name (`train::is_warmup`), so its rank only has to stay outside the ladder's
+/// range: a reader or an older row that ranks it must never see it sorted
+/// between `fail` and `hard`, where it would be read as an effort of the work.
+#[tokio::test]
+async fn a_warmup_is_recorded_and_sits_outside_the_effort_ladder() {
+    let (_s, db) = fresh("warmup").await;
+    let ranks = sqlx::query!(r#"SELECT name AS "name!", sort AS "sort!" FROM effort"#)
+        .fetch_all(&db.pool)
+        .await
+        .unwrap();
+    let rank = |name: &str| {
+        ranks
+            .iter()
+            .find(|r| r.name == name)
+            .map(|r| r.sort)
+            .unwrap_or_else(|| panic!("no effort called {name}"))
+    };
+    let (fail, hard, warmup) = (rank("fail"), rank("hard"), rank(gym::train::WARMUP));
+    assert!(
+        warmup > hard,
+        "the warmup marker sorts inside the ladder: warmup {warmup}, fail {fail}, hard {hard}"
+    );
+    assert!(
+        gym::train::is_warmup(Some(gym::train::WARMUP)) && !gym::train::is_warmup(Some("hard")),
+        "the warmup marker is not recognised by the rule that skips it"
+    );
+}

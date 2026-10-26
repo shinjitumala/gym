@@ -10,7 +10,7 @@ The rules that decide *which* number or *which* row to show are stated here
 rather than left to the implementation, because they are what the screens are
 judged against.
 
-## Three definitions the screens depend on
+## Four definitions the screens depend on
 
 ### Sorted by recency
 
@@ -77,6 +77,36 @@ nothing to compare, so it sets the baseline instead of guessing.
 `src/train.rs` is that rule, with its own tests; the exercise window only prints
 the sentence it returns.
 
+### A warmup is recorded, and is not a rung
+
+A warmup set is stored like any other set — load, reps, effort, time — with
+`warmup` as its effort. That value is part of the vocabulary the `effort` table
+holds, and it is deliberately not on the ladder above: a warmup is not taken
+near failure, so there is no rung it could stand on. Counted as the easiest
+effort it would read as a regression and lighten the bar; counted as the hardest
+it would read as progress and add weight. Either way the advice would be about
+the preparation instead of the work.
+
+So the marker is left out of everything that compares or counts sets, and the
+four rules hold among the working sets alone:
+
+- **The numbers to beat** are the best working set of the last session that had
+  one, and of the session before it. A session that was only a warmup is not a
+  session to compare against — the window reaches back past it — so an
+  unfinished workout is neither a regression nor a baseline.
+- **The PR badge and the analysis count work only.** The strength line is the
+  best working set per session, sets per week is working sets per week, and the
+  exercise list says how many sessions of the exercise did some, so a warmup
+  neither makes a session nor moves a bar.
+- **The row does not repeat a warmup.** After one, the pre-filled load, reps and
+  effort still point at the working numbers, because the next set is the work
+  the warmup prepared for.
+
+A set is recognised as a warmup by its effort's name, not by its rank: the rank
+is what the ladder reads, and a fourth number sorted among the three rungs would
+be a lie by ordering. The seeded rank puts it after the rungs so a reader who
+misses it never sees it ranked as a hard set.
+
 ## Daily · gym
 
 The user starts a session, picks a place, builds the session's list — from a
@@ -112,10 +142,12 @@ Acceptance criteria:
       with the time each was saved, the advice from
       [effort before weight](#effort-is-compared-before-weight), and the last
       three sessions of that exercise.
-- [x] **The input defaults to the last weight used** for that exercise, and the
-      effort dropdown defaults to the last effort used and offers exactly
-      `fail`, `form fail` and `hard`, each with what it means in reps from
-      failure.
+- [x] **The input opens on the numbers just done**: this session's last working
+      set supplies the load, the reps and the effort; with none of this
+      session's own sets to copy, the best set of the last session does; with
+      neither, the load is blank and the reps are the phase's target. The effort
+      dropdown offers `fail`, `form fail`, `hard` and the `warmup` marker, each
+      with what it means in reps from failure.
 - [x] **Saving a row stamps the time**, appends it to the exercise's sets, and
       keeps any other sets of that session.
 - [x] **X returns to the checklist**, where the exercise now reads as done.

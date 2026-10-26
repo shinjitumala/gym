@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!\", name AS \"name!\", sort AS \"sort!\"\n           FROM effort WHERE name IN ('hard', 'form fail', 'fail') ORDER BY sort",
+  "query": "SELECT id AS \"id!\", name AS \"name!\", sort AS \"sort!\"\n           FROM effort WHERE name IN ('hard', 'form fail', 'fail', 'warmup') ORDER BY sort",
   "describe": {
     "columns": [
       {
@@ -46,5 +46,5 @@
       false
     ]
   },
-  "hash": "ad82adad0437aff00e257755fb8bc391f411474c3cdacc05a20649ff58be975b"
+  "hash": "84610a88929896d4d7eb36bafaa23bc39ecff82ab7a017c4ed0cac20ae1a8139"
 }

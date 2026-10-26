@@ -295,9 +295,12 @@ Acceptance criteria:
       session there, and only one session is open at a time.
 - [x] A preset fills the checklist in its own order, and any exercise on it opens
       the exercise window.
-- [x] The exercise window defaults the load to the last used and the effort to
-      the last recorded, offers `fail`, `form fail` and `hard` with what each
-      means, shows the last three sessions, and prints what to attempt next.
+- [x] The exercise window's row defaults the load, reps and effort to this
+      session's last working set, or to the best set of the last session when
+      this session has none, and falls back to the phase's rep target; the
+      dropdown offers `fail`, `form fail`, `hard` and the `warmup` marker with
+      what each means, the last three sessions are shown, and the sentence for
+      the next set is printed.
 - [x] Saving a row stamps the time it was saved, and X returns to the list with
       the exercise marked done.
 - [x] An open session fills the screen and is left through `end session` alone,
@@ -311,6 +314,9 @@ Acceptance criteria:
 - [x] End session closes it, and a session with no sets is discarded.
 - [x] The effort of a set is stored as a row and compared before load and reps
       when the next set is advised; `src/train.rs` holds that rule and its tests.
+- [x] A warmup is recorded like any other set and is not a rung on that ladder:
+      it is not the session's best set, not the pre-filled numbers, not a PR and
+      not a session or a week of volume in the analysis.
 - [ ] A set that beats the best estimated 1RM of every earlier session of that
       exercise is marked as a PR, using the existing rep-factor table, ignoring
       sets above 30 reps.
@@ -408,6 +414,9 @@ Acceptance criteria:
 - [x] The recommendation rule is tested for the case it exists for: effort
       improving while load and reps stand still, and a lighter bar that fails
       harder.
+- [x] The warmup decision is tested: a warmup of many reps never becomes the set
+      a session is compared by, a session of warmups alone has nothing to
+      compare, and the ladder's answer is unchanged with a warmup either side.
 - [x] Every requirement of the web UI has a browser scenario named after it in
       `test/web/drive.py`, and a failure names the scenario.
 - [x] `cargo test` runs them, and a failure names the assertion rather than a

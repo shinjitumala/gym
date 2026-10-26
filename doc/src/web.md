@@ -61,10 +61,11 @@ not for the message.
   exercises on the list in the preset's order, and picking an exercise from the
   picker adds it; picking one does *not* open its window. `start sets` opens the
   window on the first exercise still to do. ☐ and ☑ say what is left.
-- **The exercise window is where a set is recorded.** It opens on the last load
-  used for that exercise, offers the three efforts with what each means, and
-  prints the advice for the next set beside the last three sessions of that
-  exercise.
+- **The exercise window is where a set is recorded.** Its row opens on the
+  numbers just done: the last working set of this session for that exercise, or
+  the best set of its last session when this session has none. The effort
+  dropdown offers the three rungs with what each means, and the advice for the
+  next set is printed beside the last three sessions of that exercise.
 - **The window says which exercise is next, and lets it be changed.** By default
   that is the next one on the list, wrapping round — which is what makes a
   superset alternate between its exercises — and the dropdown beside it opens
@@ -87,8 +88,10 @@ not for the message.
   regression.
 - **Effort is part of the record, not a note.** A set's effort is a row in
   `effort`, so its rank (closer to failure is a smaller number) is what the
-  recommendation compares before load and reps. See
-  [effort before weight](requirements.md#effort-is-compared-before-weight).
+  recommendation compares before load and reps. `warmup` is a value of that
+  vocabulary and not a rung of the ladder: a warmup is logged with it and then
+  left out of the advice, the pre-filled numbers, the PR badge and the analysis.
+  See [effort before weight](requirements.md#effort-is-compared-before-weight).
 - **A meal is a draft until it is saved.** Rows are added from a food list and
   previewed as they are typed; `save` writes them in one transaction. A preset
   loads its foods and amounts into the draft, and nothing is written by that: the

@@ -376,9 +376,13 @@ DAYS_AGO = {
     "bench_first": 22,
     "bench_second": 15,
     "bench_third": 8,
+    "bench_warmup_only": 6,
     "deload": 11,
     "squat_first": 19,
     "squat_second": 12,
+    "row_first": 40,
+    "row_second": 33,
+    "row_warmup_only": 26,
     "preset_used": 2,
     "meal_newest": 1,
     "meal_older": 2,
@@ -1052,6 +1056,52 @@ def gym_a_saved_set_is_edited_in_place(cdp, base):
     cdp.screenshot("gym-set-edited")
 
 
+def form_numbers(cdp):
+    """The load and reps boxes the exercise window's set row opens on."""
+    return cdp.eval(
+        "(() => { const i = [...document.querySelectorAll('main input[type=text]')];"
+        "return [i[0].value, i[1].value]; })()"
+    )
+
+
+def effort_select(cdp):
+    """The set form's effort dropdown: the one select that offers a warmup."""
+    return (
+        "[...document.querySelectorAll('main select')]"
+        ".find(s => [...s.options].some(o => o.textContent.includes('warmup')))"
+    )
+
+
+def gym_the_window_defaults_to_the_last_set_then_the_last_best(cdp, base):
+    """The row opens on this session's last working set, and on the last
+    session's best set when this session has none of that exercise yet.
+
+    A fresh paint is what is read, so the numbers are the server's pre-fill
+    rather than what the previous scenario typed into the box.
+    """
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "the list", "the open session's list")
+    cdp.click_contains("main button", "bench press")
+    cdp.until_text("main", "bench press · chest", "the bench press window")
+    load, rep = form_numbers(cdp)
+    need(
+        (load, rep) == ("72.5", "8"),
+        f"the row defaulted to {load} × {rep}, not this session's last set 72.5 × 8",
+    )
+    # Squat has no set of this session, so the default is the best set of its
+    # last session: 102.5 kg × 5, not the phase's rep target.
+    choose_text(cdp, "[...document.querySelectorAll('main select')].pop()", "squat")
+    cdp.until_text("main", "squat · legs", "the squat window")
+    load, rep = form_numbers(cdp)
+    need(
+        (load, rep) == ("102.5", "5"),
+        f"the row defaulted to {load} × {rep}, not the last session's best 102.5 × 5",
+    )
+    choose_text(cdp, "[...document.querySelectorAll('main select')].pop()", "bench press")
+    cdp.until_text("main", "bench press · chest", "the bench press window again")
+    cdp.screenshot("gym-prefill")
+
+
 def gym_the_next_exercise_alternates(cdp, base):
     """The window names the next exercise in list order — the alternation a
     superset needs — and the dropdown changes it."""
@@ -1334,6 +1384,106 @@ def gym_superset_records_one_unit(cdp, base):
          f"the two rows do not share the group's load at their own reps: {logged[:900]!r}")
 
 
+def gym_a_warmup_is_not_a_number_to_beat(cdp, base):
+    """A warmup is recorded like any other set and is not a rung on the effort
+    ladder.
+
+    It is not the last set a session is compared by, not the numbers the next
+    row opens on, and not the effort the next row defaults to: a set taken
+    nowhere near failure can neither pass for work nor fake progress.
+    """
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "Start a session")
+    cdp.click("main button", "start session")
+    cdp.until_text("main", "the list", "the list after starting")
+    cdp.click("main button", "push · 2 exercises")
+    cdp.until_text("main", "☐ bench press", "the preset's list")
+    cdp.click_contains("main button", "bench press")
+    cdp.until_text("main", "bench press · chest", "the bench press window")
+    # The fixture's newest bench session before today was only a warmup, and the
+    # advice still compares the last two sessions that did work: 72.5 kg (the
+    # session the earlier scenarios recorded) against 70 kg, never the 40 kg
+    # warmup in between.
+    page = cdp.text("main")
+    need(
+        "72.5 kg × 8 beat 70.0 kg × 8" in page,
+        f"the advice counted the warmup-only session as one to beat: {page[:600]!r}",
+    )
+    need(
+        form_numbers(cdp) == ["72.5", "8"],
+        f"the row defaulted to {form_numbers(cdp)}, not the 72.5 kg × 8 to beat",
+    )
+    # Record the warmup itself: 40 kg × 10, taken nowhere near failure.
+    cdp.fill("main input[type=text]", "40", 0)
+    cdp.fill("main input[type=text]", "10", 1)
+    choose_text(cdp, effort_select(cdp), "warmup")
+    cdp.click("main button", "save set")
+    cdp.until_text("main", "40.0 × 10.0", "the warmup's own row")
+    need(
+        "warmup" in cdp.text("main"),
+        "the warmup is not marked as one in the session's table",
+    )
+    # A fresh paint, so the assertions read the server's pre-fill: after a
+    # warmup the row still points at the working weight, at the working effort.
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "the list", "the open session's list")
+    cdp.click_contains("main button", "bench press")
+    cdp.until_text("main", "bench press · chest", "the bench press window")
+    need(
+        form_numbers(cdp) == ["72.5", "8"],
+        f"the row opened on the warmup {form_numbers(cdp)}, not on 72.5 × 8",
+    )
+    need(
+        cdp.eval(f"{effort_select(cdp)}.value") == "hard",
+        "the effort defaulted to the warmup instead of the working effort",
+    )
+    page = cdp.text("main")
+    need(
+        "72.5 kg × 8 beat 70.0 kg × 8" in page,
+        f"logging a warmup changed the advice: {page[:600]!r}",
+    )
+    cdp.screenshot("gym-warmup")
+    cdp.click("main button", "end session")
+    cdp.until_text("main", "Start a session", "the session to close")
+
+
+def gym_a_warmup_is_not_volume_in_the_analysis(cdp, base):
+    """The analysis counts sessions and volume of work: a session that was only
+    a warmup is neither a session of the exercise nor a bar of sets per week."""
+    cdp.go(f"{base}/gym/analyse")
+    cdp.until_text("main", "estimated 1RM")
+    section_fill(cdp, "Strength and volume", "input[type=text]", "row", 0)
+    offered = in_section(
+        cdp,
+        "Strength and volume",
+        "[...s.querySelectorAll('button')].map(b => b.innerText)"
+        ".find(t => t.includes('row · back'))",
+    )
+    need(offered, "the analysis list does not offer the row")
+    need(
+        "2 session(s)" in offered,
+        f"the row's warmup-only session counted as a session of it: {offered!r}",
+    )
+    section_pick(cdp, "Strength and volume", "row · back")
+    cdp.until(
+        "(() => { const s = [...document.querySelectorAll('main section')]"
+        ".find(x => x.querySelector('h2') && x.querySelector('h2').innerText === 'Strength and volume');"
+        "return s && s.innerText.includes('2 session(s) in the window'); })()",
+        10,
+        "the row's chart, drawn from its two sessions of work",
+    )
+    points = cdp.eval(
+        "document.querySelector('main svg polyline[stroke-dasharray]')"
+        ".getAttribute('points').trim().split(/\\s+/).length"
+    )
+    need(
+        points == 2,
+        f"the volume line has {points} weeks for the row's two sessions of work,"
+        " so the warmup-only session's week was counted",
+    )
+    cdp.screenshot("gym-warmup-analysis")
+
+
 def food_a_preset_is_built_by_searching(cdp, base):
     """A meal preset's foods are picked from a narrowed list, amount and all,
     and the preset then loads on the daily page."""
@@ -1397,14 +1547,17 @@ SCENARIOS = [
     gym_preset_fills_the_list,
     gym_the_list_is_selected_then_start_sets,
     gym_a_saved_set_is_edited_in_place,
+    gym_the_window_defaults_to_the_last_set_then_the_last_best,
     gym_the_next_exercise_alternates,
     gym_escape_leaves_the_window_not_the_session,
     gym_back_and_end_session,
     gym_a_preset_is_built_by_searching_and_edited,
     gym_analysis_searches_the_exercises,
     gym_analysis_shades_the_deload_week,
+    gym_a_warmup_is_not_volume_in_the_analysis,
     gym_a_deload_is_opted_into,
     gym_superset_records_one_unit,
+    gym_a_warmup_is_not_a_number_to_beat,
     food_a_preset_is_built_by_searching,
 ]
 
