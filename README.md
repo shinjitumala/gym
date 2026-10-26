@@ -2,11 +2,13 @@
 
 A local-first fitness tracker for progressive overload, body weight and food.
 It records your training sets, weigh-ins and meals in one [SQLite][sqlite] file
-on your machine, with no server and no account.
+on your machine, with no server and no account. `gym web` reads the same file
+in a browser, on loopback.
 
-![Progressive overload (mixed)](i/0.jpg)
-![Progressive overload (single)](i/1.jpg)
-![Weight and bodyfat](i/2.jpg)
+![The gym day: an open session, the exercises on it, and the next exercise to record](i/0.jpg)
+![The food day: calories and macros against maintenance, and the meals behind them](i/1.jpg)
+![The weight day: the last weigh-in, the trend, and the recent ones](i/2.jpg)
+![The analysis: an exercise's estimated 1RM against the weekly volume](i/3.jpg)
 
 [sqlite]: https://sqlite.org
 
