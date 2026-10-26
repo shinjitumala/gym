@@ -16,6 +16,7 @@ cargo fmt
 # `.sqlx` cache was made. `SQLX_OFFLINE` makes the build read that cache, so
 # installing needs no database.
 export SQLX_OFFLINE=true
+export LEPTOS_TAILWIND_VERSION=v4.3.3
 
 # Two builds, in this order, because the web UI is embedded in the binary.
 # `cargo leptos` builds the WASM half and writes it to `target/site/pkg`, but it

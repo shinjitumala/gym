@@ -1,6 +1,6 @@
 [package]
 name = "gym"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 
 # The web build needs both: `cdylib` is the WASM half, `rlib` is everything the

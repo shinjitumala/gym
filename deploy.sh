@@ -40,6 +40,7 @@ for file in "$clang" "$ar"; do
 done
 
 export SQLX_OFFLINE=true
+export LEPTOS_TAILWIND_VERSION=v4.3.3
 
 cargo leptos build --release
 

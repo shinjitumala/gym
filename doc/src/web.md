@@ -210,23 +210,31 @@ what is different about a control.
 The scrollbar is part of that look: `scrollbar-thin scrollbar-thumb-green-900
 scrollbar-track-black` on the app root — a thin bar, a green-900 thumb on black —
 and `scrollbar-gutter-stable` on the scrolling column, so a page that grows a
-scrollbar does not shift its controls sideways. Those utilities are first-party
-from **Tailwind v4.3**; the build pins that release rather than whatever version
-the tool happens to have cached:
+scrollbar does not shift its controls sideways. Those four utilities are
+first-party from **Tailwind v4.3**, which no class in the markup can ask for: the
+release is whatever `LEPTOS_TAILWIND_VERSION` names, and without it cargo-leptos
+uses the one it was built against. So every path that reassembles the stylesheet
+pins the same release — `./install.sh`, `./deploy.sh` and `test/web/drive.py` all
+export `LEPTOS_TAILWIND_VERSION=v4.3.3` — and a new one has to as well.
+
+What that buys is measured, not assumed. Built without the pin (cargo-leptos
+0.3.9 fetches v4.2.1) the stylesheet holds no `scrollbar` rule at all: the four
+classes generate nothing and the browser falls back to its own bar. The same
+source under v4.3.3 emits `.scrollbar-thin{scrollbar-width:thin}`,
+`.scrollbar-thumb-green-900`, `.scrollbar-track-black` and
+`.scrollbar-gutter-stable`. The stylesheet's first line names the release that
+made it, so a build can be checked rather than trusted:
 
 ```bash
-$ LEPTOS_TAILWIND_VERSION=v4.3.3 cargo leptos build --release
+$ head -1 target/site/pkg/gym.css
+/*! tailwindcss v4.3.3 | MIT License | https://tailwindcss.com */
 ```
-
-cargo-leptos reads `LEPTOS_TAILWIND_VERSION`, and `test/web/drive.py` sets it, so
-a build that reassembles the stylesheet gets the same release. On v4.2 the three
-`scrollbar-*` classes generate nothing, and the browser falls back to its own bar.
 
 The hydrated bundle is **inside the binary**, so installing stays one file:
 
 ```bash
-$ cargo leptos build --release            # the WASM half, into target/site/pkg
-$ cargo build --release --features ssr    # the binary, which embeds it
+$ LEPTOS_TAILWIND_VERSION=v4.3.3 cargo leptos build --release   # the stylesheet and the WASM half, into target/site/pkg
+$ cargo build --release --features ssr                          # the binary, which embeds them
 ```
 
 `./install.sh` runs both in that order. The second pass matters: `cargo leptos`
