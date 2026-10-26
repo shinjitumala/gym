@@ -989,13 +989,9 @@ pub async fn edit_exercise_preset(db: &Db, id: i64, name: &str, items: Vec<i64>)
         Err("A preset needs at least one exercise.".to_string())?;
     }
     let mut tx = db.pool.begin().await?;
-    sqlx::query!(
-        "UPDATE exercise_list SET name = ?1 WHERE id = ?2",
-        name,
-        id
-    )
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query!("UPDATE exercise_list SET name = ?1 WHERE id = ?2", name, id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query!("DELETE FROM exercise_list_item WHERE list = ?1", id)
         .execute(&mut *tx)
         .await?;
