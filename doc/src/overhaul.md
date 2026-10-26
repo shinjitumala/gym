@@ -297,8 +297,13 @@ together, and a change to one is a build failure until the other follows:
 ```bash
 $ DATABASE_URL=sqlite:///tmp/gym-schema.db sqlx database create
 $ DATABASE_URL=sqlite:///tmp/gym-schema.db sqlx migrate run
-$ DATABASE_URL=sqlite:///tmp/gym-schema.db cargo sqlx prepare -- --all-targets
+$ DATABASE_URL=sqlite:///tmp/gym-schema.db cargo sqlx prepare -- --all-targets --features ssr
 ```
+
+`--features ssr` is part of the command, not an extra: the queries live in
+`src/web/actions.rs` and `src/web/data.rs`, which compile only for the server
+half, so a prepare without it writes a cache that holds none of them — and the
+next `SQLX_OFFLINE=true` build fails with "no cached data for this query".
 
 `cargo sqlx prepare` writes `.sqlx/`, which is committed. After that,
 `SQLX_OFFLINE=true cargo build` — what `install.sh` runs — needs no database,
