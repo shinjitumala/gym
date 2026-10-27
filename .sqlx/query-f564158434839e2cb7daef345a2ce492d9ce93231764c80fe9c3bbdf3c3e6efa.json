@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE split SET active = 0 WHERE id <> ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "f564158434839e2cb7daef345a2ce492d9ce93231764c80fe9c3bbdf3c3e6efa"
+}

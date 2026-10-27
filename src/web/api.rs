@@ -464,10 +464,11 @@ pub async fn act_set_phase(
 #[server(input = Json)]
 pub async fn act_add_exercise_preset(
     name: String,
-    exercises: Vec<i64>,
+    exercises: Vec<(i64, String)>,
 ) -> Result<String, ServerFnError> {
     let db = open().await?;
-    let id = crate::web::actions::add_exercise_preset(&db, &name, exercises)
+    let items = preset_items(exercises)?;
+    let id = crate::web::actions::add_exercise_preset(&db, &name, items)
         .await
         .map_err(error)?;
     Ok(format!("Added gym preset #{id}."))
@@ -477,13 +478,28 @@ pub async fn act_add_exercise_preset(
 pub async fn act_edit_exercise_preset(
     id: i64,
     name: String,
-    exercises: Vec<i64>,
+    exercises: Vec<(i64, String)>,
 ) -> Result<String, ServerFnError> {
     let db = open().await?;
-    crate::web::actions::edit_exercise_preset(&db, id, &name, exercises)
+    let items = preset_items(exercises)?;
+    crate::web::actions::edit_exercise_preset(&db, id, &name, items)
         .await
         .map_err(error)?;
     Ok(format!("Saved gym preset #{id}."))
+}
+
+/// A preset's rows as the form sends them: the exercise, and the sets typed
+/// beside it.
+#[cfg(feature = "ssr")]
+fn preset_items(exercises: Vec<(i64, String)>) -> Result<Vec<(i64, i64)>, ServerFnError> {
+    let mut items = Vec::new();
+    for (exercise, sets) in exercises {
+        items.push((
+            exercise,
+            crate::web::actions::count(&sets, "sets").map_err(error)?,
+        ));
+    }
+    Ok(items)
 }
 
 #[server(input = Json)]
@@ -493,6 +509,65 @@ pub async fn act_delete_exercise_preset(id: i64) -> Result<String, ServerFnError
         .await
         .map_err(error)?;
     Ok(format!("Deleted gym preset #{id}."))
+}
+
+#[server(input = Json)]
+pub async fn act_add_split(
+    name: String,
+    active: bool,
+    days: Vec<(i64, String)>,
+) -> Result<String, ServerFnError> {
+    let db = open().await?;
+    let days = split_days(days)?;
+    let id = crate::web::actions::add_split(&db, &name, active, days)
+        .await
+        .map_err(error)?;
+    Ok(format!("Added split #{id}."))
+}
+
+#[server(input = Json)]
+pub async fn act_edit_split(
+    id: i64,
+    name: String,
+    active: bool,
+    days: Vec<(i64, String)>,
+) -> Result<String, ServerFnError> {
+    let db = open().await?;
+    let days = split_days(days)?;
+    crate::web::actions::edit_split(&db, id, &name, active, days)
+        .await
+        .map_err(error)?;
+    Ok(format!("Saved split #{id}."))
+}
+
+/// A split's day rows as the form sends them: the weekday and the preset id its
+/// dropdown held, empty for the rest day it defaults to.
+#[cfg(feature = "ssr")]
+fn split_days(days: Vec<(i64, String)>) -> Result<Vec<(i64, Option<i64>)>, ServerFnError> {
+    let mut out = Vec::new();
+    for (weekday, preset) in days {
+        let preset = preset.trim();
+        let preset = if preset.is_empty() {
+            None
+        } else {
+            Some(
+                preset
+                    .parse::<i64>()
+                    .map_err(|_| ServerFnError::new(format!("'{}' is not a preset.", preset)))?,
+            )
+        };
+        out.push((weekday, preset));
+    }
+    Ok(out)
+}
+
+#[server(input = Json)]
+pub async fn act_delete_split(id: i64) -> Result<String, ServerFnError> {
+    let db = open().await?;
+    crate::web::actions::delete_split(&db, id)
+        .await
+        .map_err(error)?;
+    Ok(format!("Deleted split #{id}."))
 }
 
 #[server(input = Json)]

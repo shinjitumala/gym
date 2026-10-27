@@ -235,7 +235,13 @@ bundle is embedded in the binary, so an install is still one file.
 The daily gym page is a live session: a place, a checklist from a preset, the
 exercise list or a name typed into `add new`, and one exercise window that
 records a set with its effort and the time it was saved, against the last three
-sessions of that exercise shown set by set. Effort
+sessions of that exercise shown set by set. A preset gives each of its exercises
+a target of working sets, and the checklist counts the work done against it, so a
+session says how far into an exercise it is; a warmup is recorded and counted by
+nothing. A split schedules the week — a preset per weekday, one split in use —
+and a session started on a scheduled day is offered that day's preset instead of
+being filled with it, because the list is the reader's plan for the hour and an
+offer can be declined where an automatic fill cannot. Effort
 is part of what is compared: `src/train.rs` decides the next set, and it reads
 effort before load and reps because a set taken closer to failure at the same
 numbers is progress. A warmup is recorded with its own effort and then left out

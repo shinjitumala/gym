@@ -10,7 +10,7 @@ The rules that decide *which* number or *which* row to show are stated here
 rather than left to the implementation, because they are what the screens are
 judged against.
 
-## Four definitions the screens depend on
+## Five definitions the screens depend on
 
 ### Sorted by recency
 
@@ -107,6 +107,25 @@ is what the ladder reads, and a fourth number sorted among the three rungs would
 be a lie by ordering. The seeded rank puts it after the rungs so a reader who
 misses it never sees it ranked as a hard set.
 
+### A preset's target counts working sets
+
+A gym preset gives each of its exercises a number of **working sets**: the work
+the exercise is on the list to do. That is what the session list counts toward,
+so a session says how far into an exercise it is rather than only that sets are
+being recorded.
+
+The count is of work, by the same rule as the rules above: a set logged as a
+warmup is recorded and shown and is **not** one of the sets counted. An exercise
+that has only been warmed up has not been started, so the row still reads ☐ and
+`0/3 set(s)`; three warmups and no work is a session that did nothing.
+
+The target belongs to the preset's row and is copied onto the session's list
+when the preset is applied, which is what keeps a session stable: rewriting the
+preset during the session changes the next session's list, not the target this
+one was started against. An exercise put on the list on its own — picked, or
+added by name — has no target to be behind, so its row counts its sets without a
+`/n`.
+
 ## Daily · gym
 
 The user starts a session, picks a place, builds the session's list — from a
@@ -123,8 +142,9 @@ Acceptance criteria:
 - [x] **A preset fills the checklist** with its exercises in the preset's own
       order, and a preset with no exercises is refused rather than applied
       silently.
-- [x] **The list shows progress** — what is not started, and how many sets each
-      exercise has — and any exercise on it opens the exercise window.
+- [x] **The list shows progress** — what is not started, and how many working
+      sets each exercise has of its target — and any exercise on it opens the
+      exercise window.
 - [x] **Picking an exercise adds it to the list and does not start recording.**
       `start sets` opens the window on the first exercise still to do, so the
       list can be assembled first and recorded afterwards.
@@ -153,8 +173,11 @@ Acceptance criteria:
 - [x] **A saved set keeps the window.** The set joins the table of this
       session's sets in place and the bar's total follows it; the page never
       drops back to its loading line, and the exercise window is not rebuilt, so
-      the numbers the reader is on stay where they are. The checklist behind the
-      window is re-read when the window closes, where its counts are next read.
+      the numbers the reader is on stay where they are. The input row is the one
+      thing that moves: it re-seeds from the set just saved, which is what makes
+      the next save a new set and not a second copy of the warmup. The checklist
+      behind the window is re-read when the window closes, where its counts are
+      next read.
 - [x] **X returns to the checklist**, where the exercise now reads as done.
 - [x] **End session closes it.** A session with no sets is discarded rather than
       stored as an empty one, and either way the daily page goes back to
@@ -182,11 +205,41 @@ Acceptance criteria:
       written on its own exercise at its own load, and the list ticks off as it
       goes. Sets recorded as one superset before the affordance was dropped keep
       their group and stay readable in the log; nothing writes that column now.
+- [x] **A preset's exercise carries its target, and the list counts the work
+      against it**: the row reads `2/3 set(s)`, and ☑ once the target is reached.
+      Warmup sets are not counted, so a warmup neither starts an exercise nor
+      ticks one off, and an exercise added on its own has no target to read.
+- [x] **A session started on a scheduled weekday is offered that day's
+      preset.** The offer names the weekday, the split and the preset, and the
+      list stays empty until it is pressed; pressing it fills the list the way
+      the preset's chip does, and the offer is gone once the list has anything on
+      it. With no split in use there is no offer at all.
 - [x] **The recent records are shown in full**: the last three sessions of the
       exercise are a table each, with the time every set was saved, its load ×
       reps, its effort and its note. A warmup is therefore read as the warmup it
       was, beside the work it prepared for, rather than as an anonymous pair of
       numbers among the others.
+
+### The split offers, it does not fill
+
+A split is a named schedule: which preset each weekday asks for, with one split
+marked as in use and no split in use meaning the feature is off. A session
+started on a day the active split schedules is **offered** that day's preset;
+the list is filled only when the offer is pressed, and only while the list is
+still empty.
+
+That is a deliberate refusal of the automatic fill. A session's list is the
+reader's plan for the hour, so a page that put exercises on it by the clock
+would be arguing with someone who came in to do something else, and there is no
+undo for a mistake — the list can only be edited item by item. An offer is one
+press away from the same fill, and the day it names is there to be read even
+when it is declined. The day is the session's own date, not the clock's: a
+session started late on Sunday is Sunday's session.
+
+The other half of the switch is in the edit page: picking a split, or clearing
+the one in use, is what turns the offers on and off. Deleting a preset a split
+still schedules is refused with the count of days that use it, because a
+schedule that names nothing would spring an empty offer on the day it names.
 
 ## Daily · food
 
@@ -261,6 +314,15 @@ Acceptance criteria:
       preset starts with no rows and an existing one opens with its own, in its
       own order, and saving rewrites the list in one transaction; a finished
       session keeps the exercises it recorded.
+- [x] **A preset's row carries its working-set count.** The number is typed
+      beside the exercise it belongs to, a freshly picked exercise arrives at
+      three, and a preset that asks for no work on a row is refused rather than
+      stored as a line that can never be ticked off.
+- [x] **A split maps weekdays to presets.** The edit page lists the splits, each
+      with a row per weekday and a dropdown of the presets, and one split can be
+      marked in use; clearing that mark turns the offers off without deleting
+      the schedule. Saving rewrites the week in one transaction, and deleting a
+      preset that a split schedules is refused with the count of days.
 - [x] **Food · edit** manages meals, foods and meal presets.
 - [x] **A meal preset is built from the same searchable food list**: a click
       per food, an amount beside each row it adds, and the preset keeps the

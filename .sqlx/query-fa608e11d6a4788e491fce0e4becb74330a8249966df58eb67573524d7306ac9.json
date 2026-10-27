@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT exercise AS \"exercise!\", target_sets AS \"sets!\"\n           FROM exercise_list_item WHERE list = ?1 ORDER BY position",
+  "describe": {
+    "columns": [
+      {
+        "name": "exercise!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise_list_item",
+            "name": "exercise"
+          }
+        }
+      },
+      {
+        "name": "sets!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise_list_item",
+            "name": "target_sets"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "fa608e11d6a4788e491fce0e4becb74330a8249966df58eb67573524d7306ac9"
+}

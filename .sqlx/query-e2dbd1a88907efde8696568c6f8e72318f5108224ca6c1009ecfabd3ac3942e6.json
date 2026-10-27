@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT li.list AS \"list!\", li.exercise AS \"exercise!\", e.name AS \"name!\"\n           FROM exercise_list_item li JOIN exercise e ON e.id = li.exercise\n           ORDER BY li.list, li.position",
+  "query": "SELECT li.list AS \"list!\", li.exercise AS \"exercise!\", e.name AS \"name!\",\n                  li.target_sets AS \"sets!\"\n           FROM exercise_list_item li JOIN exercise e ON e.id = li.exercise\n           ORDER BY li.list, li.position",
   "describe": {
     "columns": [
       {
@@ -35,6 +35,17 @@
             "name": "name"
           }
         }
+      },
+      {
+        "name": "sets!",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise_list_item",
+            "name": "target_sets"
+          }
+        }
       }
     ],
     "parameters": {
@@ -43,8 +54,9 @@
     "nullable": [
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "ddb87dde8ec4fd5f1598fa29dda1b7f29e47f9379ef05d20aebe571b2eeeb5e7"
+  "hash": "e2dbd1a88907efde8696568c6f8e72318f5108224ca6c1009ecfabd3ac3942e6"
 }

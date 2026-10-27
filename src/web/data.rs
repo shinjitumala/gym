@@ -993,7 +993,7 @@ async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveS
         return Ok(None);
     };
     let items = sqlx::query!(
-        r#"SELECT sli.exercise AS "exercise!", e.name AS "name!",
+        r#"SELECT sli.exercise AS "exercise!", e.name AS "name!", sli.target_sets,
                   (SELECT MAX(ts.date) FROM training_set ts WHERE ts.exercise = sli.exercise) AS "last"
            FROM session_list_item sli JOIN exercise e ON e.id = sli.exercise
            WHERE sli.session = ?1 ORDER BY sli.position"#,
@@ -1001,12 +1001,11 @@ async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveS
     )
     .fetch_all(&db.pool)
     .await?;
-    let sets = all_sets(db)
+    let mine: Vec<RawSet> = all_sets(db)
         .await?
         .into_iter()
         .filter(|s| s.session == r.id)
-        .map(|s| s.row(index))
-        .collect::<Vec<SetRow>>();
+        .collect();
     let mut list: Vec<ChecklistRow> = items
         .into_iter()
         .map(|i| ChecklistRow {
@@ -1014,13 +1013,18 @@ async fn live_session(db: &Db, index: &HashMap<i64, String>) -> Res<Option<LiveS
             name: i.name,
             last_used: i.last.as_deref().and_then(local_date).map(iso),
             sets: 0,
+            target: i.target_sets,
         })
         .collect();
-    for s in &sets {
-        if let Some(item) = list.iter_mut().find(|i| i.name == s.exercise) {
+    // The checklist's count is work only: a warmup is recorded and shown like
+    // any other set, but it is not one of the sets the target asks for, so it
+    // can neither start an exercise nor tick it off.
+    for s in mine.iter().filter(|s| s.is_working()) {
+        if let Some(item) = list.iter_mut().find(|i| i.exercise == s.exercise) {
             item.sets += 1;
         }
     }
+    let sets = mine.iter().map(|s| s.row(index)).collect();
     let date = local_date(&r.date).map(iso).unwrap_or_default();
     Ok(Some(LiveSession {
         id: r.id,
@@ -1039,6 +1043,14 @@ pub async fn gym_daily(db: &Db) -> Res<GymDaily> {
     let p = phase(db).await?;
     let (index, exercises) = exercise_index(db).await?;
     let open = live_session(db, &index).await?;
+    // The offer is for a list that is still empty. Once the reader has put
+    // something on it they have built a session of their own, so a second offer
+    // would be an argument rather than a prompt; applying the preset empties the
+    // question by filling the list.
+    let offer = match open.as_ref() {
+        Some(live) if live.list.is_empty() => split_offer(db, &live.date).await?,
+        _ => None,
+    };
     // The reminder counts from the last deload anywhere in the log, not from
     // the last few sessions: a deload 30 sessions ago is still the last one.
     // The row stores an instant, so its date is the local day it fell on, the
@@ -1066,7 +1078,38 @@ pub async fn gym_daily(db: &Db) -> Res<GymDaily> {
         deload_weeks: s.deload_weeks,
         weeks_since_deload: weeks_since,
         phase: p,
+        offer,
     })
+}
+
+/// What an active split asks for on a day.
+///
+/// The day is the session's own date, not the clock: a session started late on
+/// Sunday and ended on Monday is Sunday's session, and the suggestion must
+/// match the day the reader sat down to train.
+async fn split_offer(db: &Db, date: &str) -> Res<Option<SplitOffer>> {
+    let Some(day) = NaiveDate::parse_from_str(date, "%Y-%m-%d").ok() else {
+        return Ok(None);
+    };
+    let weekday = day.weekday().number_from_monday() as i64;
+    let row = sqlx::query!(
+        r#"SELECT s.name AS "split!", el.id AS "preset!", el.name AS "preset_name!",
+                  (SELECT count(*) FROM exercise_list_item i WHERE i.list = el.id) AS "exercises!: i64"
+           FROM split s
+           JOIN split_day d ON d.split = s.id
+           JOIN exercise_list el ON el.id = d.preset
+           WHERE s.active = 1 AND d.weekday = ?1"#,
+        weekday
+    )
+    .fetch_optional(&db.pool)
+    .await?;
+    Ok(row.map(|r| SplitOffer {
+        weekday: weekday_name(weekday).to_string(),
+        split: r.split,
+        preset: r.preset,
+        preset_name: r.preset_name,
+        exercises: r.exercises,
+    }))
 }
 
 /// The gym's presets: a named list of exercises to work through.
@@ -1076,7 +1119,8 @@ pub async fn gym_presets(db: &Db) -> Res<Vec<GymPreset>> {
             .fetch_all(&db.pool)
             .await?;
     let items = sqlx::query!(
-        r#"SELECT li.list AS "list!", li.exercise AS "exercise!", e.name AS "name!"
+        r#"SELECT li.list AS "list!", li.exercise AS "exercise!", e.name AS "name!",
+                  li.target_sets AS "sets!"
            FROM exercise_list_item li JOIN exercise e ON e.id = li.exercise
            ORDER BY li.list, li.position"#
     )
@@ -1087,6 +1131,7 @@ pub async fn gym_presets(db: &Db) -> Res<Vec<GymPreset>> {
         by_list.entry(i.list).or_default().push(PresetExercise {
             exercise: i.exercise,
             name: i.name,
+            sets: i.sets,
         });
     }
     Ok(lists
@@ -1097,6 +1142,59 @@ pub async fn gym_presets(db: &Db) -> Res<Vec<GymPreset>> {
             name: l.name,
         })
         .collect())
+}
+
+/// The splits, each with all seven weekdays filled in so an editor can offer
+/// every day rather than only the ones already set.
+pub async fn splits(db: &Db) -> Res<Vec<SplitWeek>> {
+    let rows = sqlx::query!(
+        r#"SELECT s.id AS "id!", s.name AS "name!", s.active AS "active!",
+                  d.weekday AS "weekday", d.preset AS "preset", e.name AS "preset_name"
+           FROM split s
+           LEFT JOIN split_day d ON d.split = s.id
+           LEFT JOIN exercise_list e ON e.id = d.preset
+           ORDER BY s.name, d.weekday"#
+    )
+    .fetch_all(&db.pool)
+    .await?;
+    let mut by_split: HashMap<i64, (String, bool, Vec<SplitDayRow>)> = HashMap::new();
+    for r in rows {
+        let entry = by_split
+            .entry(r.id)
+            .or_insert_with(|| (r.name, r.active != 0, Vec::new()));
+        if let Some(weekday) = r.weekday {
+            entry.2.push(SplitDayRow {
+                weekday,
+                name: weekday_name(weekday).to_string(),
+                preset: r.preset,
+                preset_name: r.preset_name.unwrap_or_default(),
+            });
+        }
+    }
+    let mut out: Vec<SplitWeek> = by_split
+        .into_iter()
+        .map(|(id, (name, active, mut days))| {
+            for weekday in 1..=7 {
+                if !days.iter().any(|d| d.weekday == weekday) {
+                    days.push(SplitDayRow {
+                        weekday,
+                        name: weekday_name(weekday).to_string(),
+                        preset: None,
+                        preset_name: String::new(),
+                    });
+                }
+            }
+            days.sort_by_key(|d| d.weekday);
+            SplitWeek {
+                id,
+                name,
+                active,
+                days,
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
 }
 
 /// One exercise while it is being recorded: this session's sets, the last
@@ -1269,6 +1367,7 @@ pub async fn gym_edit(db: &Db) -> Res<GymEdit> {
             })
             .collect(),
         presets: gym_presets(db).await?,
+        splits: splits(db).await?,
         efforts: efforts(db).await?,
         sessions: sessions.rows,
     })

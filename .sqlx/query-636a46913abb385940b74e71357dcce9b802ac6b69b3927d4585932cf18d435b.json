@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO split_day (split, weekday, preset) VALUES (?1, ?2, ?3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "636a46913abb385940b74e71357dcce9b802ac6b69b3927d4585932cf18d435b"
+}

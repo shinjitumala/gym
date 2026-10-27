@@ -1,15 +1,17 @@
 # The SQLite schema
 
-One database file holds everything. The schema below is
-`migrations/0001_init.sql` in the repository, character for character; the
-migration from the TOML archive is described after it.
+One database file holds everything. The SQL below is what the migrations in
+`migrations/` leave behind, applied in order at startup and against a scratch
+database when the commit-time query cache is refreshed; the migration from the
+TOML archive is described after it.
 
 ## Conventions
 
-- **The schema is a migration file.** The SQL below is `migrations/0001_init.sql`,
-  applied by `sqlx::migrate!` at startup and against a scratch database when the
-  commit-time query cache is refreshed. There is no second copy of the schema to
-  fall out of step.
+- **The schema is the migrations.** The SQL below is the database the files in
+  `migrations/` produce — `0001_init.sql` and the migrations after it, whose
+  columns and tables are written in place here rather than left as an exercise.
+  There is no second copy of the schema to fall out of step, and the commit-time
+  query cache is checked against the same files.
 - **Every query is a macro.** `sqlx::query!`/`query_as!`/`query_scalar!` check
   each statement against that migration at build time. A column rename that a
   query still uses is a compile error, which is the point. Statements are
@@ -81,7 +83,8 @@ CREATE TABLE session (
     place   INTEGER NOT NULL REFERENCES place(id) ON DELETE RESTRICT,
     phase   INTEGER REFERENCES phase(id) ON DELETE SET NULL,
     deload  INTEGER NOT NULL DEFAULT 0 CHECK (deload IN (0, 1)),
-    note    TEXT NOT NULL DEFAULT ''
+    note    TEXT NOT NULL DEFAULT '',
+    ended   TEXT
 );
 
 CREATE TABLE superset (
@@ -121,19 +124,36 @@ CREATE TABLE exercise_list (
 );
 
 CREATE TABLE exercise_list_item (
-    list      INTEGER NOT NULL REFERENCES exercise_list(id) ON DELETE CASCADE,
-    exercise  INTEGER NOT NULL REFERENCES exercise(id) ON DELETE RESTRICT,
-    position  INTEGER NOT NULL,
+    list         INTEGER NOT NULL REFERENCES exercise_list(id) ON DELETE CASCADE,
+    exercise     INTEGER NOT NULL REFERENCES exercise(id) ON DELETE RESTRICT,
+    position     INTEGER NOT NULL,
+    target_sets  INTEGER NOT NULL DEFAULT 3,
     PRIMARY KEY (list, exercise),
     UNIQUE (list, position)
 );
 
 CREATE TABLE session_list_item (
-    session   INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
-    exercise  INTEGER NOT NULL REFERENCES exercise(id) ON DELETE RESTRICT,
-    position  INTEGER NOT NULL,
+    session      INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
+    exercise     INTEGER NOT NULL REFERENCES exercise(id) ON DELETE RESTRICT,
+    position     INTEGER NOT NULL,
+    target_sets  INTEGER,
     PRIMARY KEY (session, exercise),
     UNIQUE (session, position)
+);
+
+CREATE TABLE split (
+    id      INTEGER PRIMARY KEY,
+    name    TEXT NOT NULL UNIQUE,
+    active  INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0, 1))
+);
+
+CREATE UNIQUE INDEX split_one_active ON split (active) WHERE active = 1;
+
+CREATE TABLE split_day (
+    split    INTEGER NOT NULL REFERENCES split(id) ON DELETE CASCADE,
+    weekday  INTEGER NOT NULL CHECK (weekday BETWEEN 1 AND 7),
+    preset   INTEGER NOT NULL REFERENCES exercise_list(id) ON DELETE RESTRICT,
+    PRIMARY KEY (split, weekday)
 );
 
 CREATE TABLE weight (
@@ -185,6 +205,9 @@ CREATE INDEX weight_date ON weight (date);
 
 ## What the tables mean
 
+- **`session.ended` is what makes a session open.** A row with no `ended` is
+  the one being recorded, and only one may be; ending it stamps the instant, and
+  a session with no sets is deleted instead of stored as an empty one.
 - **`training_set.session` replaces the session's `sets` list.** Membership is a
   column now, so a set cannot be orphaned by a hand edit. `position` is the
   order within the session and is unique there; that is the order the set was
@@ -202,6 +225,26 @@ CREATE INDEX weight_date ON weight (date);
 - **`session_list_item` is a snapshot.** Starting a session from a list copies
   the list into the session, so editing the list later does not rewrite history
   and ticking items off is a property of that session.
+- **`exercise_list_item.target_sets` is how much work a preset asks for.** The
+  target is the number of working sets that exercise is on the list to do. It
+  sits on the preset's row beside the exercise, and the default of three is what
+  every preset written before the column existed now means; a target below one
+  is refused, because a row that asks for no work can never be finished.
+- **`session_list_item.target_sets` is that target, copied.** The checklist is a
+  snapshot, so a session records the target it was started against: rewriting
+  the preset during the session moves the next session's list, not this one's
+  goalposts. It is `NULL` for an exercise put on the list on its own — picked or
+  added by name — which has no preset to take a target from; the row then counts
+  its sets without a target to be behind.
+- **`split` and `split_day` are the week.** A split is a name and seven
+  weekdays' worth of presets, one row per day that asks for something (a day
+  with no row is a rest day), and `active` picks the split in use. The partial
+  unique index `split_one_active` is what makes "at most one" a rule of the
+  schema: turning one on is turning the others off in the same transaction, and
+  no split being active is what "the feature is off" means. `weekday` is ISO —
+  1 is Monday and 7 is Sunday, the numbering every reader of a calendar
+  expects — and the `CHECK` bound is what stops a row naming a day that does
+  not exist in a week.
 - **`meal_preset.last_used` is an ordering key**, written when the preset is
   applied. The preset list is ordered by it, so the common breakfast comes
   first without a separate frequency table.
@@ -224,6 +267,12 @@ CREATE INDEX weight_date ON weight (date);
 - Deleting an `exercise` or a `food` that a set or a meal still refers to is
   refused (`ON DELETE RESTRICT`). Merge is the operation for a duplicate, not a
   delete.
+- Deleting an `exercise_list` (a gym preset) that a `split_day` still schedules
+  is refused the same way, and the page says how many days still name it: a
+  schedule with a day pointing at nothing would offer an empty preset on that
+  day.
+- Deleting a `split` takes its days with it (`ON DELETE CASCADE`): the week is
+  the split, and a day of a deleted week is not a fact worth keeping.
 - Deleting a `session` deletes its sets and its list, and leaves the superset
   groups to be deleted with it (`ON DELETE CASCADE`).
 - `float` columns are `REAL` — the log already carries fractional loads such as
@@ -259,7 +308,7 @@ note.
 | `meal/*.toml` | `meal` | 7 529 rows. |
 | — | `effort` | Seeded with the vocabulary the notes already use: `fail`, `form fail`, `very hard`, `hard`, `incomplete`, `deload`, `easy`, and `warmup`. The first three are the rungs the recommendation compares; the rest are recorded and read by name, and `warmup` is left out of every comparison and count. |
 | — | `setting` | Seeded with the four defaults above (`deload_weeks = 6`, `trend_window_days = 21`, `trend_min_weighins = 14`, `maintenance_min_days = 10`). |
-| — | `phase`, `meal_preset`, `meal_preset_item`, `exercise_list`, `exercise_list_item`, `session_list_item`, `superset` | Empty except for the supersets reconstructed below. |
+| — | `phase`, `meal_preset`, `meal_preset_item`, `exercise_list`, `exercise_list_item`, `session_list_item`, `split`, `split_day`, `superset` | Empty except for the supersets reconstructed below. The archive has no gym preset, so a preset's working-set target only ever comes from the page (or from the column's default, which is three). |
 
 Old ids are preserved, so a row's number survives the migration and the notes
 that mention one stay readable. A partner row the importer invents takes the

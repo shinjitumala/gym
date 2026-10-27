@@ -284,9 +284,12 @@ Acceptance criteria:
 
 Status: works. A session is started from a place, its list is built from a preset,
 an exercise at a time or by name, `start sets` records it one exercise at a time
-through the exercise window, and `end session` closes it; a deload is marked on
-the session, and a set saved by mistake is corrected in place. Inferred rows from
-the migration are still missing from the analysis.
+through the exercise window, and `end session` closes it; the list counts the
+working sets each exercise has done against the preset's target, and a session
+started on a day the active split schedules is offered that day's preset rather
+than filled with it. A deload is marked on the session, and a set saved by
+mistake is corrected in place. Inferred rows from the migration are still
+missing from the analysis.
 
 Acceptance criteria:
 
@@ -337,11 +340,19 @@ Acceptance criteria:
 - [x] A preset can be applied as the session's checklist, items can be completed
       in any order, and the checklist is stored per session, so editing the
       preset later does not rewrite a finished session.
+- [x] Each exercise of a preset carries a target of working sets, and the list
+      shows the count toward it per exercise; a warmup is not one of the sets
+      counted, so it neither starts an exercise nor finishes one.
+- [x] A session started on a weekday the active split schedules is offered that
+      day's preset, and the list is filled only when the offer is pressed. With
+      no split in use there is no offer, and the offer is gone once the list has
+      something on it.
 
 ## Feature: Gym · intervention
 
 Status: works. Sessions and sets, exercises with their muscle groups, gym
-presets, places and muscle groups are all editable.
+presets with their working-set targets, splits, places and muscle groups are all
+editable.
 
 Acceptance criteria:
 
@@ -359,6 +370,13 @@ Acceptance criteria:
 - [x] Gym presets (a named list of exercises) can be created, edited and
       deleted, their exercises picked from a list searchable by name or muscle
       group, and applying one fills a session's list.
+- [x] A preset's exercises each carry a working-set count, typed beside the
+      pick and refused below one, and the count is copied onto a session's list
+      when the preset is applied, so rewriting the preset later does not move a
+      session's target.
+- [x] A split maps weekdays to presets, one split at a time can be in use, and
+      clearing it turns the offers off. Deleting a preset a split schedules is
+      refused with the count of days that still use it.
 
 ## Feature: Gym · analysis
 

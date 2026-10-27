@@ -1,0 +1,57 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT s.name AS \"split!\", el.id AS \"preset!\", el.name AS \"preset_name!\",\n                  (SELECT count(*) FROM exercise_list_item i WHERE i.list = el.id) AS \"exercises!: i64\"\n           FROM split s\n           JOIN split_day d ON d.split = s.id\n           JOIN exercise_list el ON el.id = d.preset\n           WHERE s.active = 1 AND d.weekday = ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "split!",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "split",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "preset!",
+        "ordinal": 1,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "exercise_list",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "preset_name!",
+        "ordinal": 2,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise_list",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "exercises!: i64",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f99102ee661cc68af84f4b06bbff8789f9f6d53605e2e9063d9d5e4e12b95b35"
+}

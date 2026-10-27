@@ -623,6 +623,61 @@ def preset_fill(cdp, name, selector, value, index=0):
     need(ok, f"no {selector}[{index}] on the preset {name!r}")
 
 
+def split_set_day(cdp, form, weekday, preset):
+    """Set the preset a split schedules for one weekday, in the form `form`.
+
+    The week is seven rows of a day and a dropdown, so the row is found by the
+    day it is: that is what a reader picks by, and it is the only label the row
+    has.
+    """
+    ok = cdp.eval(
+        "(() => { const f = document.querySelector(" + json.dumps(form) + ");"
+        "if (!f) return false;"
+        "const row = [...f.querySelectorAll('div')].find(d =>"
+        f"d.innerText.trim().startsWith({json.dumps(weekday)}));"
+        "if (!row) return false;"
+        "const s = row.querySelector('select'); if (!s) return false;"
+        f"const o = [...s.options].find(o => o.textContent.includes({json.dumps(preset)}));"
+        "if (!o) return false; s.value = o.value;"
+        "s.dispatchEvent(new Event('change', {bubbles: true})); return true; })()"
+    )
+    need(ok, f"no {weekday} dropdown offering {preset!r} in {form}")
+
+
+def split_check(cdp, name, value):
+    """Tick or untick a split record's `in use` box."""
+    ok = cdp.eval(
+        "(() => { const rec = document.querySelector(" + json.dumps(f'[data-split="{name}"]') + ");"
+        "if (!rec) return false;"
+        "const e = rec.querySelector('input[type=checkbox]'); if (!e) return false;"
+        f"e.checked = {'true' if value else 'false'};"
+        "e.dispatchEvent(new Event('change', {bubbles: true})); return true; })()"
+    )
+    need(ok, f"no in-use box on the split {name!r}")
+
+
+def split_click(cdp, name, text):
+    ok = cdp.eval(
+        "(() => { const rec = document.querySelector(" + json.dumps(f'[data-split="{name}"]') + ");"
+        "if (!rec) return false;"
+        f"const e = [...rec.querySelectorAll('button')]"
+        f".find(e => e.innerText.trim() === {json.dumps(text)});"
+        "if (!e) return false; e.scrollIntoView({block: 'center'}); e.click(); return true; })()"
+    )
+    need(ok, f"no {text!r} button on the split {name!r}")
+
+
+def until_panel_rows(cdp, title, want, what):
+    """Wait until one panel's table has `want` rows."""
+    cdp.until(
+        "(() => { const d = [...document.querySelectorAll('main div')]"
+        f".find(e => e.innerText.trim().startsWith({json.dumps(title)}));"
+        f"return !!d && d.querySelectorAll('table tbody tr').length === {want}; }})()",
+        10,
+        what,
+    )
+
+
 def nav_has_three_tabs(cdp, base):
     """The bar is the three things the log records, not a page list."""
     cdp.go(f"{base}/gym")
@@ -1008,7 +1063,8 @@ def gym_a_session_fills_the_screen(cdp, base):
 
 
 def gym_preset_fills_the_list(cdp, base):
-    """A preset puts its exercises on the list, in its own order."""
+    """A preset puts its exercises on the list, in its own order, each with the
+    working sets it is there to do."""
     cdp.click("main button", "push · 2 exercises")
     cdp.until_text("main", "☐ bench press", "the list after applying a preset")
     checklist = cdp.text("main")
@@ -1016,6 +1072,16 @@ def gym_preset_fills_the_list(cdp, base):
     need(
         checklist.index("bench press") < checklist.index("incline press"),
         "the list is not in the preset's order",
+    )
+    # The count is the preset's own, per exercise: one number for the whole list
+    # would pass the same test and tell the reader nothing.
+    need(
+        "☐ bench press · 0/3 set(s)" in checklist,
+        f"the bench press row does not show its three-set target: {checklist[:600]!r}",
+    )
+    need(
+        "☐ incline press · 0/2 set(s)" in checklist,
+        f"the incline press row does not show its own two-set target: {checklist[:600]!r}",
     )
     cdp.screenshot("gym-list")
 
@@ -1193,7 +1259,7 @@ def gym_escape_leaves_the_window_not_the_session(cdp, base):
 def gym_back_and_end_session(cdp, base):
     """X returns to the list; end session closes the session and the screen."""
     cdp.click_contains("main button", "back to the checklist")
-    cdp.until_text("main", "☑ bench press", "the list after a set")
+    cdp.until_text("main", "☐ bench press · 1/3 set(s)", "the list after a set")
     cdp.until_text("main", "1 set(s) recorded", "the session's set count")
     cdp.click("main button", "end session")
     cdp.until_text("main", "Start a session", "the session to close")
@@ -1237,14 +1303,17 @@ def gym_a_preset_is_built_by_searching_and_edited(cdp, base):
     )
     section_pick(cdp, "Add a preset", "squat")
     need(cdp.eval(added) == 2, "the picks did not add the two rows")
+    # The count beside a pick is the working sets that exercise is there to do:
+    # the second row is set to two, so the saved preset carries two numbers.
+    cdp.fill("#add-preset input[type=text]", "2", 3)
     cdp.click("#add-preset button", "add preset")
     cdp.until_text(f'[data-preset="pull"]', "2 exercise(s)", "the new preset")
     need(
-        "bench press, squat"
+        "bench press 3 set(s), squat 2 set(s)"
         in cdp.eval(
             'document.querySelector(\'[data-preset="pull"] span.whitespace-normal\').innerText'
         ),
-        "the new preset did not keep the two exercises in order",
+        "the new preset did not keep the two exercises in order, each with its own target",
     )
     preset_click(cdp, "pull", "edit")
     cdp.until(
@@ -1268,11 +1337,11 @@ def gym_a_preset_is_built_by_searching_and_edited(cdp, base):
     preset_click(cdp, "pull", "save")
     cdp.until_text('[data-preset="pull day"]', "3 exercise(s)", "the edited preset")
     need(
-        "bench press, squat, pull up"
+        "bench press 3 set(s), squat 2 set(s), pull up 3 set(s)"
         in cdp.eval(
             'document.querySelector(\'[data-preset="pull day"] span.whitespace-normal\').innerText'
         ),
-        "the edited preset did not keep its three exercises in order",
+        "the edited preset did not keep its three exercises in order, targets and all",
     )
     cdp.screenshot("gym-preset-edited")
 
@@ -1403,7 +1472,7 @@ def gym_the_list_is_worked_exercise_by_exercise(cdp, base):
     until_panel(cdp, "this session", "60.0 × 8.0", "the bench press working set")
     # Back to the list, which is where the next exercise of the round is picked.
     cdp.click_contains("main button", "back to the checklist")
-    cdp.until_text("main", "☑ bench press · 2 set(s)", "the list after the first exercise")
+    cdp.until_text("main", "☐ bench press · 1/3 set(s)", "the list after the first exercise")
     need(
         "☐ incline press" in cdp.text("main"),
         f"the second exercise does not read as still to do: {cdp.text('main')[:600]!r}",
@@ -1415,7 +1484,7 @@ def gym_the_list_is_worked_exercise_by_exercise(cdp, base):
     cdp.click("main button", "save set")
     until_panel(cdp, "this session", "60.0 × 10.0", "the incline press set")
     cdp.click_contains("main button", "back to the checklist")
-    cdp.until_text("main", "☑ incline press · 1 set(s)", "the list after the second exercise")
+    cdp.until_text("main", "☐ incline press · 1/2 set(s)", "the list after the second exercise")
     page = cdp.text("main")
     need(
         "3 set(s) recorded" in page,
@@ -1737,6 +1806,169 @@ def gym_a_saved_set_keeps_the_window(cdp, base):
         f"the bar reads {sets_recorded(cdp)} set(s), not the {total} it read plus one",
     )
     cdp.screenshot("gym-set-keeps-window")
+    # The session is closed, so the scenarios after this one start from the
+    # daily page rather than from a session this one left open.
+    cdp.click("main button", "end session")
+    cdp.until_text("main", "Start a session", "the session to close")
+# The weekdays in the order the app writes them: 1 is Monday.
+WEEKDAYS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
+
+
+def gym_the_list_counts_working_sets_against_the_target(cdp, base):
+    """The list counts the work done against the target the preset gave it, and
+    a warmup is not one of the sets counted.
+
+    The count has to be the preset's own, per exercise: the push preset asks the
+    bench press for three sets and the incline press for two, so a page showing
+    one number for the list cannot pass.
+    """
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "Start a session")
+    cdp.click("main button", "start session")
+    cdp.until_text("main", "the list", "the list after starting")
+    cdp.click("main button", "push · 2 exercises")
+    cdp.until_text("main", "☐ bench press · 0/3 set(s)", "the list with the preset's targets")
+    need(
+        "☐ incline press · 0/2 set(s)" in cdp.text("main"),
+        f"the second exercise does not show its own target: {cdp.text('main')[:600]!r}",
+    )
+    cdp.click_contains("main button", "bench press")
+    cdp.until_text("main", "bench press · chest", "the bench press window")
+    # The working numbers, read before the warmup is typed over them: a saved
+    # warmup must leave the row pointing back at them, not at itself.
+    working = form_numbers(cdp)
+    working_effort = cdp.eval(f"{effort_select(cdp)}.value")
+    # A warmup is recorded like any other set and counts toward nothing: after
+    # one, the exercise has still not started, and the row is back on the work.
+    cdp.fill("main input[type=text]", "40", 0)
+    cdp.fill("main input[type=text]", "10", 1)
+    choose_text(cdp, effort_select(cdp), "warmup")
+    cdp.click("main button", "save set")
+    until_panel(cdp, "this session", "40.0 × 10.0", "the warmup's row")
+    need(
+        form_numbers(cdp) == working,
+        f"after the warmup the row reads {form_numbers(cdp)}, not the work it prepared for: {working}",
+    )
+    need(
+        cdp.eval(f"{effort_select(cdp)}.value") == working_effort,
+        "the row's effort stayed on the warmup instead of the working effort",
+    )
+    cdp.click_contains("main button", "back to the checklist")
+    cdp.until_text("main", "☐ bench press · 0/3 set(s)", "the list after a warmup alone")
+    # The working sets are what the target counts, one row at a time; the row is
+    # ticked only when the third one lands, because ☐ and ☑ say what is left.
+    for done in (1, 2, 3):
+        cdp.click_contains("main button", "bench press")
+        cdp.until_text("main", "bench press · chest", "the window for the next set")
+        cdp.fill("main input[type=text]", "60", 0)
+        cdp.fill("main input[type=text]", "8", 1)
+        cdp.click("main button", "save set")
+        until_panel_rows(
+            cdp, "this session", done + 1, f"the {done}th working set's row"
+        )
+        cdp.click_contains("main button", "back to the checklist")
+        mark = "☑" if done == 3 else "☐"
+        cdp.until_text(
+            "main",
+            f"{mark} bench press · {done}/3 set(s)",
+            f"the list after {done} working set(s)",
+        )
+    # The other exercise is untouched by any of it: its own count is still zero.
+    need(
+        "☐ incline press · 0/2 set(s)" in cdp.text("main"),
+        f"the second exercise's count moved with the first: {cdp.text('main')[:600]!r}",
+    )
+    cdp.screenshot("gym-set-target")
+    cdp.click("main button", "end session")
+    cdp.until_text("main", "Start a session", "the session to close")
+
+
+def gym_a_split_offers_the_days_preset(cdp, base):
+    """A split maps weekdays to presets, and a session started on one of those
+    days is offered the day's preset rather than being filled with it.
+
+    The weekday is today's, read from the clock the suite runs on: the offer is
+    about the session's own day, so pinning it to a fixed day of the week would
+    be a scenario that only passes on six days out of seven.
+    """
+    today = WEEKDAYS[datetime.date.today().weekday()]
+    cdp.go(f"{base}/gym/edit")
+    cdp.until_text("main", "Edit a set's load")
+    cdp.click("main button", "splits")
+    cdp.until_text("main", "A split names the preset each weekday asks for")
+    cdp.fill("#add-split input[type=text]", "week", 0)
+    split_set_day(cdp, "#add-split", today, "push")
+    cdp.eval(
+        "document.querySelector('#add-split input[type=checkbox]').checked = true"
+    )
+    cdp.click("#add-split button", "add split")
+    cdp.click("main button", "splits")
+    cdp.until(
+        "(() => { const r = document.querySelector('[data-split=\"week\"]');"
+        f"return !!r && r.innerText.includes('in use')"
+        f"&& r.innerText.includes({json.dumps(today)}); }})()",
+        10,
+        "the new split, in use, with its weekday set",
+    )
+    cdp.screenshot("gym-split")
+    # A session started on that day is offered the preset, and nothing is put on
+    # the list until the offer is taken up.
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "Start a session")
+    cdp.click("main button", "start session")
+    cdp.until_text("main", "asks for push", "the offer of the day's preset")
+    need(
+        "Nothing on the list yet" in cdp.text("main"),
+        f"the split filled the list before the offer was answered: {cdp.text('main')[:600]!r}",
+    )
+    cdp.click("main button", "apply push")
+    cdp.until_text("main", "☐ bench press · 0/3 set(s)", "the list the offer filled")
+    need(
+        not cdp.eval("!!document.querySelector('[data-split-offer]')"),
+        "the offer is still up after the list was filled",
+    )
+    cdp.screenshot("gym-split-offer")
+    # The split is the switch: with none in use there is no offer, and the day's
+    # preset is still on the session, because the list was filled by a press.
+    cdp.click("main button", "end session")
+    cdp.until_text("main", "Start a session", "the session to close")
+    cdp.go(f"{base}/gym/edit")
+    cdp.until_text("main", "Edit a set's load")
+    cdp.click("main button", "splits")
+    cdp.until_text("main", "A split names the preset each weekday asks for")
+    split_click(cdp, "week", "edit")
+    cdp.until(
+        "!!document.querySelector('[data-split=\"week\"] input[type=checkbox]')",
+        10,
+        "the split's editor",
+    )
+    split_check(cdp, "week", False)
+    split_click(cdp, "week", "save")
+    cdp.click("main button", "splits")
+    cdp.until(
+        "(() => { const r = document.querySelector('[data-split=\"week\"]');"
+        "return !!r && !r.innerText.includes('in use'); })()",
+        10,
+        "the split to be turned off",
+    )
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "Start a session")
+    cdp.click("main button", "start session")
+    cdp.until_text("main", "the list", "the list after starting")
+    need(
+        not cdp.eval("!!document.querySelector('[data-split-offer]')"),
+        "a session was offered a preset with no split in use",
+    )
+    cdp.click("main button", "end session")
+    cdp.until_text("main", "Start a session", "the session to close")
 
 
 SCENARIOS = [
@@ -1776,6 +2008,8 @@ SCENARIOS = [
     food_a_preset_is_built_by_searching,
     food_a_save_keeps_the_page,
     gym_a_saved_set_keeps_the_window,
+    gym_the_list_counts_working_sets_against_the_target,
+    gym_a_split_offers_the_days_preset,
 ]
 
 
