@@ -150,6 +150,11 @@ Acceptance criteria:
       with what it means in reps from failure.
 - [x] **Saving a row stamps the time**, appends it to the exercise's sets, and
       keeps any other sets of that session.
+- [x] **A saved set keeps the window.** The set joins the table of this
+      session's sets in place and the bar's total follows it; the page never
+      drops back to its loading line, and the exercise window is not rebuilt, so
+      the numbers the reader is on stay where they are. The checklist behind the
+      window is re-read when the window closes, where its counts are next read.
 - [x] **X returns to the checklist**, where the exercise now reads as done.
 - [x] **End session closes it.** A session with no sets is discarded rather than
       stored as an empty one, and either way the daily page goes back to
@@ -208,6 +213,10 @@ Acceptance criteria:
       estimate is available, and what is still missing when it is not.
 - [x] **The saved rows appear in the day's table immediately**, with their time,
       amount and macros.
+- [x] **A save does not blank the page.** Saving a meal leaves the form, the
+      day's totals and the table where they were while the page re-reads, so the
+      row just written appears in place and nothing the reader was looking at
+      disappears and comes back.
 - [x] **The form projects the day**: under the draft, the same four figures the
       top of the page shows — calories, protein, fat and carbohydrate — are
       shown with the draft added, so the meal is judged before it is saved.

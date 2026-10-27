@@ -4,12 +4,14 @@
 //! and analyse pages reached from buttons at the bottom of the daily page
 //! rather than from the tab bar.
 //!
-//! Each page is one `Resource` against a server function, a `Suspense`, and a
-//! view that takes the finished data. Nothing here computes a statistic: the
-//! numbers arrive already decided, which is what keeps the analysis honest and
-//! the WASM bundle small. The two things the browser does decide are UI state —
-//! which exercise window is open, which day of the intake chart was picked —
-//! and a form's preview, which mirrors the amount being typed.
+//! Each page is one `Resource` against a server function, a `Transition`, and a
+//! view that takes the finished data. The `Transition` is what keeps the page
+//! the reader has while the next read is in flight. Nothing here computes a
+//! statistic: the numbers arrive already decided, which is what keeps the
+//! analysis honest and the WASM bundle small. The two things the browser does
+//! decide are UI state — which exercise window is open, which day of the intake
+//! chart was picked — and a form's preview, which mirrors the amount being
+//! typed.
 
 use crate::web::charts;
 use crate::web::dto::*;
@@ -142,7 +144,7 @@ pub fn FoodDailyPage() -> impl IntoView {
     );
     view! {
         <Page title="food" here="/food">
-            <Suspense fallback=loading>
+            <Transition fallback=loading>
                 {move || {
                     data.get()
                         .map(|r| match r {
@@ -150,7 +152,7 @@ pub fn FoodDailyPage() -> impl IntoView {
                             Err(e) => failure(e).into_any(),
                         })
                 }}
-            </Suspense>
+            </Transition>
         </Page>
     }
 }
@@ -610,7 +612,7 @@ pub fn FoodEditPage() -> impl IntoView {
     );
     view! {
         <Page title="food · edit" here="/food/edit">
-            <Suspense fallback=loading>
+            <Transition fallback=loading>
                 {move || {
                     data.get()
                         .map(|r| match r {
@@ -618,7 +620,7 @@ pub fn FoodEditPage() -> impl IntoView {
                             Err(e) => failure(e).into_any(),
                         })
                 }}
-            </Suspense>
+            </Transition>
         </Page>
     }
 }
@@ -1253,7 +1255,7 @@ pub fn WeightDailyPage() -> impl IntoView {
     );
     view! {
         <Page title="weight" here="/weight">
-            <Suspense fallback=loading>
+            <Transition fallback=loading>
                 {move || {
                     data.get()
                         .map(|r| match r {
@@ -1261,7 +1263,7 @@ pub fn WeightDailyPage() -> impl IntoView {
                             Err(e) => failure(e).into_any(),
                         })
                 }}
-            </Suspense>
+            </Transition>
         </Page>
     }
 }
@@ -1428,7 +1430,7 @@ pub fn WeightEditPage() -> impl IntoView {
     );
     view! {
         <Page title="weight · edit" here="/weight/edit">
-            <Suspense fallback=loading>
+            <Transition fallback=loading>
                 {move || {
                     data.get()
                         .map(|r| match r {
@@ -1436,7 +1438,7 @@ pub fn WeightEditPage() -> impl IntoView {
                             Err(e) => failure(e).into_any(),
                         })
                 }}
-            </Suspense>
+            </Transition>
         </Page>
     }
 }
@@ -1673,7 +1675,7 @@ pub fn WeightAnalysisPage() -> impl IntoView {
                     })
                     .collect_view()}
             </div>
-            <Suspense fallback=loading>
+            <Transition fallback=loading>
                 {move || {
                     data.get()
                         .map(|r| match r {
@@ -1681,7 +1683,7 @@ pub fn WeightAnalysisPage() -> impl IntoView {
                             Err(e) => failure(e).into_any(),
                         })
                 }}
-            </Suspense>
+            </Transition>
         </Page>
     }
 }
@@ -1953,13 +1955,27 @@ pub fn GymDailyPage() -> impl IntoView {
     let (tick, set_tick) = signal(0u32);
     let saved = Callback::new(move |()| set_tick.update(|t| *t += 1));
     let (focus, set_focus) = signal(None::<i64>);
+    let (end_reply, set_end_reply) = signal(None::<Result<String, ServerFnError>>);
+    let end = Action::new(move |session: &i64| {
+        let session = *session;
+        async move { crate::web::api::act_end_session(session).await }
+    });
+    Effect::new(move |_| {
+        if let Some(r) = end.value().get() {
+            if r.is_ok() {
+                set_focus.set(None);
+                saved.run(());
+            }
+            set_end_reply.set(Some(r));
+        }
+    });
     let data = Resource::new(
         move || tick.get(),
         |_| async { crate::web::api::load_gym_daily().await },
     );
     view! {
         <Page title="gym" here="/gym">
-            <Suspense fallback=loading>
+            <Transition fallback=loading>
                 {move || {
                     data.get()
                         .map(|r| match r {
@@ -1968,9 +1984,10 @@ pub fn GymDailyPage() -> impl IntoView {
                                     <GymDailyView
                                         d=d
                                         saved=saved
-                                        tick=tick
                                         focus=focus
                                         set_focus=set_focus
+                                        end=end
+                                        end_reply=end_reply
                                     />
                                 }
                                     .into_any()
@@ -1978,7 +1995,7 @@ pub fn GymDailyPage() -> impl IntoView {
                             Err(e) => failure(e).into_any(),
                         })
                 }}
-            </Suspense>
+            </Transition>
         </Page>
     }
 }
@@ -1987,9 +2004,10 @@ pub fn GymDailyPage() -> impl IntoView {
 fn GymDailyView(
     d: GymDaily,
     saved: Callback<()>,
-    tick: ReadSignal<u32>,
     focus: ReadSignal<Option<i64>>,
     set_focus: WriteSignal<Option<i64>>,
+    end: Action<i64, Result<String, ServerFnError>>,
+    end_reply: ReadSignal<Option<Result<String, ServerFnError>>>,
 ) -> impl IntoView {
     let reminder = match (d.weeks_since_deload, d.deload_weeks) {
         (Some(w), want) if w >= want => format!(
@@ -2064,9 +2082,9 @@ fn GymDailyView(
                             efforts=efforts
                             today=today_screen
                             saved=saved
-                            tick=tick
                             focus=focus
-                            set_focus=set_focus
+                            end=end
+                            end_reply=end_reply
                             next=next
                             options=options
                             on_open=choose
@@ -2092,30 +2110,27 @@ fn SessionScreen(
     efforts: Vec<EffortRow>,
     today: String,
     saved: Callback<()>,
-    tick: ReadSignal<u32>,
     focus: ReadSignal<Option<i64>>,
-    set_focus: WriteSignal<Option<i64>>,
+    end: Action<i64, Result<String, ServerFnError>>,
+    end_reply: ReadSignal<Option<Result<String, ServerFnError>>>,
     next: Option<(i64, String)>,
     options: Vec<(i64, String)>,
     on_open: Callback<i64>,
     on_close: Callback<()>,
 ) -> impl IntoView {
     let session = live.id;
-    let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
-    let end = Action::new(move |session: &i64| {
-        let session = *session;
-        async move { crate::web::api::act_end_session(session).await }
-    });
-    Effect::new(move |_| {
-        if let Some(r) = end.value().get() {
-            if r.is_ok() {
-                set_focus.set(None);
-                saved.run(());
-            }
-            set_outcome.set(Some(r));
-        }
-    });
     let set_count = live.sets.len();
+    let (redraw, set_redraw) = signal(0u32);
+    let (added, set_added) = signal(0u32);
+    let corrected = Callback::new(move |()| set_redraw.update(|t| *t += 1));
+    let recorded = Callback::new(move |()| {
+        set_redraw.update(|t| *t += 1);
+        set_added.update(|n| *n += 1);
+    });
+    let leave = Callback::new(move |()| {
+        saved.run(());
+        on_close.run(());
+    });
     // Escape is the way out of the exercise window, never out of the session: a
     // full-screen view must be interruptible without ending the session, and
     // ending it stays the explicit press of `end session`.
@@ -2123,7 +2138,7 @@ fn SessionScreen(
     {
         let handle = window_event_listener(leptos::ev::keydown, move |e| {
             if e.key() == "Escape" && focus.get_untracked().is_some() {
-                set_focus.set(None);
+                leave.run(());
             }
         });
         on_cleanup(move || handle.remove());
@@ -2135,7 +2150,9 @@ fn SessionScreen(
                 <span class=DIM>{format!("started {}", live.time)}</span>
                 <DeloadToggle session=live.id deload=live.deload saved=saved />
                 <span class="grow"></span>
-                <span class=DIM>{format!("{set_count} set(s) recorded")}</span>
+                <span class=DIM>
+                    {move || format!("{} set(s) recorded", set_count + added.get() as usize)}
+                </span>
                 <button
                     type="button"
                     class=SMALL_BAD
@@ -2153,10 +2170,11 @@ fn SessionScreen(
                         <ExerciseWindowView
                             session=session
                             exercise=ex
-                            tick=tick
+                            tick=redraw
                             efforts=efforts.clone()
-                            saved=saved
-                            on_close=on_close
+                            recorded=recorded
+                            corrected=corrected
+                            on_close=leave
                             next=next.clone()
                             options=options.clone()
                             on_open=on_open
@@ -2183,7 +2201,7 @@ fn SessionScreen(
                     "Ending a session with no sets discards it. Esc and ✕ leave the exercise window, not the session; end session closes it."
                 </span>
             </div>
-            <Outcome outcome=outcome />
+            <Outcome outcome=end_reply />
         </div>
     }
 }
@@ -2529,7 +2547,8 @@ fn ExerciseWindowView(
     exercise: i64,
     tick: ReadSignal<u32>,
     efforts: Vec<EffortRow>,
-    saved: Callback<()>,
+    recorded: Callback<()>,
+    corrected: Callback<()>,
     on_close: Callback<()>,
     /// The exercise the list order leads to next, and the list to change it
     /// from.
@@ -2547,7 +2566,7 @@ fn ExerciseWindowView(
                 "✕ back to the checklist"
             </button>
         </div>
-        <Suspense fallback=loading>
+        <Transition fallback=loading>
             {move || {
                 data.get()
                     .map(|r| match r {
@@ -2556,7 +2575,8 @@ fn ExerciseWindowView(
                                 <WindowBody
                                     session=session
                                     w=w
-                                    saved=saved
+                                    recorded=recorded
+                                    corrected=corrected
                                     efforts=efforts.clone()
                                     next=next.clone()
                                     options=options.clone()
@@ -2568,7 +2588,7 @@ fn ExerciseWindowView(
                         Err(e) => failure(e).into_any(),
                     })
             }}
-        </Suspense>
+        </Transition>
     }
 }
 
@@ -2577,7 +2597,8 @@ fn WindowBody(
     session: i64,
     w: ExerciseWindow,
     efforts: Vec<EffortRow>,
-    saved: Callback<()>,
+    recorded: Callback<()>,
+    corrected: Callback<()>,
     next: Option<(i64, String)>,
     options: Vec<(i64, String)>,
     on_open: Callback<i64>,
@@ -2639,7 +2660,7 @@ fn WindowBody(
                                         <WindowSetRow
                                             s=s.clone()
                                             efforts=efforts.clone()
-                                            saved=saved
+                                            saved=corrected
                                         />
                                     }
                                 })
@@ -2658,7 +2679,7 @@ fn WindowBody(
             rep0=rep0
             effort0=effort0
             efforts=efforts.clone()
-            saved=saved
+            saved=recorded
         />
 
         <div class=ROW>
@@ -2975,7 +2996,7 @@ pub fn GymEditPage() -> impl IntoView {
     );
     view! {
         <Page title="gym · edit" here="/gym/edit">
-            <Suspense fallback=loading>
+            <Transition fallback=loading>
                 {move || {
                     data.get()
                         .map(|r| match r {
@@ -2983,7 +3004,7 @@ pub fn GymEditPage() -> impl IntoView {
                             Err(e) => failure(e).into_any(),
                         })
                 }}
-            </Suspense>
+            </Transition>
         </Page>
     }
 }
@@ -4037,7 +4058,7 @@ pub fn GymAnalysisPage() -> impl IntoView {
                     })
                     .collect_view()}
             </div>
-            <Suspense fallback=loading>
+            <Transition fallback=loading>
                 {move || {
                     data.get()
                         .map(|r| match r {
@@ -4048,7 +4069,7 @@ pub fn GymAnalysisPage() -> impl IntoView {
                             Err(e) => failure(e).into_any(),
                         })
                 }}
-            </Suspense>
+            </Transition>
         </Page>
     }
 }
@@ -4160,7 +4181,7 @@ pub fn StatusPage() -> impl IntoView {
     );
     view! {
         <Bare title="status">
-            <Suspense fallback=loading>
+            <Transition fallback=loading>
                 {move || {
                     data.get()
                         .map(|r| match r {
@@ -4168,7 +4189,7 @@ pub fn StatusPage() -> impl IntoView {
                             Err(e) => failure(e).into_any(),
                         })
                 }}
-            </Suspense>
+            </Transition>
         </Bare>
     }
 }

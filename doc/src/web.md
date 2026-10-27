@@ -305,6 +305,47 @@ A preset form keeps the filter box mounted while its picks change, because a
 box that was rebuilt on every pick would lose the query as soon as the reader
 used it.
 
+## A re-read keeps the view
+
+Every page's data is one `Resource` against one server function, and the view it
+renders sits in a `<Transition>`. The boundary is what the reader sees while the
+next read is in flight: `Suspense` drops back to its fallback on *every* pending
+read, so a save collapsed the page to `Loading…` and rebuilt it — the day's
+table, its totals and the row being typed all disappeared and came back — while
+a `Transition` keeps the view it has until the next one is ready, and its
+fallback belongs to the first paint alone, when there is nothing to keep. The
+fallback is one line inside the boundary, never the page shell: the header, the
+tabs and the action row are drawn once by the app root and must not go with the
+data.
+
+A save is followed by that page's re-read: the write bumps a counter the page's
+`Resource` is keyed on, and the re-read is what makes the row just written
+appear. Three things keep the re-read from moving the ground under the reader.
+
+- **The exercise window re-reads itself, not the page.** A set saved or
+  corrected in the window bumps the window's own counter, so the table of this
+  session's sets grows under the form. The page is re-read when the window
+  closes, because the checklist's counts are what is read next, and the
+  session's set total in the bar counts the rows added since the page was last
+  read, so it is right while the page's copy is still the older one. The exit
+  from the session is the page's own action for the same reason: a read landing
+  while `end session` is in flight rebuilds the screen, and a result that lived
+  in the screen would be dropped with it.
+- **A window belongs to one exercise.** Opening another exercise builds a new
+  window, whose `Transition` has nothing to keep and so shows the fallback: the
+  reader is never shown the previous exercise's sets under a form that would
+  write to that exercise. A re-read of the same exercise is the case the
+  `Transition` is for.
+- **The control that starts a write is disabled while it runs**, from its own
+  action's pending state — that control, not the page behind it: the list, the
+  filter boxes and the other rows stay live, so a save never freezes the page it
+  was made on. A disabled submit button is also what refuses a second `Enter` in
+  a field, since the browser does not submit a form whose submit button is
+  disabled, so the fields themselves stay live and nothing greys out. Where a
+  second request would be the *same* write the control stays live too: a picker
+  row adds an exercise with `ON CONFLICT DO NOTHING`, so two quick clicks write
+  one row, and disabling the row would only refuse the second click.
+
 ## Caching
 
 Every response carries `Cache-Control: no-cache`. The bundle's URLs are stable
