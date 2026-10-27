@@ -422,10 +422,17 @@ pub async fn add_named_exercise(db: &Db, session: i64, name: &str) -> Res<i64> {
 }
 
 /// Apply a preset to a session's checklist: every item it does not have yet,
-/// in the preset's order.
+/// in the preset's order, each with the working sets the preset asks for.
+///
+/// The target is copied into the checklist rather than read back through the
+/// preset, because the checklist is a snapshot: rewriting the preset during the
+/// session must not move the target the session was started against. An item
+/// already on the list keeps its place and takes the preset's target, which is
+/// what the reader just asked for.
 pub async fn apply_exercise_preset(db: &Db, session: i64, preset: i64) -> Res<usize> {
     let items = sqlx::query!(
-        r#"SELECT exercise AS "exercise!" FROM exercise_list_item WHERE list = ?1 ORDER BY position"#,
+        r#"SELECT exercise AS "exercise!", target_sets AS "sets!"
+           FROM exercise_list_item WHERE list = ?1 ORDER BY position"#,
         preset
     )
     .fetch_all(&db.pool)
@@ -437,15 +444,27 @@ pub async fn apply_exercise_preset(db: &Db, session: i64, preset: i64) -> Res<us
     let mut added = 0;
     for i in items {
         let n = sqlx::query!(
-            r#"INSERT INTO session_list_item (session, exercise, position)
-               SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1 FROM session_list_item WHERE session = ?1
+            r#"INSERT INTO session_list_item (session, exercise, position, target_sets)
+               SELECT ?1, ?2, COALESCE(MAX(position), -1) + 1, ?3 FROM session_list_item WHERE session = ?1
                ON CONFLICT (session, exercise) DO NOTHING"#,
             session,
-            i.exercise
+            i.exercise,
+            i.sets
         )
         .execute(&mut *tx)
         .await?
         .rows_affected();
+        if n == 0 {
+            sqlx::query!(
+                r#"UPDATE session_list_item SET target_sets = ?3
+                   WHERE session = ?1 AND exercise = ?2"#,
+                session,
+                i.exercise,
+                i.sets
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
         added += n as usize;
     }
     tx.commit().await?;
@@ -909,15 +928,14 @@ pub async fn delete_preset(db: &Db, id: i64) -> Res<()> {
     Ok(())
 }
 
-/// A gym preset: a named, ordered list of exercises to work through.
-pub async fn add_exercise_preset(db: &Db, name: &str, items: Vec<i64>) -> Res<i64> {
+/// A gym preset: a named, ordered list of exercises to work through, each with
+/// the number of working sets it is there to do.
+pub async fn add_exercise_preset(db: &Db, name: &str, items: Vec<(i64, i64)>) -> Res<i64> {
     let name = name.trim();
     if name.is_empty() {
         Err("A preset needs a name.".to_string())?;
     }
-    if items.is_empty() {
-        Err("A preset needs at least one exercise.".to_string())?;
-    }
+    check_preset(items.as_slice())?;
     let mut tx = db.pool.begin().await?;
     let id = sqlx::query_scalar!(
         r#"INSERT INTO exercise_list (name) VALUES (?1) RETURNING id AS "id!""#,
@@ -925,12 +943,13 @@ pub async fn add_exercise_preset(db: &Db, name: &str, items: Vec<i64>) -> Res<i6
     )
     .fetch_one(&mut *tx)
     .await?;
-    for (position, exercise) in items.iter().enumerate() {
+    for (position, (exercise, sets)) in items.iter().enumerate() {
         sqlx::query!(
-            "INSERT INTO exercise_list_item (list, exercise, position) VALUES (?1, ?2, ?3)",
+            "INSERT INTO exercise_list_item (list, exercise, position, target_sets) VALUES (?1, ?2, ?3, ?4)",
             id,
             exercise,
-            position as i64
+            position as i64,
+            sets
         )
         .execute(&mut *tx)
         .await?;
@@ -939,18 +958,32 @@ pub async fn add_exercise_preset(db: &Db, name: &str, items: Vec<i64>) -> Res<i6
     Ok(id)
 }
 
-/// Rewrite a preset: its name and its list, in one transaction.
+/// Refuse a preset that asks for no work: an exercise with no sets would put a
+/// line on the checklist that can never be ticked off.
+fn check_preset(items: &[(i64, i64)]) -> Res<()> {
+    if items.is_empty() {
+        Err("A preset needs at least one exercise.".to_string())?;
+    }
+    if let Some((_, sets)) = items.iter().find(|(_, sets)| *sets < 1) {
+        Err(format!(
+            "Every exercise in a preset needs at least one working set; one asks for {sets}."
+        ))?;
+    }
+    Ok(())
+}
+
+/// Rewrite a preset: its name, its exercises and their working sets, in one
+/// transaction.
 ///
 /// Finished sessions keep the checklist they recorded — they store the
-/// exercises, not the preset — so rewriting a preset never rewrites history.
-pub async fn edit_exercise_preset(db: &Db, id: i64, name: &str, items: Vec<i64>) -> Res<()> {
+/// exercises and the targets they were started against, not the preset — so
+/// rewriting a preset never rewrites history.
+pub async fn edit_exercise_preset(db: &Db, id: i64, name: &str, items: Vec<(i64, i64)>) -> Res<()> {
     let name = name.trim();
     if name.is_empty() {
         Err("A preset needs a name.".to_string())?;
     }
-    if items.is_empty() {
-        Err("A preset needs at least one exercise.".to_string())?;
-    }
+    check_preset(items.as_slice())?;
     let mut tx = db.pool.begin().await?;
     sqlx::query!("UPDATE exercise_list SET name = ?1 WHERE id = ?2", name, id)
         .execute(&mut *tx)
@@ -958,12 +991,13 @@ pub async fn edit_exercise_preset(db: &Db, id: i64, name: &str, items: Vec<i64>)
     sqlx::query!("DELETE FROM exercise_list_item WHERE list = ?1", id)
         .execute(&mut *tx)
         .await?;
-    for (position, exercise) in items.iter().enumerate() {
+    for (position, (exercise, sets)) in items.iter().enumerate() {
         sqlx::query!(
-            "INSERT INTO exercise_list_item (list, exercise, position) VALUES (?1, ?2, ?3)",
+            "INSERT INTO exercise_list_item (list, exercise, position, target_sets) VALUES (?1, ?2, ?3, ?4)",
             id,
             exercise,
-            position as i64
+            position as i64,
+            sets
         )
         .execute(&mut *tx)
         .await?;
@@ -973,8 +1007,139 @@ pub async fn edit_exercise_preset(db: &Db, id: i64, name: &str, items: Vec<i64>)
 }
 
 pub async fn delete_exercise_preset(db: &Db, id: i64) -> Res<()> {
+    let used: i64 = sqlx::query_scalar!(r#"SELECT count(*) FROM split_day WHERE preset = ?1"#, id)
+        .fetch_one(&db.pool)
+        .await?;
+    if used > 0 {
+        Err(format!(
+            "{used} split day(s) still use this preset; remove it from them first."
+        ))?;
+    }
     sqlx::query!("DELETE FROM exercise_list WHERE id = ?1", id)
         .execute(&db.pool)
+        .await?;
+    Ok(())
+}
+
+/// A split: the week a session is started into, as the preset each day asks
+/// for.
+///
+/// `active` is the whole of the feature's switch: no split is active means no
+/// day is suggested, which is what turning it off is.
+pub async fn add_split(
+    db: &Db,
+    name: &str,
+    active: bool,
+    days: Vec<(i64, Option<i64>)>,
+) -> Res<i64> {
+    let name = check_split(name, &days)?;
+    let mut tx = db.pool.begin().await?;
+    let id = sqlx::query_scalar!(
+        r#"INSERT INTO split (name, active) VALUES (?1, 0) RETURNING id AS "id!""#,
+        name
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| {
+        if e.to_string().contains("UNIQUE") {
+            crate::util::Err::Str(format!("A split called '{name}' already exists."))
+        } else {
+            crate::util::Err::from(e)
+        }
+    })?;
+    write_days(&mut tx, id, days).await?;
+    if active {
+        activate(&mut tx, id).await?;
+    }
+    tx.commit().await?;
+    Ok(id)
+}
+
+pub async fn edit_split(
+    db: &Db,
+    id: i64,
+    name: &str,
+    active: bool,
+    days: Vec<(i64, Option<i64>)>,
+) -> Res<()> {
+    let name = check_split(name, &days)?;
+    let mut tx = db.pool.begin().await?;
+    sqlx::query!("UPDATE split SET name = ?1 WHERE id = ?2", name, id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("UNIQUE") {
+                crate::util::Err::Str(format!("A split called '{name}' already exists."))
+            } else {
+                crate::util::Err::from(e)
+            }
+        })?;
+    sqlx::query!("DELETE FROM split_day WHERE split = ?1", id)
+        .execute(&mut *tx)
+        .await?;
+    write_days(&mut tx, id, days).await?;
+    // Turning this one on is also turning the other one off: the uniqueness of
+    // the active split is the schema's, so the old one is cleared first.
+    if active {
+        activate(&mut tx, id).await?;
+    } else {
+        sqlx::query!("UPDATE split SET active = 0 WHERE id = ?1", id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn delete_split(db: &Db, id: i64) -> Res<()> {
+    sqlx::query!("DELETE FROM split WHERE id = ?1", id)
+        .execute(&db.pool)
+        .await?;
+    Ok(())
+}
+
+/// A split's name, and the days it needs to say anything at all.
+fn check_split(name: &str, days: &[(i64, Option<i64>)]) -> Res<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        Err("A split needs a name.".to_string())?;
+    }
+    if let Some((weekday, _)) = days.iter().find(|(d, _)| !(1..=7).contains(d)) {
+        Err(format!(
+            "'{weekday}' is not a weekday: 1 is Monday and 7 is Sunday."
+        ))?;
+    }
+    if !days.iter().any(|(_, preset)| preset.is_some()) {
+        Err("A split needs at least one day with a preset; clear the one in use instead of keeping an empty split.".to_string())?;
+    }
+    Ok(name.to_string())
+}
+
+async fn write_days(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    split: i64,
+    days: Vec<(i64, Option<i64>)>,
+) -> Res<()> {
+    for (weekday, preset) in days {
+        let Some(preset) = preset else { continue };
+        sqlx::query!(
+            "INSERT INTO split_day (split, weekday, preset) VALUES (?1, ?2, ?3)",
+            split,
+            weekday,
+            preset
+        )
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
+}
+
+async fn activate(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, id: i64) -> Res<()> {
+    sqlx::query!("UPDATE split SET active = 0 WHERE id <> ?1", id)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query!("UPDATE split SET active = 1 WHERE id = ?1", id)
+        .execute(&mut **tx)
         .await?;
     Ok(())
 }
@@ -1083,6 +1248,14 @@ pub fn num(s: &str, field: &str) -> Res<f64> {
     let t = s.trim();
     t.parse::<f64>()
         .map_err(|_| crate::util::Err::Str(format!("'{field}' is '{t}', which is not a number.")))
+}
+
+/// Parse a whole number a form typed: how many sets a row asks for.
+pub fn count(s: &str, field: &str) -> Res<i64> {
+    let t = s.trim();
+    t.parse::<i64>().map_err(|_| {
+        crate::util::Err::Str(format!("'{field}' is '{t}', which is not a whole number."))
+    })
 }
 
 pub type At = DateTime<Local>;

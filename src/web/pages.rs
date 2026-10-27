@@ -2021,6 +2021,7 @@ fn GymDailyView(
     let phase = d.phase.clone();
     let efforts = d.efforts.clone();
     let open = d.open.clone();
+    let offer = d.offer.clone();
     let places = d.places.clone();
     let exercises = d.exercises.clone();
     let presets = d.presets.clone();
@@ -2033,6 +2034,7 @@ fn GymDailyView(
             let exercises = exercises.clone();
             let efforts = efforts.clone();
             let presets = presets.clone();
+            let offer = offer.clone();
             let today = today.clone();
             let now = now.clone();
             let phase = phase.clone();
@@ -2080,6 +2082,7 @@ fn GymDailyView(
                             presets=presets
                             exercises=exercises
                             efforts=efforts
+                            offer=offer
                             today=today_screen
                             saved=saved
                             focus=focus
@@ -2108,6 +2111,7 @@ fn SessionScreen(
     presets: Vec<GymPreset>,
     exercises: Vec<ExerciseRow>,
     efforts: Vec<EffortRow>,
+    offer: Option<SplitOffer>,
     today: String,
     saved: Callback<()>,
     focus: ReadSignal<Option<i64>>,
@@ -2188,6 +2192,7 @@ fn SessionScreen(
                             live=live.clone()
                             presets=presets.clone()
                             exercises=exercises.clone()
+                            offer=offer.clone()
                             today=today.clone()
                             saved=saved
                             on_open=on_open
@@ -2352,6 +2357,7 @@ fn LiveSessionView(
     live: LiveSession,
     presets: Vec<GymPreset>,
     exercises: Vec<ExerciseRow>,
+    offer: Option<SplitOffer>,
     today: String,
     saved: Callback<()>,
     on_open: Callback<i64>,
@@ -2411,7 +2417,7 @@ fn LiveSessionView(
     let first = live
         .list
         .iter()
-        .find(|i| i.sets == 0)
+        .find(|i| !i.done())
         .or_else(|| live.list.first())
         .map(|i| i.exercise);
     let start = Callback::new(move |()| {
@@ -2420,6 +2426,32 @@ fn LiveSessionView(
         }
     });
     view! {
+        {match offer.clone() {
+            None => ().into_any(),
+            Some(o) => {
+                let preset = o.preset;
+                view! {
+                    <div class=PANEL data-split-offer=o.preset_name.clone()>
+                        <div class=ROW>
+                            <span class=OK>{format!("{} · {} asks for {}", o.weekday, o.split, o.preset_name)}</span>
+                            <span class=DIM>{format!("{} exercise(s)", o.exercises)}</span>
+                            <span class="grow"></span>
+                            <button
+                                type="button"
+                                on:click=move |_| {
+                                    apply.dispatch((session, preset));
+                                }
+                                disabled=move || apply.pending().get()
+                            >
+                                {format!("apply {}", o.preset_name)}
+                            </button>
+                        </div>
+                        <Hint text="The split names a preset for this weekday: applying it fills the list, which is a choice, not a fill by itself." />
+                    </div>
+                }
+                    .into_any()
+            }
+        }}
         {if presets.is_empty() {
             ().into_any()
         } else {
@@ -2480,17 +2512,11 @@ fn LiveSessionView(
                         .iter()
                         .map(|item| {
                             let ex = item.exercise;
-                            let mark = if item.sets > 0 { "☑" } else { "☐" };
-                            let klass = if item.sets > 0 { OK } else { DIM };
-                            let label = format!(
-                                "{mark} {} · {}",
-                                item.name,
-                                if item.sets > 0 {
-                                    format!("{} set(s)", item.sets)
-                                } else {
-                                    "not started".to_string()
-                                },
-                            );
+                            // The count is of work: a warmup is recorded and shown,
+                            // and is not one of the sets the target asks for.
+                            let mark = if item.done() { "☑" } else { "☐" };
+                            let klass = if item.done() { OK } else { DIM };
+                            let label = format!("{mark} {} · {}", item.name, item.progress());
                             view! {
                                 <button
                                     type="button"
@@ -2539,7 +2565,6 @@ fn LiveSessionView(
         <Hint text="Picking an exercise adds it to the list; it does not start recording. An exercise the log does not have is added by name, with no muscle group until it is filled in on the edit page. start sets opens the window on the first exercise still to do, and the window says which exercise is next." />
     }
 }
-
 /// One exercise, while its sets are recorded.
 #[component]
 fn ExerciseWindowView(
@@ -2933,6 +2958,17 @@ fn SetForm(
     });
     let l0 = load0.clone();
     let r0 = rep0.clone();
+    // The prefill is what the row opens on, and a saved set changes it: a
+    // warmup replaces nothing, so the numbers after one still point at the
+    // work, and the row after a working set points at the set just done. The
+    // values are set as properties, not attributes, because a kept window means
+    // the same input node is still there — and a property the reader typed into
+    // ignores an attribute written beside it.
+    let e0 = effort0
+        .and_then(|rank| efforts.iter().find(|x| x.rank == rank))
+        .or_else(|| efforts.first())
+        .map(|x| x.name.clone())
+        .unwrap_or_default();
     view! {
         <form on:submit=move |e| {
             e.prevent_default();
@@ -2949,15 +2985,15 @@ fn SetForm(
             <div class=LINE>
                 <label class=NARROW>
                     "load"
-                    <input type="text" size="5" value=load0.clone() node_ref=load />
+                    <input type="text" size="5" prop:value=load0.clone() node_ref=load />
                 </label>
                 <label class=NARROW>
                     "reps"
-                    <input type="text" size="4" value=rep0.clone() node_ref=rep />
+                    <input type="text" size="4" prop:value=rep0.clone() node_ref=rep />
                 </label>
                 <label class=GROW>
                     "effort"
-                    <select node_ref=effort>
+                    <select node_ref=effort prop:value=e0>
                         {efforts
                             .iter()
                             .map(|x| {
@@ -3013,14 +3049,21 @@ pub fn GymEditPage() -> impl IntoView {
 fn GymEditView(d: GymEdit, saved: Callback<()>) -> impl IntoView {
     let (view, set_view) = signal("sessions".to_string());
     let pick = Callback::new(move |v: String| set_view.set(v));
-    let (sessions, exercises, presets, places, groups) =
-        (d.clone(), d.clone(), d.clone(), d.clone(), d.clone());
+    let (sessions, exercises, presets, splits, places, groups) = (
+        d.clone(),
+        d.clone(),
+        d.clone(),
+        d.clone(),
+        d.clone(),
+        d.clone(),
+    );
     view! {
         <Segmented
             options=vec![
                 ("sessions", "sessions"),
                 ("exercises", "exercises"),
                 ("presets", "presets"),
+                ("splits", "splits"),
                 ("places", "places"),
                 ("groups", "groups"),
             ]
@@ -3038,6 +3081,9 @@ fn GymEditView(d: GymEdit, saved: Callback<()>) -> impl IntoView {
         </div>
         <div class:hidden=move || view.get() != "presets">
             <GymPresetPanels d=presets saved=saved />
+        </div>
+        <div class:hidden=move || view.get() != "splits">
+            <SplitPanels d=splits saved=saved />
         </div>
         <div class:hidden=move || view.get() != "places">
             <PlacePanels d=places saved=saved />
@@ -3560,16 +3606,39 @@ fn GymPresetPanels(d: GymEdit, saved: Callback<()>) -> impl IntoView {
     }
 }
 
-/// One exercise of a preset being built: its name, and the way to drop it.
+/// One exercise of a preset being built: its name, the working sets it asks
+/// for, and the way to drop it.
 ///
 /// Picking from the filter above appends here, so the order is the order the
 /// reader picked; the preset keeps it, and the daily page puts its exercises on
-/// a session's list in that order.
+/// a session's list in that order, each with its own count.
 #[component]
-fn PickedExercise(index: usize, name: String, picked: RwSignal<Vec<i64>>) -> impl IntoView {
+fn PickedExercise(
+    index: usize,
+    name: String,
+    sets: String,
+    picked: RwSignal<Vec<(i64, String)>>,
+) -> impl IntoView {
     view! {
         <div class=LINE>
             <span class=GROW>{name}</span>
+            <label class=NARROW>
+                "sets"
+                <input
+                    type="text"
+                    size="3"
+                    value=sets
+                    on:input=move |e| {
+                        let v = event_target_value(&e);
+                        picked
+                            .update(|p| {
+                                if let Some(row) = p.get_mut(index) {
+                                    row.1 = v;
+                                }
+                            });
+                    }
+                />
+            </label>
             <button
                 type="button"
                 class=SMALL_BAD
@@ -3588,6 +3657,32 @@ fn PickedExercise(index: usize, name: String, picked: RwSignal<Vec<i64>>) -> imp
     }
 }
 
+/// The rows a preset form shows: the picks, read without subscribing to the
+/// count typed beside each one, so a keystroke does not rebuild the input it is
+/// typed into.
+fn picked_rows(
+    ids: &[i64],
+    picks: RwSignal<Vec<(i64, String)>>,
+    names: StoredValue<Vec<(i64, String)>>,
+) -> impl IntoView {
+    ids.iter()
+        .enumerate()
+        .map(|(i, exercise)| {
+            let exercise = *exercise;
+            let label = names.with_value(|names| {
+                names
+                    .iter()
+                    .find(|(id, _)| *id == exercise)
+                    .map(|(_, label)| label.clone())
+                    .unwrap_or_default()
+            });
+            let sets =
+                picks.with_untracked(|p| p.get(i).map(|(_, s)| s.clone()).unwrap_or_default());
+            view! { <PickedExercise index=i name=label sets=sets picked=picks /> }
+        })
+        .collect_view()
+}
+
 /// The rows a preset form's filter narrows: `(id, label, note)`, with the muscle
 /// group in the label so a group finds the exercise too.
 fn preset_candidates(names: &[(i64, String)]) -> Vec<(i64, String, String)> {
@@ -3597,6 +3692,11 @@ fn preset_candidates(names: &[(i64, String)]) -> Vec<(i64, String, String)> {
         .collect()
 }
 
+/// The working sets a freshly picked exercise asks for: the same number the
+/// column gives the presets written before it existed, so a new row and an old
+/// one mean the same thing.
+const DEFAULT_SETS: i64 = 3;
+
 #[component]
 fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView {
     let (editing, set_editing) = signal(false);
@@ -3605,7 +3705,7 @@ fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) ->
         let id = *id;
         async move { crate::web::api::act_delete_exercise_preset(id).await }
     });
-    let edit = Action::new(move |args: &(i64, String, Vec<i64>)| {
+    let edit = Action::new(move |args: &(i64, String, Vec<(i64, String)>)| {
         let (id, name, exercises) = args.clone();
         async move { crate::web::api::act_edit_exercise_preset(id, name, exercises).await }
     });
@@ -3628,21 +3728,35 @@ fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) ->
     });
     let id = p.id;
     let name0 = p.name.clone();
-    let picks = RwSignal::new(p.items.iter().map(|i| i.exercise).collect::<Vec<i64>>());
+    let picks = RwSignal::new(
+        p.items
+            .iter()
+            .map(|i| (i.exercise, i.sets.to_string()))
+            .collect::<Vec<(i64, String)>>(),
+    );
+    // Only the ids drive the rows: typing a count must not rebuild the input it
+    // is typed into, so the map that renders them subscribes to nothing else.
+    let ids = Memo::new(move |_| {
+        picks
+            .get()
+            .into_iter()
+            .map(|(exercise, _)| exercise)
+            .collect::<Vec<_>>()
+    });
     let name_field = NodeRef::<leptos::html::Input>::new();
     let names_for_edit = StoredValue::new(names.clone());
     let candidates = preset_candidates(&names);
     let add = Callback::new(move |exercise: i64| {
         picks.update(|p| {
-            if !p.contains(&exercise) {
-                p.push(exercise);
+            if !p.iter().any(|(id, _)| *id == exercise) {
+                p.push((exercise, DEFAULT_SETS.to_string()));
             }
         });
     });
     let items = p
         .items
         .iter()
-        .map(|i| i.name.clone())
+        .map(|i| format!("{} {} set(s)", i.name, i.sets))
         .collect::<Vec<_>>()
         .join(", ");
     view! {
@@ -3693,28 +3807,11 @@ fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) ->
                             rows=candidates.clone()
                             on_pick=add
                         />
-                        {move || {
-                            picks
-                                .get()
-                                .iter()
-                                .enumerate()
-                                .map(|(i, exercise)| {
-                                    let label = names_for_edit
-                                        .with_value(|names| {
-                                            names
-                                                .iter()
-                                                .find(|(id, _)| id == exercise)
-                                                .map(|(_, label)| label.clone())
-                                                .unwrap_or_default()
-                                        });
-                                    view! { <PickedExercise index=i name=label picked=picks /> }
-                                })
-                                .collect_view()
-                        }}
+                        {move || picked_rows(&ids.get(), picks, names_for_edit)}
                         <div class=ROW>
                             <button
                                 type="button"
-                                disabled=move || edit.pending().get() || picks.get().is_empty()
+                                disabled=move || edit.pending().get() || ids.get().is_empty()
                                 on:click=move |_| {
                                     edit
                                         .dispatch((
@@ -3744,9 +3841,16 @@ fn AddGymPreset(names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView
     let name = NodeRef::<leptos::html::Input>::new();
     // A preset starts empty and grows a row per pick; the filter text stays put
     // because the picker is not rebuilt when the picks change.
-    let picks = RwSignal::new(Vec::<i64>::new());
+    let picks = RwSignal::new(Vec::<(i64, String)>::new());
+    let ids = Memo::new(move |_| {
+        picks
+            .get()
+            .into_iter()
+            .map(|(exercise, _)| exercise)
+            .collect::<Vec<_>>()
+    });
     let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
-    let action = Action::new(move |args: &(String, Vec<i64>)| {
+    let action = Action::new(move |args: &(String, Vec<(i64, String)>)| {
         let (name, exercises) = args.clone();
         async move { crate::web::api::act_add_exercise_preset(name, exercises).await }
     });
@@ -3762,8 +3866,8 @@ fn AddGymPreset(names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView
     let candidates = preset_candidates(&names);
     let add = Callback::new(move |exercise: i64| {
         picks.update(|p| {
-            if !p.contains(&exercise) {
-                p.push(exercise);
+            if !p.iter().any(|(id, _)| *id == exercise) {
+                p.push((exercise, DEFAULT_SETS.to_string()));
             }
         });
     });
@@ -3781,34 +3885,287 @@ fn AddGymPreset(names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView
                 rows=candidates
                 on_pick=add
             />
-            <Hint text="Type to narrow the list and click an exercise to add it; a row's remove takes it out. Nothing is written before add preset." />
-            {move || {
-                picks
-                    .get()
-                    .iter()
-                    .enumerate()
-                    .map(|(i, exercise)| {
-                        let label = names_for_rows
-                            .with_value(|names| {
-                                names
-                                    .iter()
-                                    .find(|(id, _)| id == exercise)
-                                    .map(|(_, label)| label.clone())
-                                    .unwrap_or_default()
-                            });
-                        view! { <PickedExercise index=i name=label picked=picks /> }
-                    })
-                    .collect_view()
-            }}
+            <Hint text="Type to narrow the list and click an exercise to add it, then set how many working sets it is there to do; a row's remove takes it out. Nothing is written before add preset." />
+            {move || picked_rows(&ids.get(), picks, names_for_rows)}
             <div class=ROW>
                 <button
                     type="button"
-                    disabled=move || action.pending().get() || picks.get().is_empty()
+                    disabled=move || action.pending().get() || ids.get().is_empty()
                     on:click=move |_| {
                         action.dispatch((value_of(name, ""), picks.get_untracked()));
                     }
                 >
                     "add preset"
+                </button>
+                <Outcome outcome=outcome />
+            </div>
+        </div>
+    }
+}
+
+/// A split's week: one row per weekday, each a dropdown of the presets, so the
+/// schedule is read the way a week is.
+fn week_rows(
+    days: RwSignal<Vec<(i64, String)>>,
+    presets: StoredValue<Vec<(i64, String)>>,
+) -> impl IntoView {
+    view! {
+        {(1..=7)
+            .map(|weekday| {
+                let current = days
+                    .with_untracked(|d| {
+                        d.iter()
+                            .find(|(w, _)| *w == weekday)
+                            .map(|(_, p)| p.clone())
+                            .unwrap_or_default()
+                    });
+                let choices = presets.with_value(|ps| ps.clone());
+                let on = current.clone();
+                view! {
+                    <div class=LINE>
+                        <span class=GROW>{weekday_name(weekday)}</span>
+                        <select on:change=move |e| {
+                            let v = event_target_value(&e);
+                            days
+                                .update(|d| {
+                                    if let Some(row) = d.iter_mut().find(|(w, _)| *w == weekday) {
+                                        row.1 = v;
+                                    }
+                                });
+                        }>
+                            <option value="" selected=on.is_empty()>
+                                "rest"
+                            </option>
+                            {choices
+                                .into_iter()
+                                .map(|(id, name)| {
+                                    let chosen = on == id.to_string();
+                                    view! {
+                                        <option value=id.to_string() selected=chosen>
+                                            {name}
+                                        </option>
+                                    }
+                                })
+                                .collect_view()}
+                        </select>
+                    </div>
+                }
+            })
+            .collect_view()}
+    }
+}
+
+/// The splits: the week that decides which preset a starting session is offered.
+#[component]
+fn SplitPanels(d: GymEdit, saved: Callback<()>) -> impl IntoView {
+    let splits = d.splits.clone();
+    let names: Vec<(i64, String)> = d.presets.iter().map(|p| (p.id, p.name.clone())).collect();
+    let presets = StoredValue::new(names.clone());
+    view! {
+        <Section title="Splits">
+            <Hint text="A split names the preset each weekday asks for. The one marked in use is what a session started that day is offered; no split in use means no offers, which is how the feature is left off." />
+            {if splits.is_empty() {
+                view! { <Hint text="No splits yet." /> }.into_any()
+            } else {
+                view! {
+                    {splits
+                        .into_iter()
+                        .map(|s| {
+                            view! {
+                                <SplitEditRow s=s presets=presets saved=saved />
+                            }
+                        })
+                        .collect_view()}
+                }
+                    .into_any()
+            }}
+        </Section>
+        <Section title="Add a split">
+            <AddSplit presets=names saved=saved />
+        </Section>
+    }
+}
+
+#[component]
+fn SplitEditRow(
+    s: SplitWeek,
+    presets: StoredValue<Vec<(i64, String)>>,
+    saved: Callback<()>,
+) -> impl IntoView {
+    let (editing, set_editing) = signal(false);
+    let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
+    let save = Action::new(move |args: &(i64, String, bool, Vec<(i64, String)>)| {
+        let (id, name, active, days) = args.clone();
+        async move { crate::web::api::act_edit_split(id, name, active, days).await }
+    });
+    let del = Action::new(move |id: &i64| {
+        let id = *id;
+        async move { crate::web::api::act_delete_split(id).await }
+    });
+    Effect::new(move |_| {
+        if let Some(r) = save.value().get() {
+            if r.is_ok() {
+                set_editing.set(false);
+                saved.run(());
+            }
+            set_outcome.set(Some(r));
+        }
+    });
+    Effect::new(move |_| {
+        if let Some(r) = del.value().get() {
+            if r.is_ok() {
+                saved.run(());
+            }
+            set_outcome.set(Some(r));
+        }
+    });
+    let id = s.id;
+    let name0 = s.name.clone();
+    let active = s.active;
+    let name_field = NodeRef::<leptos::html::Input>::new();
+    let in_use = NodeRef::<leptos::html::Input>::new();
+    let days = RwSignal::new(
+        s.days
+            .iter()
+            .map(|d| {
+                (
+                    d.weekday,
+                    d.preset.map(|p| p.to_string()).unwrap_or_default(),
+                )
+            })
+            .collect::<Vec<(i64, String)>>(),
+    );
+    let week = s
+        .days
+        .iter()
+        .filter(|d| d.preset.is_some())
+        .map(|d| format!("{} {}", weekday_name(d.weekday), d.preset_name))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    view! {
+        <div class=RECORD data-split=s.name.clone()>
+            <div class=ROW>
+                <span class=GROW>{s.name.clone()}</span>
+                {if active {
+                    view! { <span class=OK>"in use"</span> }.into_any()
+                } else {
+                    ().into_any()
+                }}
+                <button
+                    type="button"
+                    class=SMALL
+                    on:click=move |_| set_editing.update(|e| *e = !*e)
+                >
+                    "edit"
+                </button>
+                <button
+                    type="button"
+                    class=SMALL_BAD
+                    on:click=move |_| {
+                        del.dispatch(id);
+                    }
+                    disabled=move || del.pending().get()
+                >
+                    "delete"
+                </button>
+            </div>
+            <div class=ROW>
+                <span class="text-gray-500 whitespace-normal">{week}</span>
+            </div>
+            {move || {
+                if !editing.get() {
+                    return ().into_any();
+                }
+                let name0 = name0.clone();
+                view! {
+                    <div class=FOLD>
+                        <div class=ROW>
+                            <label class=GROW>
+                                "name"
+                                <input type="text" size="16" value=name0.clone() node_ref=name_field />
+                            </label>
+                            <label class=ROW>
+                                <input type="checkbox" checked=active node_ref=in_use />
+                                "in use"
+                            </label>
+                        </div>
+                        {week_rows(days, presets)}
+                        <div class=ROW>
+                            <button
+                                type="button"
+                                disabled=move || save.pending().get()
+                                on:click=move |_| {
+                                    save
+                                        .dispatch((
+                                            id,
+                                            value_of(name_field, &name0),
+                                            checked(in_use),
+                                            days.get_untracked(),
+                                        ));
+                                }
+                            >
+                                "save"
+                            </button>
+                            <button type="button" on:click=move |_| set_editing.set(false)>
+                                "cancel"
+                            </button>
+                        </div>
+                    </div>
+                }
+                    .into_any()
+            }}
+            <Outcome outcome=outcome />
+        </div>
+    }
+}
+
+#[component]
+fn AddSplit(presets: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView {
+    let name = NodeRef::<leptos::html::Input>::new();
+    let in_use = NodeRef::<leptos::html::Input>::new();
+    // A split starts with every day on rest and grows a day per pick.
+    let days = RwSignal::new(
+        (1..=7)
+            .map(|day| (day, String::new()))
+            .collect::<Vec<(i64, String)>>(),
+    );
+    let choices = StoredValue::new(presets);
+    let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
+    let action = Action::new(move |args: &(String, bool, Vec<(i64, String)>)| {
+        let (name, active, days) = args.clone();
+        async move { crate::web::api::act_add_split(name, active, days).await }
+    });
+    Effect::new(move |_| {
+        if let Some(r) = action.value().get() {
+            if r.is_ok() {
+                saved.run(());
+            }
+            set_outcome.set(Some(r));
+        }
+    });
+    view! {
+        <div id="add-split">
+            <div class=ROW>
+                <label class=GROW>
+                    "name"
+                    <input type="text" size="16" value="" node_ref=name />
+                </label>
+                <label class=ROW>
+                    <input type="checkbox" node_ref=in_use />
+                    "in use"
+                </label>
+            </div>
+            {week_rows(days, choices)}
+            <Hint text="Pick a preset for each day the split schedules; a day left on rest asks for nothing. Nothing is written before add split." />
+            <div class=ROW>
+                <button
+                    type="button"
+                    disabled=move || action.pending().get()
+                    on:click=move |_| {
+                        action.dispatch((value_of(name, ""), checked(in_use), days.get_untracked()));
+                    }
+                >
+                    "add split"
                 </button>
                 <Outcome outcome=outcome />
             </div>

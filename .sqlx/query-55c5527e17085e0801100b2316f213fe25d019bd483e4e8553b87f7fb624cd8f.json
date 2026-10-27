@@ -1,16 +1,16 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT exercise AS \"exercise!\" FROM exercise_list_item WHERE list = ?1 ORDER BY position",
+  "query": "INSERT INTO split (name, active) VALUES (?1, 0) RETURNING id AS \"id!\"",
   "describe": {
     "columns": [
       {
-        "name": "exercise!",
+        "name": "id!",
         "ordinal": 0,
         "type_info": "Integer",
         "origin": {
           "Table": {
-            "table": "exercise_list_item",
-            "name": "exercise"
+            "table": "split",
+            "name": "id"
           }
         }
       }
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "d863dc9ce12d47256f1921eb3aeccd71edc5f4252c4acd088289871b77b71d8f"
+  "hash": "55c5527e17085e0801100b2316f213fe25d019bd483e4e8553b87f7fb624cd8f"
 }

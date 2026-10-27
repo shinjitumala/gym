@@ -29,7 +29,7 @@ phone never gets a menu:
 
 | Tab | Daily | Edit (bottom) | Analyse (bottom) |
 |-----|-------|---------------|------------------|
-| gym | The phase switch and the start form, or — once a session is open — the session itself, full screen. | Sessions and sets, exercises and muscle groups, gym presets, places. | One exercise's strength, overlaid with sets per week for it and its muscle group, and the deload weeks shaded. |
+| gym | The phase switch and the start form, or — once a session is open — the session itself, full screen. | Sessions and sets, exercises and muscle groups, gym presets, splits, places. | One exercise's strength, overlaid with sets per week for it and its muscle group, and the deload weeks shaded. |
 | food | Today's totals against maintenance, the meal being entered with its projected day, the day's meals. | Meals, foods, meal presets. | — the intake chart lives under weight, beside the trend it is read against. |
 | weight | The trend and the last weigh-in, the weigh-in form, recent weigh-ins. | Past weigh-ins. | Weight and body fat by phase, with the intake bars underneath and the range's foods ranked beside them. |
 
@@ -61,6 +61,20 @@ not for the message.
   exercises on the list in the preset's order, and picking an exercise from the
   picker adds it; picking one does *not* open its window. `start sets` opens the
   window on the first exercise still to do. ☐ and ☑ say what is left.
+- **The list counts the work against the preset's target.** A preset gives each
+  of its exercises a number of working sets, and the row reads `2/3 set(s)` — ☑
+  once the target is met — so a session says how far into an exercise it is.
+  Warmup sets are recorded and shown and are not counted, so a warmup neither
+  starts an exercise nor finishes one; an exercise picked on its own has no
+  target, so its row counts its sets without a `/n`.
+- **A split offers the day's preset; it does not fill the list.** A split is the
+  week the training is scheduled by: which preset each weekday asks for, with
+  one split in use. A session started on a day it schedules shows the offer above
+  the list — the weekday, the split and the preset — and `apply push` fills the
+  list exactly as the preset's chip would. Until then the list is empty, because
+  the week is a suggestion and the list is the reader's plan for the hour; the
+  offer disappears once the list has anything on it, and with no split in use it
+  never appears.
 - **An exercise the log has never had is added by name.** `add new`, beside the
   picker, takes a name and puts that exercise on the list, creating the row in
   the log if no exercise of that name exists yet. It arrives with no muscle
@@ -134,10 +148,20 @@ the refusal says how many rows use it.
   says so.
 - **A gym preset is edited in place.** Its row folds out into a name and a list
   of exercises: the filter box above the candidates narrows them by name or
-  muscle group, a click appends a row, and `remove` drops one. Saving rewrites
-  the preset in one transaction. A new preset starts empty and grows a row per
-  pick. Finished sessions store the exercises they recorded, not the preset, so
+  muscle group, a click appends a row, `remove` drops one, and the number beside
+  a row is the working sets that exercise is there to do (three on a fresh pick,
+  and at least one). Saving rewrites the preset in one transaction. A new preset
+  starts empty and grows a row per pick. Finished sessions store the exercises
+  they recorded and the targets they were started against, not the preset, so
   rewriting one never rewrites history.
+- **A split is edited as a week.** Its row folds out into a name, an `in use` box
+  and seven rows — one per weekday, each a dropdown of the presets, with `rest`
+  for a day that asks for nothing. Saving rewrites the week in one transaction.
+  `in use` is the whole switch: marking one split clears the mark on the other,
+  and clearing the mark turns the offers off without deleting the schedule. A
+  split needs at least one day with a preset; a preset a split schedules cannot
+  be deleted until the split stops naming it, and the refusal says how many days
+  still do.
 - **A meal preset is built the same way.** The filter box narrows the food list,
   each click adds a row, and the amount beside it is typed on the row. The
   preset keeps the order the foods were picked in, which is the order the daily
@@ -331,6 +355,14 @@ appear. Three things keep the re-read from moving the ground under the reader.
   from the session is the page's own action for the same reason: a read landing
   while `end session` is in flight rebuilds the screen, and a result that lived
   in the screen would be dropped with it.
+- **The set row is re-seeded from the numbers just done.** Keeping the window
+  means keeping the same input elements, and a field the reader typed into
+  ignores a `value` attribute written beside it — the attribute moves and the
+  box does not. So the row's load, reps and effort are set as **properties**
+  (`prop:value`), which is what lets a re-read put the next set's numbers in
+  them: after a working set, that set; after a warmup, still the work it
+  prepared for. Without that, the second save of a session repeated the warmup
+  the first one had just marked.
 - **A window belongs to one exercise.** Opening another exercise builds a new
   window, whose `Transition` has nothing to keep and so shows the fallback: the
   reader is never shown the previous exercise's sets under a form that would

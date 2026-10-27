@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO exercise_list_item (list, exercise, position, target_sets) VALUES (?1, ?2, ?3, ?4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "3f7982c20ea9779c8f909dc4ce5053e3c230ceceee89f02f322723cd61bd936b"
+}

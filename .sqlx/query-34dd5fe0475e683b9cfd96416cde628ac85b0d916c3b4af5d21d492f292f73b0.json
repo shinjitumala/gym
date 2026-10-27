@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM split_day WHERE split = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "34dd5fe0475e683b9cfd96416cde628ac85b0d916c3b4af5d21d492f292f73b0"
+}

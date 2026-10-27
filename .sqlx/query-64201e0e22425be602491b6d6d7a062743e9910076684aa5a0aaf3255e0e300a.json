@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE session_list_item SET target_sets = ?3\n                   WHERE session = ?1 AND exercise = ?2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "64201e0e22425be602491b6d6d7a062743e9910076684aa5a0aaf3255e0e300a"
+}

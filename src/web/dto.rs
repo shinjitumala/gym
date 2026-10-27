@@ -394,14 +394,42 @@ pub struct MuscleRow {
 }
 
 /// One line of a session's checklist: an exercise the session intends to do,
-/// and how many sets it has recorded so far.
+/// and how many sets of work it has recorded so far.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChecklistRow {
     pub exercise: i64,
     pub name: String,
     pub last_used: Option<String>,
-    /// Sets recorded for this exercise in this session.
+    /// Working sets recorded for this exercise in this session. A warmup is not
+    /// one of them, so a session that has only warmed up has not started.
     pub sets: i64,
+    /// The working sets the preset it was applied from asks for, when it came
+    /// from one: an exercise added on its own has no target to be behind.
+    pub target: Option<i64>,
+}
+
+impl ChecklistRow {
+    /// Whether the exercise has done all the work it is on the list for.
+    ///
+    /// With a target that is the target met, and without one it is any working
+    /// set at all: a row picked on its own has no number to be finished against,
+    /// so starting it is as finished as it gets.
+    pub fn done(&self) -> bool {
+        match self.target {
+            Some(target) => self.sets >= target,
+            None => self.sets > 0,
+        }
+    }
+
+    /// What is left to be told about the row: the count of working sets against
+    /// the target, the count alone, or that it has not been started.
+    pub fn progress(&self) -> String {
+        match self.target {
+            Some(target) => format!("{}/{} set(s)", self.sets, target),
+            None if self.sets > 0 => format!("{} set(s)", self.sets),
+            None => "not started".to_string(),
+        }
+    }
 }
 
 /// The session being recorded.
@@ -431,6 +459,65 @@ pub struct GymPreset {
 pub struct PresetExercise {
     pub exercise: i64,
     pub name: String,
+    /// The working sets the preset gives this exercise.
+    pub sets: i64,
+}
+
+/// A preset a starting session can be offered: the day's row of the active
+/// split, with the preset it names.
+///
+/// An offer, never a fill: the list is populated when the reader presses the
+/// button, so a session that started on the wrong day is not stuck with a
+/// checklist nobody asked for.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SplitOffer {
+    /// The weekday's name, as it is written: `Monday`.
+    pub weekday: String,
+    /// The split the day came from, so the offer says where the schedule is.
+    pub split: String,
+    pub preset: i64,
+    pub preset_name: String,
+    pub exercises: i64,
+}
+
+/// A split: a named week, mapping each weekday to the preset that day asks for.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SplitWeek {
+    pub id: i64,
+    pub name: String,
+    /// The split a starting session is offered from; at most one is.
+    pub active: bool,
+    /// All seven weekdays, Monday first, each with the preset that day asks for.
+    pub days: Vec<SplitDayRow>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SplitDayRow {
+    /// ISO weekday: 1 is Monday, 7 is Sunday.
+    pub weekday: i64,
+    pub name: String,
+    /// The preset this day asks for, or `None` for a rest day.
+    pub preset: Option<i64>,
+    pub preset_name: String,
+}
+
+/// The name a weekday is written by: 1 is `Monday`, 7 is `Sunday`.
+///
+/// The page names the days and the query fills the picked one, so the table
+/// lives here in the shapes both halves compile, not in the server's queries.
+pub fn weekday_name(weekday: i64) -> &'static str {
+    [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
+    .get((weekday - 1).clamp(0, 6) as usize)
+    .copied()
+    .unwrap_or("")
 }
 
 /// Gym · daily.
@@ -449,6 +536,9 @@ pub struct GymDaily {
     pub deload_weeks: i64,
     pub weeks_since_deload: Option<i64>,
     pub phase: Option<PhaseRow>,
+    /// The active split's preset for the open session's own weekday, when its
+    /// list is still empty: an offer to fill it.
+    pub offer: Option<SplitOffer>,
 }
 
 /// The numbers a fresh set row opens on.
@@ -489,6 +579,7 @@ pub struct GymEdit {
     pub places: Vec<PlaceRow>,
     pub groups: Vec<MuscleRow>,
     pub presets: Vec<GymPreset>,
+    pub splits: Vec<SplitWeek>,
     pub efforts: Vec<EffortRow>,
     pub sessions: Vec<SessionRow>,
 }

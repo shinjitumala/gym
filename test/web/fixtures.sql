@@ -1,8 +1,8 @@
 -- A fixture log for the web scenarios: two places, six exercises with muscle
--- groups, two gym presets, four bench sessions one of which is a deload and one
--- of which is only a warmup, two squat sessions and two row sessions (so the
--- analysis has a list to search), five foods, a meal preset, four meals and ten
--- weigh-ins.
+-- groups, two gym presets with a working-set target per exercise, four bench
+-- sessions one of which is a deload and one of which is only a warmup, two squat
+-- sessions and two row sessions (so the analysis has a list to search), five
+-- foods, a meal preset, four meals and ten weigh-ins.
 --
 -- Every date here is counted back from the day the suite runs, never written as
 -- a calendar day: each row names a day of `DAYS_AGO` in `drive.py` and the time
@@ -23,15 +23,18 @@ WHERE (e.name, m.name) IN (
     ('row', 'back'), ('pull up', 'back')
 );
 
+-- Two presets, each exercise with the working sets it is there to do. The two
+-- counts differ, so a page that shows a single number for the list cannot pass
+-- for showing each exercise's own target.
 INSERT INTO exercise_list (name) VALUES ('push'), ('legs');
-INSERT INTO exercise_list_item (list, exercise, position)
-SELECT l.id, e.id, 0 FROM exercise_list l, exercise e
+INSERT INTO exercise_list_item (list, exercise, position, target_sets)
+SELECT l.id, e.id, 0, 3 FROM exercise_list l, exercise e
 WHERE l.name = 'push' AND e.name = 'bench press';
-INSERT INTO exercise_list_item (list, exercise, position)
-SELECT l.id, e.id, 1 FROM exercise_list l, exercise e
+INSERT INTO exercise_list_item (list, exercise, position, target_sets)
+SELECT l.id, e.id, 1, 2 FROM exercise_list l, exercise e
 WHERE l.name = 'push' AND e.name = 'incline press';
-INSERT INTO exercise_list_item (list, exercise, position)
-SELECT l.id, e.id, 0 FROM exercise_list l, exercise e
+INSERT INTO exercise_list_item (list, exercise, position, target_sets)
+SELECT l.id, e.id, 0, 3 FROM exercise_list l, exercise e
 WHERE l.name = 'legs' AND e.name = 'squat';
 
 INSERT INTO phase (kind, start, target_rate, target_rep)

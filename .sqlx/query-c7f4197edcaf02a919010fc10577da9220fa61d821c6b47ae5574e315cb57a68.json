@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT s.id AS \"id!\", s.name AS \"name!\", s.active AS \"active!\",\n                  d.weekday AS \"weekday\", d.preset AS \"preset\", e.name AS \"preset_name\"\n           FROM split s\n           LEFT JOIN split_day d ON d.split = s.id\n           LEFT JOIN exercise_list e ON e.id = d.preset\n           ORDER BY s.name, d.weekday",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "split",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "name": "name!",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "split",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "name": "active!",
+        "ordinal": 2,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "split",
+            "name": "active"
+          }
+        }
+      },
+      {
+        "name": "weekday",
+        "ordinal": 3,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "split_day",
+            "name": "weekday"
+          }
+        }
+      },
+      {
+        "name": "preset",
+        "ordinal": 4,
+        "type_info": "Integer",
+        "origin": {
+          "Table": {
+            "table": "split_day",
+            "name": "preset"
+          }
+        }
+      },
+      {
+        "name": "preset_name",
+        "ordinal": 5,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "exercise_list",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c7f4197edcaf02a919010fc10577da9220fa61d821c6b47ae5574e315cb57a68"
+}
