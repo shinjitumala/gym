@@ -419,3 +419,28 @@ The search scenarios type what a substring test cannot match — `press chest` f
 the two chest presses, `sqt` for the squat, `chikn` for the chicken — because a
 query that already worked would pass whether the rule changed or not. The rule's
 own cases are unit tests beside it in `src/web/ui.rs`.
+
+## A run verifies against the fixture, not the real log
+
+The unattended runs that check this page — a swarm worker working from a ticket —
+cannot read the log the phone writes. It sits at
+`/home/shinji/g/gym_data/data.db`, below the directories a worker profile grants,
+so every command that names it is refused before the program starts:
+
+```text
+$ sqlite3 /home/shinji/g/gym_data/data.db 'select count(*) from set'
+denied bash /home/shinji/g/gym_data/data.db: not permitted by policy
+```
+
+`cp` of the file to a scratch directory, and `gym web` with its `db` pointed
+there, get the same refusal, so a run can neither count the rows nor serve a
+read-only copy of them. What it verifies against is therefore
+`test/web/fixtures.sql`, seeded into `$FPR_SCRATCH_DIR`: the fixture is what
+[the requirements page](requirements.md) is written for, and every scenario there
+is asserted against the fixture alone.
+
+A question the fixture cannot answer has to be asked where the log can be read.
+A migration's effect on the presets and sessions already stored is the case —
+it is about the rows the log holds, not about a scenario — so it is checked in a
+session whose profile reaches `/home/shinji/g/gym_data`, not by widening a
+worker's.
