@@ -1649,6 +1649,96 @@ def food_a_preset_is_built_by_searching(cdp, base):
     cdp.until_text("main", "snack ·", "the new preset on the daily page")
 
 
+def watch(cdp):
+    """Start counting the frames the page spends on its loading line.
+
+    A save re-reads the page, and what the reader must not see is the page
+    dropping back to `Loading…` and rebuilding: the mutation observer samples
+    after every batch of DOM changes, so a fallback that appears for one frame
+    is still counted.
+    """
+    cdp.eval(
+        "(() => {"
+        "window.__blank = 0;"
+        "const check = () => {"
+        "if (document.body && document.body.innerText.includes('Loading\\u2026'))"
+        "window.__blank += 1;"
+        "};"
+        "window.__watch = new MutationObserver(check);"
+        "window.__watch.observe(document.body,"
+        "{childList: true, subtree: true, characterData: true});"
+        "check();"
+        "return true;"
+        "})()"
+    )
+
+
+def blank_frames(cdp):
+    """How many sampled frames showed the loading line since `watch`."""
+    cdp.eval("window.__watch.disconnect(); true")
+    return cdp.eval("window.__blank")
+
+
+def sets_recorded(cdp):
+    """The session's set total, as the bar over it reads it."""
+    found = re.search(r"(\d+) set\(s\) recorded", cdp.text("main"))
+    need(found is not None, f"no set total in the session's bar: {cdp.text('main')[:200]!r}")
+    return int(found.group(1))
+
+
+def food_a_save_keeps_the_page(cdp, base):
+    """Saving a meal leaves the page where it was: the form, the totals and the
+    day's table stay, and the new row arrives in place."""
+    cdp.go(f"{base}/food")
+    cdp.until_text("main", "Today")
+    cdp.click_contains("main section button", "bread")
+    cdp.fill("main input[type=text]", "1", 1)
+    cdp.until_text("main", "this row: 250 kcal", "the row's preview")
+    cdp.click("main button", "add row")
+    watch(cdp)
+    cdp.click("main button", "save")
+    cdp.until_text("main section:last-of-type", "bread", "the saved meal")
+    blanks = blank_frames(cdp)
+    need(blanks == 0, f"the page fell back to its loading line on {blanks} frame(s)")
+    need("Today" in cdp.text("main"), "the day's totals did not survive the save")
+    cdp.screenshot("food-save-keeps-page")
+
+
+def gym_a_saved_set_keeps_the_window(cdp, base):
+    """Saving a set re-reads the window, not the page: the table of this
+    session's sets grows where it is and the bar's total follows."""
+    cdp.go(f"{base}/gym")
+    cdp.until_text("main", "Start a session")
+    cdp.click("main button", "start session")
+    cdp.until_text("main", "the list", "the checklist of a new session")
+    cdp.click("main button", "push · 2 exercises")
+    cdp.until_text("main", "☐ bench press", "the preset's list")
+    cdp.click_contains("main button", "bench press")
+    cdp.until_text("main", "bench press · chest", "the bench press window")
+    rows = panel_rows(cdp, "this session")
+    total = sets_recorded(cdp)
+    cdp.fill("main input[type=text]", "75", 0)
+    cdp.fill("main input[type=text]", "6", 1)
+    watch(cdp)
+    cdp.click("main button", "save set")
+    until_panel(cdp, "this session", "75.0 × 6.0", "the saved set's row")
+    blanks = blank_frames(cdp)
+    need(blanks == 0, f"the window fell back to its loading line on {blanks} frame(s)")
+    need(
+        "this session" in cdp.text("main"),
+        "saving a set did not keep the exercise window on the page",
+    )
+    need(
+        panel_rows(cdp, "this session") == rows + 1,
+        f"the window shows {panel_rows(cdp, 'this session')} rows, not the {rows} it had plus one",
+    )
+    need(
+        sets_recorded(cdp) == total + 1,
+        f"the bar reads {sets_recorded(cdp)} set(s), not the {total} it read plus one",
+    )
+    cdp.screenshot("gym-set-keeps-window")
+
+
 SCENARIOS = [
     nav_has_three_tabs,
     scrollbars_are_thin_and_green,
@@ -1684,6 +1774,8 @@ SCENARIOS = [
     gym_an_exercise_is_added_by_name,
     gym_a_warmup_is_not_a_number_to_beat,
     food_a_preset_is_built_by_searching,
+    food_a_save_keeps_the_page,
+    gym_a_saved_set_keeps_the_window,
 ]
 
 
