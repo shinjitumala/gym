@@ -162,10 +162,13 @@ the refusal says how many rows use it.
   split needs at least one day with a preset; a preset a split schedules cannot
   be deleted until the split stops naming it, and the refusal says how many days
   still do.
-- **A meal preset is built the same way.** The filter box narrows the food list,
-  each click adds a row, and the amount beside it is typed on the row. The
-  preset keeps the order the foods were picked in, which is the order the daily
-  page loads them in.
+- **A meal preset is built and edited the same way.** The filter box narrows the
+  food list, each click adds a row, and the amount beside it is typed on the row.
+  The preset keeps the order the foods were picked in, which is the order the
+  daily page loads them in. An existing preset folds out with its own foods as
+  the rows it already has, so saving without picking anything just renames it,
+  and a meal records the food and amount it was saved with, so rewriting a
+  preset leaves every recorded meal alone.
 - **A deload is a session's flag**, not a set's: the toggle sits on the session
   row, because a deload is a week's plan.
 

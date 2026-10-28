@@ -1031,16 +1031,17 @@ fn AddFoodRow(saved: Callback<()>) -> impl IntoView {
 fn PresetPanels(d: FoodEdit, saved: Callback<()>) -> impl IntoView {
     let foods = d.foods.clone();
     let presets = d.presets.clone();
+    let foods_for_rows = foods.clone();
     view! {
         <Section title="Presets">
-            <Hint text="A preset is a named set of foods with amounts, recorded in one tap on the daily page." />
+            <Hint text="A preset is a named set of foods with amounts, recorded in one tap on the daily page. Editing one rewrites its foods and leaves the meals already recorded alone." />
             {if presets.is_empty() {
                 view! { <Hint text="No presets yet." /> }.into_any()
             } else {
                 view! {
                     {presets
                         .into_iter()
-                        .map(|p| view! { <PresetEditRow p=p saved=saved /> })
+                        .map(|p| view! { <PresetEditRow p=p foods=foods_for_rows.clone() saved=saved /> })
                         .collect_view()}
                 }
                     .into_any()
@@ -1053,11 +1054,16 @@ fn PresetPanels(d: FoodEdit, saved: Callback<()>) -> impl IntoView {
 }
 
 #[component]
-fn PresetEditRow(p: PresetRow, saved: Callback<()>) -> impl IntoView {
+fn PresetEditRow(p: PresetRow, foods: Vec<FoodRow>, saved: Callback<()>) -> impl IntoView {
+    let (editing, set_editing) = signal(false);
     let (outcome, set_outcome) = signal(None::<Result<String, ServerFnError>>);
     let del = Action::new(move |id: &i64| {
         let id = *id;
         async move { crate::web::api::act_delete_preset(id).await }
+    });
+    let edit = Action::new(move |args: &(i64, String, Vec<(i64, String)>)| {
+        let (id, name, foods) = args.clone();
+        async move { crate::web::api::act_edit_preset(id, name, foods).await }
     });
     Effect::new(move |_| {
         if let Some(r) = del.value().get() {
@@ -1067,7 +1073,49 @@ fn PresetEditRow(p: PresetRow, saved: Callback<()>) -> impl IntoView {
             set_outcome.set(Some(r));
         }
     });
+    Effect::new(move |_| {
+        if let Some(r) = edit.value().get() {
+            if r.is_ok() {
+                set_editing.set(false);
+                saved.run(());
+            }
+            set_outcome.set(Some(r));
+        }
+    });
     let id = p.id;
+    let name0 = p.name.clone();
+    // The preset opens with its own rows, in its own order, so saving without
+    // touching a food leaves the order the reader picked them in.
+    let picks = RwSignal::new(
+        p.parts
+            .iter()
+            .map(|x| (x.food, one(x.amount)))
+            .collect::<Vec<(i64, String)>>(),
+    );
+    // Only the ids drive the rows: typing an amount must not rebuild the input
+    // it is typed into, so the map that renders them subscribes to nothing else.
+    let ids = Memo::new(move |_| {
+        picks
+            .get()
+            .into_iter()
+            .map(|(food, _)| food)
+            .collect::<Vec<_>>()
+    });
+    let name_field = NodeRef::<leptos::html::Input>::new();
+    let names = StoredValue::new(
+        foods
+            .iter()
+            .map(|f| (f.id, f.name.clone()))
+            .collect::<Vec<_>>(),
+    );
+    let candidates = food_candidates(&foods);
+    let add = Callback::new(move |food: i64| {
+        picks.update(|p| {
+            if !p.iter().any(|(id, _)| *id == food) {
+                p.push((food, DEFAULT_AMOUNT.to_string()));
+            }
+        });
+    });
     let parts = p
         .parts
         .iter()
@@ -1079,6 +1127,13 @@ fn PresetEditRow(p: PresetRow, saved: Callback<()>) -> impl IntoView {
             <div class=ROW>
                 <span class=GROW>{p.name.clone()}</span>
                 <span class=RIGHT>{format!("{:.0} kcal", p.per_unit.kcal)}</span>
+                <button
+                    type="button"
+                    class=SMALL
+                    on:click=move |_| set_editing.update(|e| *e = !*e)
+                >
+                    "edit"
+                </button>
                 <button
                     type="button"
                     class=SMALL_BAD
@@ -1093,10 +1148,146 @@ fn PresetEditRow(p: PresetRow, saved: Callback<()>) -> impl IntoView {
             <div class=ROW>
                 <span class="text-gray-500 whitespace-normal">{parts}</span>
             </div>
+            // The form is mounted only while it is open, and the rows below are
+            // their own closure, so a pick changes the rows without rebuilding
+            // the filter box and throwing away what was typed into it.
+            {move || {
+                if !editing.get() {
+                    return ().into_any();
+                }
+                let name0 = name0.clone();
+                view! {
+                    <div class=FOLD>
+                        <div class=ROW>
+                            <label class=GROW>
+                                "name"
+                                <input type="text" size="16" value=name0.clone() node_ref=name_field />
+                            </label>
+                        </div>
+                        <Picker
+                            label="food · most recently eaten first"
+                            placeholder="filter foods"
+                            rows=candidates.clone()
+                            on_pick=add
+                        />
+                        {move || picked_food_rows(&ids.get(), picks, names)}
+                        <div class=ROW>
+                            <button
+                                type="button"
+                                disabled=move || edit.pending().get() || ids.get().is_empty()
+                                on:click=move |_| {
+                                    let out = picks
+                                        .get_untracked()
+                                        .into_iter()
+                                        .filter(|(_, a)| !a.trim().is_empty())
+                                        .collect::<Vec<_>>();
+                                    edit.dispatch((id, value_of(name_field, &name0), out));
+                                }
+                            >
+                                "save"
+                            </button>
+                            <button type="button" on:click=move |_| set_editing.set(false)>
+                                "cancel"
+                            </button>
+                        </div>
+                    </div>
+                }
+                    .into_any()
+            }}
             <Outcome outcome=outcome />
         </div>
     }
 }
+
+/// One food of a preset: its name, the amount beside it, and the way to drop
+/// it.
+///
+/// Picking from the filter above appends here, so the order is the order the
+/// reader picked. Each row stores its position, and the daily page loads a
+/// preset's foods in that order.
+#[component]
+fn PickedFood(
+    index: usize,
+    name: String,
+    amount: String,
+    picked: RwSignal<Vec<(i64, String)>>,
+) -> impl IntoView {
+    view! {
+        <div class=LINE>
+            <span class=GROW>{name}</span>
+            <label class=NARROW>
+                "×"
+                <input
+                    type="text"
+                    size="4"
+                    value=amount
+                    on:input=move |e| {
+                        let a = event_target_value(&e);
+                        picked
+                            .update(|p| {
+                                if let Some(row) = p.get_mut(index) {
+                                    row.1 = a;
+                                }
+                            });
+                    }
+                />
+            </label>
+            <button
+                type="button"
+                class=SMALL_BAD
+                on:click=move |_| {
+                    picked
+                        .update(|p| {
+                            if index < p.len() {
+                                p.remove(index);
+                            }
+                        });
+                }
+            >
+                "remove"
+            </button>
+        </div>
+    }
+}
+
+/// The rows a preset form shows: the picks, read without subscribing to the
+/// amount typed beside each one, so a keystroke does not rebuild the input it is
+/// typed into.
+fn picked_food_rows(
+    ids: &[i64],
+    picks: RwSignal<Vec<(i64, String)>>,
+    names: StoredValue<Vec<(i64, String)>>,
+) -> impl IntoView {
+    ids.iter()
+        .enumerate()
+        .map(|(i, food)| {
+            let food = *food;
+            let label = names.with_value(|names| {
+                names
+                    .iter()
+                    .find(|(id, _)| *id == food)
+                    .map(|(_, name)| name.clone())
+                    .unwrap_or_default()
+            });
+            let amount =
+                picks.with_untracked(|p| p.get(i).map(|(_, a)| a.clone()).unwrap_or_default());
+            view! { <PickedFood index=i name=label amount=amount picked=picks /> }
+        })
+        .collect_view()
+}
+
+/// The rows a food picker narrows: `(id, name, note)`, with the food's calories
+/// beside the name.
+fn food_candidates(foods: &[FoodRow]) -> Vec<(i64, String, String)> {
+    foods
+        .iter()
+        .map(|f| (f.id, f.name.clone(), format!("{:.0} kcal", f.per_unit.kcal)))
+        .collect()
+}
+
+/// The amount a freshly picked food starts at: one unit, which is what a preset
+/// written before the amount was typed on the row meant.
+const DEFAULT_AMOUNT: &str = "1";
 
 #[component]
 fn AddPresetRow(foods: Vec<FoodRow>, saved: Callback<()>) -> impl IntoView {
@@ -1126,20 +1317,17 @@ fn AddPresetRow(foods: Vec<FoodRow>, saved: Callback<()>) -> impl IntoView {
             set_outcome.set(Some(r));
         }
     });
-    let candidates: Vec<(i64, String, String)> = foods
-        .iter()
-        .map(|f| (f.id, f.name.clone(), format!("{:.0} kcal", f.per_unit.kcal)))
-        .collect();
+    let candidates = food_candidates(&foods);
     let names = StoredValue::new(
         foods
-            .into_iter()
-            .map(|f| (f.id, f.name))
+            .iter()
+            .map(|f| (f.id, f.name.clone()))
             .collect::<Vec<_>>(),
     );
     let add = Callback::new(move |food: i64| {
         picked.update(|p| {
             if !p.iter().any(|(id, _)| *id == food) {
-                p.push((food, "1".to_string()));
+                p.push((food, DEFAULT_AMOUNT.to_string()));
             }
         });
     });
@@ -1158,70 +1346,7 @@ fn AddPresetRow(foods: Vec<FoodRow>, saved: Callback<()>) -> impl IntoView {
                 on_pick=add
             />
             <Hint text="Type to narrow the list and click a food to add it, then set how much. Nothing is written before add preset." />
-            {move || {
-                let ids = ids.get();
-                if ids.is_empty() {
-                    return ().into_any();
-                }
-                view! {
-                    <div class=PANEL>
-                        {ids
-                            .iter()
-                            .enumerate()
-                            .map(|(i, food)| {
-                                let food = *food;
-                                let label = names
-                                    .with_value(|names| {
-                                        names
-                                            .iter()
-                                            .find(|(id, _)| *id == food)
-                                            .map(|(_, name)| name.clone())
-                                            .unwrap_or_default()
-                                    });
-                                let amount = picked
-                                    .with_untracked(|p| {
-                                        p.get(i).map(|(_, a)| a.clone()).unwrap_or_default()
-                                    });
-                                view! {
-                                    <div class=LINE>
-                                        <span class=GROW>{label}</span>
-                                        <label class=NARROW>
-                                            "×"
-                                            <input
-                                                type="text"
-                                                size="4"
-                                                value=amount
-                                                on:input=move |e| {
-                                                    let a = event_target_value(&e);
-                                                    picked
-                                                        .update(|p| {
-                                                            if let Some(row) = p.get_mut(i) {
-                                                                row.1 = a;
-                                                            }
-                                                        });
-                                                }
-                                            />
-                                        </label>
-                                        <button
-                                            type="button"
-                                            class=SMALL_BAD
-                                            on:click=move |_| picked
-                                                .update(|p| {
-                                                    if i < p.len() {
-                                                        p.remove(i);
-                                                    }
-                                                })
-                                        >
-                                            "remove"
-                                        </button>
-                                    </div>
-                                }
-                            })
-                            .collect_view()}
-                    </div>
-                }
-                    .into_any()
-            }}
+            {move || picked_food_rows(&ids.get(), picked, names)}
             <div class=ROW>
                 <button
                     type="button"

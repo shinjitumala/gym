@@ -264,6 +264,26 @@ pub async fn act_add_preset(
 }
 
 #[server(input = Json)]
+pub async fn act_edit_preset(
+    id: i64,
+    name: String,
+    foods: Vec<(i64, String)>,
+) -> Result<String, ServerFnError> {
+    let db = open().await?;
+    let mut items = Vec::new();
+    for (food, amount) in foods {
+        items.push((
+            food,
+            crate::web::actions::num(&amount, "amount").map_err(error)?,
+        ));
+    }
+    crate::web::actions::edit_preset(&db, id, &name, items)
+        .await
+        .map_err(error)?;
+    Ok(format!("Saved preset #{id}."))
+}
+
+#[server(input = Json)]
 pub async fn act_delete_preset(id: i64) -> Result<String, ServerFnError> {
     let db = open().await?;
     crate::web::actions::delete_preset(&db, id)

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM meal_preset_item WHERE preset = ?1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "ef78bcb84f77bf66621b999628a687f4b2aff488a9af5606dde27555596e1e1f"
+}

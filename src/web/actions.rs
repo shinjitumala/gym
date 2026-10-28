@@ -889,18 +889,64 @@ pub async fn add_preset(db: &Db, name: &str, items: Vec<(i64, f64)>) -> Res<i64>
             crate::util::Err::from(e)
         }
     })?;
-    for (food, amount) in items {
+    for (position, (food, amount)) in items.iter().enumerate() {
         sqlx::query!(
-            "INSERT INTO meal_preset_item (preset, food, amount) VALUES (?1, ?2, ?3)",
+            "INSERT INTO meal_preset_item (preset, food, amount, position) VALUES (?1, ?2, ?3, ?4)",
             id,
             food,
-            amount
+            amount,
+            position as i64
         )
         .execute(&mut *tx)
         .await?;
     }
     tx.commit().await?;
     Ok(id)
+}
+
+/// Rewrite a preset: its name, its foods and their amounts, in one
+/// transaction.
+///
+/// A meal records a food and an amount, not the preset it was loaded from, so
+/// rewriting a preset leaves every meal already recorded alone. The rows are
+/// rewritten rather than matched one by one because the order is the reader's:
+/// the preset keeps the sequence the foods are in on this form, which is the
+/// sequence the daily page loads them in.
+pub async fn edit_preset(db: &Db, id: i64, name: &str, items: Vec<(i64, f64)>) -> Res<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        Err("A preset needs a name.".to_string())?;
+    }
+    if items.is_empty() {
+        Err("A preset needs at least one food.".to_string())?;
+    }
+    let mut tx = db.pool.begin().await?;
+    sqlx::query!("UPDATE meal_preset SET name = ?1 WHERE id = ?2", name, id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("UNIQUE") {
+                crate::util::Err::Str(format!("A preset called '{name}' already exists."))
+            } else {
+                crate::util::Err::from(e)
+            }
+        })?;
+    sqlx::query!("DELETE FROM meal_preset_item WHERE preset = ?1", id)
+        .execute(&mut *tx)
+        .await?;
+    for (position, (food, amount)) in items.iter().enumerate() {
+        sqlx::query!(
+            "INSERT INTO meal_preset_item (preset, food, amount, position) VALUES (?1, ?2, ?3, ?4)",
+            id,
+            food,
+            amount,
+            position as i64
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Mark a preset as used.
@@ -1191,7 +1237,7 @@ ORDER BY COALESCE(julianday(p.last_used), 0.0) DESC, p.name
         r#"SELECT i.preset AS "preset!", i.food AS "food!", i.amount AS "amount!",
                   f.name AS "name!"
            FROM meal_preset_item i JOIN food f ON f.id = i.food
-           ORDER BY f.name"#
+           ORDER BY i.preset, i.position, f.name"#
     )
     .fetch_all(&db.pool)
     .await?;

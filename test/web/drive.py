@@ -1718,6 +1718,76 @@ def food_a_preset_is_built_by_searching(cdp, base):
     cdp.until_text("main", "snack ·", "the new preset on the daily page")
 
 
+def preset_food_rows(cdp, name):
+    """The preset's folded-out foods: `name ×amount`, in the order shown."""
+    return cdp.eval(
+        "(() => { const rec = document.querySelector(" + json.dumps(f'[data-preset="{name}"]') + ");"
+        "if (!rec) return null;"
+        "return [...rec.querySelectorAll('div.border-dashed')]"
+        ".map(r => r.querySelector('span').innerText + ' ×' + r.querySelector('input').value); })()"
+    )
+
+
+def preset_row_click(cdp, name, row, text):
+    """Click the button reading `text` on row `row` of the preset `name`."""
+    ok = cdp.eval(
+        "(() => { const rec = document.querySelector(" + json.dumps(f'[data-preset="{name}"]') + ");"
+        "if (!rec) return false;"
+        f"const r = [...rec.querySelectorAll('div.border-dashed')][{row}];"
+        "if (!r) return false;"
+        f"const e = [...r.querySelectorAll('button')]"
+        f".find(e => e.innerText.trim() === {json.dumps(text)});"
+        "if (!e) return false; e.click(); return true; })()"
+    )
+    need(ok, f"no {text!r} button on row {row} of the preset {name!r}")
+
+
+def food_a_preset_is_edited_in_place(cdp, base):
+    """A preset's row folds out into its own foods: it is renamed, one food is
+    dropped, another added and an amount retyped, and the foods keep the order
+    they were in, which is the order the daily page loads them in."""
+    cdp.go(f"{base}/food/edit")
+    cdp.until_text("main", "Meals · last 120 days")
+    cdp.click("main button", "presets")
+    cdp.until_text("main", "A preset is a named set of foods")
+    preset_click(cdp, "breakfast", "edit")
+    opened = preset_food_rows(cdp, "breakfast")
+    need(
+        opened == ["oats ×1.0", "milk ×1.0"],
+        f"the preset folded out as {opened!r}, not its own two foods in its own order",
+    )
+    preset_fill(cdp, "breakfast", "div.border-dashed input[type=text]", "2", 0)
+    preset_row_click(cdp, "breakfast", 1, "remove")
+    preset_fill(cdp, "breakfast", "input[type=text]", "porridge", 0)
+    preset_fill(cdp, "breakfast", 'input[placeholder="filter foods"]', "bread")
+    section_pick(cdp, "Presets", "bread")
+    preset_fill(cdp, "breakfast", "div.border-dashed input[type=text]", "1.5", 1)
+    need(
+        preset_food_rows(cdp, "breakfast") == ["oats ×2", "bread ×1.5"],
+        f"the form reads {preset_food_rows(cdp, 'breakfast')!r} before saving",
+    )
+    preset_click(cdp, "breakfast", "save")
+    # Saving re-runs the page's query, which reopens the edit page on its first
+    # segment: the renamed row is read where it is, hidden or not.
+    cdp.until(
+        "(() => { const r = document.querySelector('[data-preset=\"porridge\"]');"
+        "return !!r && r.textContent.includes('oats ×2.0, bread ×1.5'); })()",
+        10,
+        "the renamed preset with its two foods, in the order they were left in",
+    )
+    cdp.go(f"{base}/food")
+    cdp.until_text("main", "porridge ·", "the edited preset on the daily page")
+    cdp.click_contains("main button", "porridge ·")
+    cdp.until_text("main", "oats · 2.00 ×", "the edited preset's first food in the draft")
+    draft = cdp.text("main section:nth-of-type(2)")
+    rows = (draft.find("oats · 2.00 ×"), draft.find("bread · 1.50 ×"))
+    need(
+        -1 not in rows and rows[0] < rows[1],
+        f"the draft is not in the preset's order: {draft[:600]!r}",
+    )
+    cdp.screenshot("food-preset-edited")
+
+
 def watch(cdp):
     """Start counting the frames the page spends on its loading line.
 
@@ -2006,6 +2076,7 @@ SCENARIOS = [
     gym_an_exercise_is_added_by_name,
     gym_a_warmup_is_not_a_number_to_beat,
     food_a_preset_is_built_by_searching,
+    food_a_preset_is_edited_in_place,
     food_a_save_keeps_the_page,
     gym_a_saved_set_keeps_the_window,
     gym_the_list_counts_working_sets_against_the_target,

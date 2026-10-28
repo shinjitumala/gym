@@ -1,6 +1,6 @@
 [package]
 name = "gym"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2021"
 description = "A local-first fitness tracker for progressive overload, body weight and food."
 repository = "https://github.com/shinjitumala/gym"

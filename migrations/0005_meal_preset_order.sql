@@ -1,0 +1,1 @@
+ALTER TABLE meal_preset_item ADD COLUMN position INTEGER NOT NULL DEFAULT 0;

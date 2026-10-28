@@ -190,9 +190,10 @@ CREATE TABLE meal_preset (
 );
 
 CREATE TABLE meal_preset_item (
-    preset  INTEGER NOT NULL REFERENCES meal_preset(id) ON DELETE CASCADE,
-    food    INTEGER NOT NULL REFERENCES food(id) ON DELETE RESTRICT,
-    amount  REAL NOT NULL DEFAULT 1.0,
+    preset   INTEGER NOT NULL REFERENCES meal_preset(id) ON DELETE CASCADE,
+    food     INTEGER NOT NULL REFERENCES food(id) ON DELETE RESTRICT,
+    amount   REAL NOT NULL DEFAULT 1.0,
+    position INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (preset, food)
 );
 
@@ -248,6 +249,13 @@ CREATE INDEX weight_date ON weight (date);
 - **`meal_preset.last_used` is an ordering key**, written when the preset is
   applied. The preset list is ordered by it, so the common breakfast comes
   first without a separate frequency table.
+- **`meal_preset_item.position` is the order the foods were picked in.** The
+  daily page loads a preset in it, so the rows land in the draft the way the
+  reader arranged them rather than alphabetically. The default of zero is what
+  a preset written before the column existed means: its rows share a position,
+  and the food's name breaks the tie, which is the order they were read in
+  then. Rewriting a preset deletes its rows and writes them back with the
+  positions the form shows, so an edit keeps the order the reader left.
 - **Nothing about a PR or an estimated 1RM is stored.** Both are computed from
   `training_set`, so correcting a set re-derives the badge.
 - **`setting` holds the numbers that are policy, not data.** They are stored so

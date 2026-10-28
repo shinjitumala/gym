@@ -131,9 +131,12 @@ INSERT INTO food (name, calories, protein, fat, carbohydrate) VALUES
     ('chicken', 200, 40, 4, 0),
     ('bread', 250, 8, 3, 48);
 INSERT INTO meal_preset (name, last_used) VALUES ('breakfast', '{{at:preset_used:08:00:00}}');
-INSERT INTO meal_preset_item (preset, food, amount)
-SELECT p.id, f.id, 1.0 FROM meal_preset p, food f
-WHERE p.name = 'breakfast' AND f.name IN ('oats', 'milk');
+INSERT INTO meal_preset_item (preset, food, amount, position)
+SELECT p.id, f.id, 1.0, 0 FROM meal_preset p, food f
+WHERE p.name = 'breakfast' AND f.name = 'oats';
+INSERT INTO meal_preset_item (preset, food, amount, position)
+SELECT p.id, f.id, 1.0, 1 FROM meal_preset p, food f
+WHERE p.name = 'breakfast' AND f.name = 'milk';
 
 -- Two days of meals, the newest yesterday: the picker is ordered by the last
 -- meal of each food, and the note beside a row says how long ago that was.

@@ -327,6 +327,11 @@ Acceptance criteria:
 - [x] **A meal preset is built from the same searchable food list**: a click
       per food, an amount beside each row it adds, and the preset keeps the
       order they were picked in.
+- [x] **A meal preset is edited in place**: its row folds out into its name and
+      its own foods, in the order they are stored in, so adding a food, removing
+      one and retyping an amount leaves the rest where they were. Saving rewrites
+      the preset in one transaction, and the meals already recorded keep the food
+      and amount they were saved with.
 - [x] **Weight · edit** manages past weigh-ins.
 - [x] **A row is edited in place**, and a delete that the log still depends on
       is refused with the count of rows that use it.

@@ -226,8 +226,9 @@ Acceptance criteria:
       changed after it was registered.
 - [x] A food that a meal still refers to cannot be deleted, and the refusal
       says how many meals use it.
-- [x] Meal presets can be created and deleted, with their foods and amounts
-      picked from a searchable food list; editing one in place is still missing.
+- [x] Meal presets can be created, edited and deleted, with their foods and
+      amounts picked from a searchable food list and the order they were picked
+      in kept.
 - [x] Every edit affects only the row it names.
 
 ## Feature: Weight · daily

@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT i.preset AS \"preset!\", i.food AS \"food!\", i.amount AS \"amount!\",\n                  f.name AS \"name!\"\n           FROM meal_preset_item i JOIN food f ON f.id = i.food\n           ORDER BY f.name",
+  "query": "SELECT i.preset AS \"preset!\", i.food AS \"food!\", i.amount AS \"amount!\",\n                  f.name AS \"name!\"\n           FROM meal_preset_item i JOIN food f ON f.id = i.food\n           ORDER BY i.preset, i.position, f.name",
   "describe": {
     "columns": [
       {
@@ -58,5 +58,5 @@
       false
     ]
   },
-  "hash": "1bc68d71699eb25568be55f3ae4830d3d075b035ada9996f2791a6108b91bbd4"
+  "hash": "354b94dc1e949ff68ac76d587f8afcc64987cf4bce507943ce594521fb19083c"
 }
