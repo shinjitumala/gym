@@ -30,9 +30,9 @@ Options:
 
 ```text
 $ gym --version
-gym v0.14.0: x86_64-unknown-linux-gnu, release
+gym v0.15.0: x86_64-unknown-linux-gnu, release
 A local-first fitness tracker for progressive overload, body weight and food.
-Repository: https://github.com/shinjitumala/gym, commit = 1915f10, dirty = false
+Repository: https://github.com/shinjitumala/gym, commit = 71d9d2e, dirty = false
 ```
 
 Both answer without a configuration file, so they work on a machine where `gym`
