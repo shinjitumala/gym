@@ -71,8 +71,8 @@ of those answers one question. Reading the top-level function tells the reader
 the order of the work without reading any of the queries.
 
 A function that changes state outside its arguments returns `Result<(), _>` and
-its name says what it changes: `write_meal`, `add_weight`, `activate`,
-`set_span`. A function that only reads returns its value.
+its name says what it changes: `add_meal`, `add_weight`, `set_phase`,
+`write_days`. A function that only reads returns its value.
 
 ## One feature, one place
 
