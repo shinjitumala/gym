@@ -985,6 +985,13 @@ def weight_a_weigh_in_defaults_to_now(cdp, base):
     cdp.go(f"{base}/weight")
     cdp.until_text("main", "Record a weigh-in")
     cdp.click("main button", "now")
+    # The button asks the server for the clock, so the value lands a round trip
+    # after the press rather than during the click.
+    cdp.until(
+        "[...document.querySelectorAll('main input[type=time]')].some(e => e.value !== '')",
+        10,
+        "the now button to fill the time",
+    )
     filled = cdp.eval(
         "[...document.querySelectorAll('main input[type=time]')].map(e => e.value).join(',')"
     )
@@ -996,6 +1003,52 @@ def weight_a_weigh_in_defaults_to_now(cdp, base):
     recent = cdp.text("main section:last-of-type")
     need("17.0" in recent, f"the body fat is not in the recent list: {recent!r}")
     cdp.screenshot("weight-saved")
+
+
+def wait_for_a_new_minute():
+    """Sleep until the clock has just crossed a minute, and return that minute.
+
+    The button once wrote the minute the page was rendered with instead of the
+    minute it was pressed in, which is what a page left open shows. The two are
+    the same value unless the page outlives its minute, so the scenario lets the
+    minute end before pressing — that is what makes the assertion able to tell
+    them apart, at a cost of at most a minute. It returns the clock at the
+    press, which is what the field must hold.
+    """
+    now = datetime.datetime.now()
+    crossing = (now + datetime.timedelta(minutes=1)).replace(second=0, microsecond=0)
+    time.sleep((crossing - now).total_seconds() + 0.2)
+    return datetime.datetime.now()
+
+
+def weight_the_now_button_applies_the_press_time(cdp, base):
+    """`now` applies the clock of the press, not the clock the page was rendered with."""
+    cdp.go(f"{base}/weight")
+    cdp.until_text("main", "Record a weigh-in")
+    # The page's copy of the clock is fixed from here on, in the minute that is
+    # about to end; the press happens in the next one.
+    pressed = wait_for_a_new_minute()
+    cdp.click("main button", "now")
+    cdp.until(
+        "[...document.querySelectorAll('main input[type=time]')].some(e => e.value !== '')",
+        10,
+        "the now button to fill the minute it was pressed in",
+    )
+    when = cdp.eval(
+        "[...document.querySelectorAll('main input[type=time]')].map(e => e.value).join(',')"
+    )
+    day = cdp.eval(
+        "[...document.querySelectorAll('main input[type=date]')].map(e => e.value).join(',')"
+    )
+    need(
+        when == pressed.strftime("%H:%M"),
+        f"the now button applied {when!r} to the time, not the press minute {pressed:%H:%M}",
+    )
+    need(
+        day == pressed.strftime("%Y-%m-%d"),
+        f"the now button applied {day!r} to the date, not the press day {pressed:%Y-%m-%d}",
+    )
+    cdp.screenshot("weight-now")
 
 
 def edit_tabs_are_the_three_modes(cdp, base):
@@ -2057,6 +2110,7 @@ SCENARIOS = [
     food_a_preset_loads_the_draft,
     food_the_meal_projects_the_day,
     weight_a_weigh_in_defaults_to_now,
+    weight_the_now_button_applies_the_press_time,
     edit_tabs_are_the_three_modes,
     gym_place_is_sorted_by_last_session,
     gym_a_session_fills_the_screen,

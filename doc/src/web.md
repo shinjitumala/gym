@@ -136,6 +136,37 @@ not for the message.
   one from that date; past sessions keep the phase they were trained in, which is
   what colours the weight analysis.
 
+## A `now` button reads the server's clock at the press
+
+Every form that records something has a `now` button beside its date and time
+fields, and it fills them with **the server's clock at the moment it is
+pressed**, not the clock the page was rendered with. A page is left open —
+overnight, over lunch, in a tab behind the training session — and what it was
+rendered with is the minute the tab was opened, which is not the minute the meal
+was eaten. The press therefore asks the server (`load_clock`, one server
+function returning the date and `HH:MM`) and fills the fields from the answer.
+
+```text
+08:59  open the meal form; the browser holds the clock of 08:59
+09:04  press now
+       → date 2026-10-29, time 09:04      (not 08:59)
+```
+
+The read is asynchronous, so a scenario that checks the field has to wait for
+the round trip rather than read it in the same tick as the click.
+
+**The browser's clock is still not the source.** There is one clock in this log
+— the machine that stores the rows, and the one that stamps them — so a second
+one in the browser would disagree with it: a phone carried across a timezone, or
+with a clock a few minutes wrong, would fill in a time the day's totals and the
+exercise windows are not reading. That is why this is a server function and not
+`new Date()` in the handler, and why the value is a *read at the press* rather
+than a prop: the prop was the stale half of the same question.
+
+Until the WASM hydrates, the server-rendered page's button has no handler — the
+click body is compiled out of that build — so it does nothing for the moment
+before the page becomes interactive. That is the build, not the button.
+
 ## Editing
 
 Every editing row opens in place: **edit** folds out the fields, **save** writes
@@ -430,6 +461,12 @@ scenario reads a date back, it asks the seeded database for the day it wrote
 
 Screenshots and the scratch database go under `$FPR_SCRATCH_DIR`, never into the
 repository.
+
+One scenario is slow on purpose: the `now` button's press-time value can only be
+told apart from the render-time one once the page has outlived the minute it was
+rendered in, so `weight_the_now_button_applies_the_press_time` waits for the next
+minute (at most a minute) before pressing. An assertion made inside the same
+minute would pass on either behaviour.
 
 The search scenarios type what a substring test cannot match — `press chest` for
 the two chest presses, `sqt` for the squat, `chikn` for the chicken — because a

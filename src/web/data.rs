@@ -56,10 +56,6 @@ fn days(d: NaiveDate) -> i64 {
     d.num_days_from_ce() as i64
 }
 
-fn clock() -> String {
-    Local::now().format("%H:%M").to_string()
-}
-
 /// Midnight at the start of `d`, **in the machine's zone**, as an RFC3339
 /// instant.
 ///
@@ -548,7 +544,6 @@ pub async fn food_daily(db: &Db) -> Res<FoodDaily> {
 
     Ok(FoodDaily {
         today: iso(today),
-        now: clock(),
         totals: sum(meals.iter()),
         meals,
         foods: foods(db).await?,
@@ -569,7 +564,6 @@ pub async fn food_edit(db: &Db) -> Res<FoodEdit> {
     meals.reverse();
     Ok(FoodEdit {
         today: iso(today),
-        now: clock(),
         presets: crate::web::actions::presets(db).await?,
         meals,
         foods: foods(db).await?,
@@ -589,7 +583,6 @@ pub async fn weight_daily(db: &Db) -> Res<WeightDaily> {
     let recent = recent_weights(db, 30).await?;
     Ok(WeightDaily {
         today: iso(today),
-        now: clock(),
         last_weight: recent.first().cloned(),
         weights: recent,
         trend,
@@ -601,7 +594,6 @@ pub async fn weight_daily(db: &Db) -> Res<WeightDaily> {
 pub async fn weight_edit(db: &Db) -> Res<WeightEdit> {
     Ok(WeightEdit {
         today: iso(Local::now().date_naive()),
-        now: clock(),
         weights: recent_weights(db, 120).await?,
     })
 }
@@ -1085,7 +1077,6 @@ pub async fn gym_daily(db: &Db) -> Res<GymDaily> {
         .map(|d| (today - d).num_days() / 7);
     Ok(GymDaily {
         today: iso(today),
-        now: clock(),
         places: places(db).await?,
         exercises,
         presets: gym_presets(db).await?,

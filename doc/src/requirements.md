@@ -136,7 +136,7 @@ Acceptance criteria:
 
 - [x] **A session starts from a place** picked from a searchable list sorted by
       the last session at each place, and the start's date and time are shown,
-      with `now` filling both from the server's clock.
+      with `now` filling both from the server's clock read at the press.
 - [x] **Only one session is open at a time.** Starting another is refused with
       that sentence rather than silently opening a second.
 - [x] **A preset fills the checklist** with its exercises in the preset's own
@@ -249,7 +249,7 @@ result before saving it, and sees the day against maintenance.
 Acceptance criteria:
 
 - [x] **The meal's time defaults to now**, and `now` fills the date and time
-      from the server's clock.
+      from the server's clock read at the press.
 - [x] **A preset loads its foods into the meal being entered** rather than
       recording them: the rows land in the draft, can be changed or removed, and
       nothing is written before `save`. Loading one still moves it to the top of

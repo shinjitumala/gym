@@ -32,6 +32,23 @@ async fn open() -> Result<crate::db::Db, ServerFnError> {
     crate::db::Db::open(&c.cfg.db).await.map_err(error)
 }
 
+/// The clock, read when the call arrives.
+///
+/// This is what the "now" button asks for on the press: the date and time a
+/// page was rendered with go stale the moment it is left open, and the log is
+/// kept on one clock — the server's — so the browser does not read its own.
+///
+/// It needs no database: a page that is only filling in a form still gets the
+/// right minute even if the store is not open.
+#[server(input = Json)]
+pub async fn load_clock() -> Result<Clock, ServerFnError> {
+    let now = chrono::Local::now();
+    Ok(Clock {
+        date: now.format("%Y-%m-%d").to_string(),
+        time: now.format("%H:%M").to_string(),
+    })
+}
+
 #[server(input = Json)]
 pub async fn load_server_info() -> Result<ServerInfo, ServerFnError> {
     let c = config()?;

@@ -165,13 +165,20 @@ pub struct Span {
     pub to: i64,
 }
 
+/// The server's clock, read when the "now" button is pressed.
+///
+/// The date is `YYYY-MM-DD` and the time `HH:MM`, both local to the machine
+/// that runs the server, which is the one clock the log is kept in.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Clock {
+    pub date: String,
+    pub time: String,
+}
+
 /// Food · daily.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FoodDaily {
     pub today: String,
-    /// The local clock when the page was rendered, `HH:MM`, for the "now"
-    /// button. Sent from the server so the browser needs no clock.
-    pub now: String,
     pub totals: Totals,
     pub meals: Vec<MealRow>,
     /// Ordered by last use, the most recent first.
@@ -261,7 +268,6 @@ pub struct PickRow {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct FoodEdit {
     pub today: String,
-    pub now: String,
     pub presets: Vec<PresetRow>,
     pub meals: Vec<MealRow>,
     pub foods: Vec<FoodRow>,
@@ -271,7 +277,6 @@ pub struct FoodEdit {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WeightDaily {
     pub today: String,
-    pub now: String,
     /// The last handful of weigh-ins, newest first.
     pub weights: Vec<WeightRow>,
     pub last_weight: Option<WeightRow>,
@@ -284,7 +289,6 @@ pub struct WeightDaily {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WeightEdit {
     pub today: String,
-    pub now: String,
     pub weights: Vec<WeightRow>,
 }
 
@@ -524,7 +528,6 @@ pub fn weekday_name(weekday: i64) -> &'static str {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct GymDaily {
     pub today: String,
-    pub now: String,
     /// Ordered by the last session at each place, most recent first.
     pub places: Vec<PlaceRow>,
     /// Ordered by the last set of each exercise, most recent first.

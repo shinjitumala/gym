@@ -373,40 +373,52 @@ pub fn checked(r: NodeRef<leptos::html::Input>) -> bool {
 
 /// Fill a date field, and optionally a time field, with the server's clock.
 ///
-/// `now` is what the server said when it rendered the page. Reading the
-/// browser's own clock would be a second source of truth for "now" and would
-/// disagree with the server the moment the two are in different zones.
+/// The clock is read **when the button is pressed**, not when the page was
+/// rendered: a page left open for minutes would otherwise fill the fields with
+/// the minute it was opened at. Asking the server for it keeps one clock — the
+/// machine that stores the log — so the browser reading its own cannot disagree
+/// across a timezone, and a phone whose clock is wrong writes the same minutes
+/// the rest of the log is in.
 #[component]
 pub fn NowButton(
     #[prop(optional)] date: Option<NodeRef<leptos::html::Input>>,
     #[prop(optional)] time: Option<NodeRef<leptos::html::Input>>,
-    #[prop(into)] today: String,
-    #[prop(into)] now: String,
 ) -> impl IntoView {
     let label = if time.is_some() { "now" } else { "today" };
     view! {
         <button type="button" class=NOW on:click=move |_| {
             #[cfg(feature = "hydrate")]
-            {
-                if let Some(r) = date {
-                    if let Some(e) = r.get() {
-                        e.set_value(&today);
-                    }
-                }
-                if let Some(r) = time {
-                    if let Some(e) = r.get() {
-                        e.set_value(&now);
-                    }
-                }
-            }
+            fill_from_the_server(date, time);
             #[cfg(not(feature = "hydrate"))]
             {
-                let _ = (&date, &time, &today, &now);
+                let _ = (&date, &time);
             }
         }>
             {label}
         </button>
     }
+}
+
+/// Ask the server for its clock, and fill the fields when the answer arrives.
+///
+/// The press starts the read; the fields are filled a round trip later, not
+/// during the click.
+#[cfg(feature = "hydrate")]
+fn fill_from_the_server(
+    date: Option<NodeRef<leptos::html::Input>>,
+    time: Option<NodeRef<leptos::html::Input>>,
+) {
+    leptos::task::spawn_local(async move {
+        let Ok(c) = crate::web::api::load_clock().await else {
+            return;
+        };
+        if let Some(e) = date.and_then(|r| r.get()) {
+            e.set_value(&c.date);
+        }
+        if let Some(e) = time.and_then(|r| r.get()) {
+            e.set_value(&c.time);
+        }
+    });
 }
 
 /// The one way a page renders a failed server function.

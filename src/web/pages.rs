@@ -156,7 +156,6 @@ pub fn FoodDailyPage() -> impl IntoView {
 #[component]
 fn FoodDailyView(d: FoodDaily, saved: Callback<()>) -> impl IntoView {
     let today = d.today.clone();
-    let now = d.now.clone();
     let maintenance = d.maintenance;
     let totals = d.totals.clone();
     let today_kcal = totals.kcal;
@@ -216,7 +215,6 @@ fn FoodDailyView(d: FoodDaily, saved: Callback<()>) -> impl IntoView {
                 presets=d.presets.clone()
                 day=d.totals.clone()
                 today=today.clone()
-                now=now.clone()
                 saved=saved
             />
         </Section>
@@ -264,7 +262,6 @@ fn MealForm(
     /// Today's totals so far, for the projection under the draft.
     day: Totals,
     today: String,
-    now: String,
     saved: Callback<()>,
 ) -> impl IntoView {
     let (drafts, set_drafts) = signal(Vec::<Draft>::new());
@@ -510,7 +507,7 @@ fn MealForm(
                 "time"
                 <input type="time" value="" node_ref=time />
             </label>
-            <NowButton date=date time=time today=today.clone() now=now.clone() />
+            <NowButton date=date time=time />
         </div>
         <div class=ROW>
             <button
@@ -1402,7 +1399,7 @@ fn WeightDailyView(d: WeightDaily, saved: Callback<()>) -> impl IntoView {
         </Section>
 
         <Section title="Record a weigh-in">
-            <WeighInForm today=d.today.clone() now=d.now.clone() saved=saved />
+            <WeighInForm today=d.today.clone() saved=saved />
         </Section>
 
         <Section title="Recent weigh-ins">
@@ -1418,7 +1415,7 @@ fn WeightDailyView(d: WeightDaily, saved: Callback<()>) -> impl IntoView {
 }
 
 #[component]
-fn WeighInForm(today: String, now: String, saved: Callback<()>) -> impl IntoView {
+fn WeighInForm(today: String, saved: Callback<()>) -> impl IntoView {
     let date = NodeRef::<leptos::html::Input>::new();
     let time = NodeRef::<leptos::html::Input>::new();
     let kgin = NodeRef::<leptos::html::Input>::new();
@@ -1459,7 +1456,7 @@ fn WeighInForm(today: String, now: String, saved: Callback<()>) -> impl IntoView
                     "time"
                     <input type="time" value="" node_ref=time />
                 </label>
-                <NowButton date=date time=time today=today.clone() now=now.clone() />
+                <NowButton date=date time=time />
             </div>
             <div class=ROW>
                 <label class=NARROW>
@@ -1558,7 +1555,7 @@ fn WeightEditView(d: WeightEdit, saved: Callback<()>) -> impl IntoView {
             }}
         </Section>
         <Section title="Add a weigh-in">
-            <AddWeightRow today=d.today.clone() now=d.now.clone() saved=saved />
+            <AddWeightRow today=d.today.clone() saved=saved />
         </Section>
     }
 }
@@ -1675,7 +1672,7 @@ fn WeightEditRow(w: WeightRow, saved: Callback<()>) -> impl IntoView {
 }
 
 #[component]
-fn AddWeightRow(today: String, now: String, saved: Callback<()>) -> impl IntoView {
+fn AddWeightRow(today: String, saved: Callback<()>) -> impl IntoView {
     let date = NodeRef::<leptos::html::Input>::new();
     let time = NodeRef::<leptos::html::Input>::new();
     let kgin = NodeRef::<leptos::html::Input>::new();
@@ -1716,7 +1713,7 @@ fn AddWeightRow(today: String, now: String, saved: Callback<()>) -> impl IntoVie
                     "time"
                     <input type="time" value="" node_ref=time />
                 </label>
-                <NowButton date=date time=time today=today.clone() now=now.clone() />
+                <NowButton date=date time=time />
             </div>
             <div class=ROW>
                 <label class=NARROW>
@@ -2102,7 +2099,6 @@ fn GymDailyView(
         (None, want) => format!("No deload logged yet (reminder at {want} weeks)."),
     };
     let today = d.today.clone();
-    let now = d.now.clone();
     let phase = d.phase.clone();
     let efforts = d.efforts.clone();
     let open = d.open.clone();
@@ -2121,12 +2117,10 @@ fn GymDailyView(
             let presets = presets.clone();
             let offer = offer.clone();
             let today = today.clone();
-            let now = now.clone();
             let phase = phase.clone();
             let reminder = reminder.clone();
             let today_phase = today.clone();
             let today_start = today.clone();
-            let now_start = now.clone();
             let today_screen = today.clone();
             match open {
                 None => view! {
@@ -2144,7 +2138,7 @@ fn GymDailyView(
                         <Hint text=reminder.clone() />
                     </Section>
                     <Section title="Start a session">
-                        <StartSession places=places today=today_start now=now_start saved=saved />
+                        <StartSession places=places today=today_start saved=saved />
                     </Section>
                 }
                     .into_any(),
@@ -2340,12 +2334,7 @@ fn PhaseSwitch(kind: Option<String>, today: String, saved: Callback<()>) -> impl
 
 /// Start a session: choose the place from a searchable list, newest first.
 #[component]
-fn StartSession(
-    places: Vec<PlaceRow>,
-    today: String,
-    now: String,
-    saved: Callback<()>,
-) -> impl IntoView {
+fn StartSession(places: Vec<PlaceRow>, today: String, saved: Callback<()>) -> impl IntoView {
     let (place, set_place) = signal(places.first().map(|p| p.id));
     let date = NodeRef::<leptos::html::Input>::new();
     let time = NodeRef::<leptos::html::Input>::new();
@@ -2404,7 +2393,7 @@ fn StartSession(
                 "time"
                 <input type="time" value="" node_ref=time />
             </label>
-            <NowButton date=date time=time today=today.clone() now=now.clone() />
+            <NowButton date=date time=time />
         </div>
         <div class=ROW>
             <button
