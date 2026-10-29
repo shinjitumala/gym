@@ -147,7 +147,7 @@ was eaten. The press therefore asks the server (`load_clock`, one server
 function returning the date and `HH:MM`) and fills the fields from the answer.
 
 ```text
-08:59  open the meal form; the browser holds the clock of 08:59
+08:59  open the meal form; the page was rendered with the clock of 08:59
 09:04  press now
        → date 2026-10-29, time 09:04      (not 08:59)
 ```
