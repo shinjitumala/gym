@@ -94,6 +94,7 @@ should take one path:
 | What does the shell look like? | `src/web/ui.rs` |
 | What crosses the wire? | `src/web/dto.rs` |
 | What does a command ask? | `src/cmd/` |
+| How does the command line start and exit? | `src/main.rs` |
 
 The tests follow the same rule: `src/train.rs` and `src/stats.rs` carry their
 rule's tests in the module, and `test/` holds the tests that need a process —
@@ -111,6 +112,18 @@ An abstraction is added at its second caller, not its first. `listed` in
 `count` because nine tables are counted; `group_of` because the picker and the
 chart label an exercise the same way. A helper with one caller stays inline
 unless its name says what the call site could not.
+
+## The command line's entry point
+
+`src/main.rs` builds the context and dispatches by hand instead of calling
+`fpr_cli_util::run`. The framework entry point builds the context before it
+answers `--version` and `--help`, and those two describe the binary rather than
+the log: a machine that has just installed it has no configuration, and refusing
+them until one exists makes the first question the hardest to answer. So the
+dispatch reads the configuration, falls back to an unconfigured context for
+those two flags, and returns any failure to `main`, which prints it to stderr and
+exits 1. The commands, their arguments and their help still come from the
+derives.
 
 ## Data and systems
 

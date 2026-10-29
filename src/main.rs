@@ -23,11 +23,10 @@ fn about_the_binary(args: &[&str]) -> bool {
 
 /// Parse the command line and run it.
 ///
-/// The framework's own `run` prints a failure and returns, which leaves a
-/// failing command with exit status 0 — every script that runs `gym` would read
-/// that as success. So the dispatch is spelled out here: the actions and their
-/// help still come from the derives, and the exit status comes from whether
-/// they returned an error.
+/// `--version` and `--help` are answered on an unconfigured context, because a
+/// machine that has just installed the binary has no configuration yet; every
+/// other command gets the configured one. A failure is returned for `main` to
+/// report and exit 1.
 fn dispatch() -> Result<(), String> {
     let argv: Vec<String> = std::env::args().collect();
     let exec = argv.first().map(String::as_str).unwrap_or("gym");
