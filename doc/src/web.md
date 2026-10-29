@@ -251,7 +251,10 @@ The statistics are the part with rules, and they are on
 ## Building it
 
 The look is Tailwind v4: one `@import "tailwindcss"` in `style/main.scss` and
-classes on the markup, with no theme file. The base look (black, a green ramp,
+classes on the markup, with no theme file. Every class name is a literal `&str`
+constant in `src/web/ui.rs`, or a literal in the markup itself, because the
+scanner reads the source: a class that only ever appears after string
+concatenation would silently generate nothing. The base look (black, a green ramp,
 blocky controls, 2px borders, no rounded corners) is one `APP_CLASS` string on
 the app root, whose descendant selectors set the defaults; markup then says only
 what is different about a control.
@@ -303,6 +306,16 @@ phone.
 A build without the bundle — a plain `cargo build` — is still a working CLI;
 `gym web` then refuses to start and says to rebuild, instead of serving an empty
 page.
+
+The names the binary serves come from `build.rs`: the JS glue wasm-bindgen emits
+asks for `gym_bg.wasm`, while `cargo leptos` writes the module as `gym.wasm`, so
+whichever of the two the build produced is embedded and the server answers both
+`/pkg/gym.wasm` and `/pkg/gym_bg.wasm` from it. The server's `LeptosOptions` are
+built in code rather than read from `Cargo.toml` for the same reason the bundle
+is embedded: the installed binary has no manifest beside it. `src/lib.rs` raises
+the recursion limit to 256 because the deepest page — a session inside the
+exercise window, with the table's folded-out row — nests more view futures than
+the default allows.
 
 **Build in release to look at the site.** Leptos's debug build of the WASM emits
 `<!>` comment markers inside every element to keep positions stable while it

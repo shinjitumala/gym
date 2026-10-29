@@ -1,7 +1,7 @@
 use crate::com::*;
 
 pub fn reg(c: &C, db: &Db) -> Res<i64> {
-    let foods = c.block_on(db.foods())?;
+    let foods = c.block_on(crate::db::foods(db))?;
 
     #[derive(Clone)]
     struct V {
@@ -36,5 +36,13 @@ pub fn reg(c: &C, db: &Db) -> Res<i64> {
         .with_help_message("You can press ESC if unknown")
         .prompt_skippable()?;
     let desc = Text::new("desc").prompt()?;
-    c.block_on(db.new_food(&name, calories, protein, fat, carbohydrate, &desc))
+    c.block_on(crate::db::new_food(
+        db,
+        &name,
+        calories,
+        protein,
+        fat,
+        carbohydrate,
+        &desc,
+    ))
 }

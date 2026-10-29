@@ -35,9 +35,6 @@ fn dispatch() -> Result<(), String> {
 
     let c = match ctx::config_path().and_then(|p| C::new(&p)) {
         Ok(c) => c,
-        // Asking which build is installed, or what a command takes, is a
-        // question about the binary, so it is answered on a machine that has
-        // no configuration yet — which is where those questions are asked.
         Err(_) if about_the_binary(&rest) => C::unconfigured(),
         Err(e) => return Err(e),
     };

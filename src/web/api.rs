@@ -32,8 +32,6 @@ async fn open() -> Result<crate::db::Db, ServerFnError> {
     crate::db::Db::open(&c.cfg.db).await.map_err(error)
 }
 
-// ------------------------------------------------------------------- loading
-
 #[server(input = Json)]
 pub async fn load_server_info() -> Result<ServerInfo, ServerFnError> {
     let c = config()?;
@@ -108,8 +106,6 @@ pub async fn load_exercise_window(
         .await
         .map_err(error)
 }
-
-// --------------------------------------------------------------- food: write
 
 #[server(input = Json)]
 pub async fn act_add_meal(
@@ -292,8 +288,6 @@ pub async fn act_delete_preset(id: i64) -> Result<String, ServerFnError> {
     Ok(format!("Deleted preset #{id}."))
 }
 
-// ------------------------------------------------------------- weight: write
-
 #[server(input = Json)]
 pub async fn act_add_weight(
     date: String,
@@ -350,8 +344,6 @@ pub async fn act_delete_weight(id: i64) -> Result<String, ServerFnError> {
         .map_err(error)?;
     Ok(format!("Deleted weigh-in #{id}."))
 }
-
-// ---------------------------------------------------------------- gym: write
 
 #[server(input = Json)]
 pub async fn act_start_session(

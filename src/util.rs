@@ -60,16 +60,8 @@ pub struct Date {
     v: DateTime<Local>,
 }
 impl Date {
-    pub fn as_timestamp(&self) -> i64 {
-        self.v.timestamp()
-    }
     pub fn as_datetime<'a>(&'a self) -> &'a DateTime<Local> {
         &self.v
-    }
-    pub fn from_timestamp(t: i64) -> Self {
-        Self {
-            v: DateTime::from_timestamp(t, 0).unwrap().into(),
-        }
     }
 }
 impl Display for Date {

@@ -22,8 +22,6 @@ use crate::web::ui::{
 };
 use leptos::prelude::*;
 
-// ---------------------------------------------------------------- shared bits
-
 fn verdict_badge(v: Option<Verdict>) -> impl IntoView {
     let (class, text) = match v {
         Some(Verdict::On) => ("ok", "on goal"),
@@ -131,8 +129,6 @@ fn outliers_block(outliers: &[OutlierRow]) -> impl IntoView {
     }
         .into_any()
 }
-
-// ---------------------------------------------------------------------- food
 
 #[component]
 pub fn FoodDailyPage() -> impl IntoView {
@@ -294,8 +290,6 @@ fn MealForm(
     });
     let foods = StoredValue::new(foods);
     let date0 = today.clone();
-    // Loading a preset stamps it as used, so the list keeps its recency order;
-    // the stamp writes no meal row, and the draft is not saved by it.
     let touch = Action::new(move |id: &i64| {
         let id = *id;
         async move { crate::web::api::act_touch_preset(id).await }
@@ -351,8 +345,6 @@ fn MealForm(
             })
             .collect::<Vec<_>>()
     });
-    // A preset is loaded, never recorded: its foods and amounts become draft
-    // rows, which the reader can change or drop before saving.
     let preset_loads: Vec<(PresetRow, Vec<Draft>)> = foods.with_value(|foods| {
         presets
             .iter()
@@ -600,8 +592,6 @@ fn MealTable(meals: Vec<MealRow>) -> impl IntoView {
     }
 }
 
-// ---------------------------------------------------------------- food · edit
-
 #[component]
 pub fn FoodEditPage() -> impl IntoView {
     let (tick, set_tick) = signal(0u32);
@@ -687,9 +677,6 @@ fn MealEditRow(m: MealRow, foods: Vec<FoodRow>, saved: Callback<()>) -> impl Int
         let (id, date, time, food, amount, note) = args.clone();
         async move { crate::web::api::act_edit_meal(id, date, time, food, amount, note).await }
     });
-    // The food this row already points at, found by name; a select whose value
-    // is not among its options reports the first one, which would silently
-    // change the meal to a different food.
     let current_food = foods
         .iter()
         .find(|f| f.name == m.food)
@@ -1084,16 +1071,12 @@ fn PresetEditRow(p: PresetRow, foods: Vec<FoodRow>, saved: Callback<()>) -> impl
     });
     let id = p.id;
     let name0 = p.name.clone();
-    // The preset opens with its own rows, in its own order, so saving without
-    // touching a food leaves the order the reader picked them in.
     let picks = RwSignal::new(
         p.parts
             .iter()
             .map(|x| (x.food, one(x.amount)))
             .collect::<Vec<(i64, String)>>(),
     );
-    // Only the ids drive the rows: typing an amount must not rebuild the input
-    // it is typed into, so the map that renders them subscribes to nothing else.
     let ids = Memo::new(move |_| {
         picks
             .get()
@@ -1148,9 +1131,6 @@ fn PresetEditRow(p: PresetRow, foods: Vec<FoodRow>, saved: Callback<()>) -> impl
             <div class=ROW>
                 <span class="text-gray-500 whitespace-normal">{parts}</span>
             </div>
-            // The form is mounted only while it is open, and the rows below are
-            // their own closure, so a pick changes the rows without rebuilding
-            // the filter box and throwing away what was typed into it.
             {move || {
                 if !editing.get() {
                     return ().into_any();
@@ -1292,11 +1272,7 @@ const DEFAULT_AMOUNT: &str = "1";
 #[component]
 fn AddPresetRow(foods: Vec<FoodRow>, saved: Callback<()>) -> impl IntoView {
     let name = NodeRef::<leptos::html::Input>::new();
-    // The chosen foods and their amounts, in the order they were picked: that
-    // order is the preset's, and the daily page loads its foods in it.
     let picked = RwSignal::new(Vec::<(i64, String)>::new());
-    // Only the ids drive the rows, so typing an amount does not rebuild the
-    // inputs it is typed into.
     let ids = Memo::new(move |_| {
         picked
             .get()
@@ -1367,8 +1343,6 @@ fn AddPresetRow(foods: Vec<FoodRow>, saved: Callback<()>) -> impl IntoView {
         </div>
     }
 }
-
-// -------------------------------------------------------------------- weight
 
 #[component]
 pub fn WeightDailyPage() -> impl IntoView {
@@ -1542,8 +1516,6 @@ fn WeightList(weights: Vec<WeightRow>) -> impl IntoView {
         </table>
     }
 }
-
-// --------------------------------------------------------------- weight · edit
 
 #[component]
 pub fn WeightEditPage() -> impl IntoView {
@@ -1768,13 +1740,8 @@ fn AddWeightRow(today: String, now: String, saved: Callback<()>) -> impl IntoVie
     }
 }
 
-// ----------------------------------------------------------- weight · analyse
-
 #[component]
 pub fn WeightAnalysisPage() -> impl IntoView {
-    // A year rather than a quarter: body weight is read over months, and a log
-    // with a gap of a few weeks would otherwise open on an empty chart with no
-    // hint that the data is there, just outside the window.
     let (span, set_span) = signal(365i64);
     let data = Resource::new(
         move || span.get(),
@@ -1818,9 +1785,6 @@ fn WeightAnalysisView(d: WeightAnalysis) -> impl IntoView {
     let points: Vec<(i64, f64)> = d.line.iter().map(|p| (p.day, p.kg)).collect();
     let bodyfat: Vec<(i64, f64)> = d.bodyfat.iter().map(|p| (p.day, p.kg)).collect();
     let span = d.span;
-    // What the empty chart is missing, said plainly: the last weigh-in may be
-    // older than the window, and "0 weigh-ins" then reads as "no data" when the
-    // log has plenty.
     let outside = match &d.last_weight {
         Some(w) => format!(
             " The last weigh-in is dated {}: widen the range to reach it, or log a new one.",
@@ -1866,8 +1830,6 @@ fn WeightAnalysisView(d: WeightAnalysis) -> impl IntoView {
             .or(Some(last))
             .and_then(|d| days.iter().find(|x| x.day == d).cloned())
     };
-    // The ranking is the range's answer, not one day's: every food's total over
-    // the whole window, re-sorted by the metric the bars are showing.
     let ranked = move || -> Vec<(String, f64)> {
         let m = metric.get();
         let mut rows: Vec<(String, f64)> = ranking
@@ -2073,8 +2035,6 @@ fn WeightAnalysisView(d: WeightAnalysis) -> impl IntoView {
     }
 }
 
-// ----------------------------------------------------------------------- gym
-
 #[component]
 pub fn GymDailyPage() -> impl IntoView {
     let (tick, set_tick) = signal(0u32);
@@ -2260,9 +2220,6 @@ fn SessionScreen(
         saved.run(());
         on_close.run(());
     });
-    // Escape is the way out of the exercise window, never out of the session: a
-    // full-screen view must be interruptible without ending the session, and
-    // ending it stays the explicit press of `end session`.
     #[cfg(feature = "hydrate")]
     {
         let handle = window_event_listener(leptos::ev::keydown, move |e| {
@@ -2637,8 +2594,6 @@ fn LiveSessionView(
                         .iter()
                         .map(|item| {
                             let ex = item.exercise;
-                            // The count is of work: a warmup is recorded and shown,
-                            // and is not one of the sets the target asks for.
                             let mark = if item.done() { "☑" } else { "☐" };
                             let klass = if item.done() { OK } else { DIM };
                             let label = format!("{mark} {} · {}", item.name, item.progress());
@@ -2754,9 +2709,6 @@ fn WindowBody(
     on_open: Callback<i64>,
 ) -> impl IntoView {
     let target = w.target_rep;
-    // The row opens on the numbers just done — this session's last working set,
-    // or the last session's best when this session has none — and falls back to
-    // the phase's rep target for an exercise with no history to copy.
     let load0 = w.prefill.map(|p| format!("{}", p.load)).unwrap_or_default();
     let rep0 = w
         .prefill
@@ -3083,12 +3035,6 @@ fn SetForm(
     });
     let l0 = load0.clone();
     let r0 = rep0.clone();
-    // The prefill is what the row opens on, and a saved set changes it: a
-    // warmup replaces nothing, so the numbers after one still point at the
-    // work, and the row after a working set points at the set just done. The
-    // values are set as properties, not attributes, because a kept window means
-    // the same input node is still there — and a property the reader typed into
-    // ignores an attribute written beside it.
     let e0 = effort0
         .and_then(|rank| efforts.iter().find(|x| x.rank == rank))
         .or_else(|| efforts.first())
@@ -3144,8 +3090,6 @@ fn SetForm(
         </form>
     }
 }
-
-// ------------------------------------------------------------------ gym · edit
 
 #[component]
 pub fn GymEditPage() -> impl IntoView {
@@ -3503,8 +3447,6 @@ fn ExerciseEditRow(e: ExerciseRow, groups: Vec<MuscleRow>, saved: Callback<()>) 
     let name = NodeRef::<leptos::html::Input>::new();
     let note = NodeRef::<leptos::html::Input>::new();
     let video = NodeRef::<leptos::html::Input>::new();
-    // The working set of links: start from what the exercise has, then add or
-    // remove; "save" replaces the lot in one transaction.
     let (links, set_links) = signal(
         e.groups
             .iter()
@@ -3689,8 +3631,6 @@ fn GroupAdder(groups: Vec<MuscleRow>, #[prop(into)] on_add: Callback<(i64, f64)>
 #[component]
 fn GymPresetPanels(d: GymEdit, saved: Callback<()>) -> impl IntoView {
     let presets = d.presets.clone();
-    // `name · group`, the same label the analysis page searches, so a muscle
-    // group narrows the exercises here too.
     let names: Vec<(i64, String)> = d
         .exercises
         .iter()
@@ -3859,8 +3799,6 @@ fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) ->
             .map(|i| (i.exercise, i.sets.to_string()))
             .collect::<Vec<(i64, String)>>(),
     );
-    // Only the ids drive the rows: typing a count must not rebuild the input it
-    // is typed into, so the map that renders them subscribes to nothing else.
     let ids = Memo::new(move |_| {
         picks
             .get()
@@ -3910,9 +3848,6 @@ fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) ->
             <div class=ROW>
                 <span class="text-gray-500 whitespace-normal">{items}</span>
             </div>
-            // The form is mounted only while it is open, and the rows below are
-            // their own closure, so a pick changes the rows without rebuilding
-            // the filter box and throwing away what was typed into it.
             {move || {
                 if !editing.get() {
                     return ().into_any();
@@ -3964,8 +3899,6 @@ fn GymPresetRow(p: GymPreset, names: Vec<(i64, String)>, saved: Callback<()>) ->
 #[component]
 fn AddGymPreset(names: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView {
     let name = NodeRef::<leptos::html::Input>::new();
-    // A preset starts empty and grows a row per pick; the filter text stays put
-    // because the picker is not rebuilt when the picks change.
     let picks = RwSignal::new(Vec::<(i64, String)>::new());
     let ids = Memo::new(move |_| {
         picks
@@ -4248,7 +4181,6 @@ fn SplitEditRow(
 fn AddSplit(presets: Vec<(i64, String)>, saved: Callback<()>) -> impl IntoView {
     let name = NodeRef::<leptos::html::Input>::new();
     let in_use = NodeRef::<leptos::html::Input>::new();
-    // A split starts with every day on rest and grows a day per pick.
     let days = RwSignal::new(
         (1..=7)
             .map(|day| (day, String::new()))
@@ -4510,8 +4442,6 @@ fn AddGroupRow(saved: Callback<()>) -> impl IntoView {
     }
 }
 
-// -------------------------------------------------------------- gym · analyse
-
 #[component]
 pub fn GymAnalysisPage() -> impl IntoView {
     let (span, set_span) = signal(180i64);
@@ -4652,8 +4582,6 @@ fn GymAnalysisView(a: GymAnalysis, on_pick: Callback<i64>) -> impl IntoView {
         </Section>
     }
 }
-
-// -------------------------------------------------------------------- status
 
 #[component]
 pub fn StatusPage() -> impl IntoView {

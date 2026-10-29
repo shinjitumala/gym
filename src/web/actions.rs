@@ -1124,8 +1124,6 @@ pub async fn edit_split(
         .execute(&mut *tx)
         .await?;
     write_days(&mut tx, id, days).await?;
-    // Turning this one on is also turning the other one off: the uniqueness of
-    // the active split is the schema's, so the old one is cleared first.
     if active {
         activate(&mut tx, id).await?;
     } else {

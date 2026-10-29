@@ -59,5 +59,8 @@ and nothing is kept in memory between commands.
   how the site is built and tested.
 - [Requirements for the web UI](requirements.md) — the scenarios the pages are
   judged against, and the recency and effort rules behind them.
+- [How the code is written](code.md) — the rules the source follows: no comments,
+  one step per call, one feature per module, data plus systems, and the internal
+  dependency's requirement.
 - [The overhaul](overhaul.md) — the rebuild onto SQLite and a local web UI: the
 decisions, the pages, and the order of work.

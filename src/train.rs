@@ -28,7 +28,6 @@ pub fn is_warmup(effort: Option<&str>) -> bool {
 /// It lives here, beside the rule that reads it, because the rule runs in the
 /// browser as well as in the server and the host-only `util` module does not.
 pub fn one_rep_max(load: f64, rep: f64) -> Option<f64> {
-    // https://strengthlevel.com/one-rep-max-calculator
     let rep = rep.round() as i64;
     let f = match rep {
         1 => 100.0_f64,
@@ -265,8 +264,6 @@ mod tests {
 
     #[test]
     fn effort_is_compared_before_the_numbers_it_shares() {
-        // Same load, same reps, one step closer to failure: hard (3) to
-        // form fail (1). Nothing but the effort changed, and that is progress.
         let a = recommend(
             Some(set(60.0, 8.0, Some(3))),
             Some(set(60.0, 8.0, Some(1))),
@@ -349,9 +346,6 @@ mod tests {
 
     #[test]
     fn a_warmup_never_becomes_the_set_a_session_is_compared_by() {
-        // The warmup is the last set of the session and the highest estimated
-        // 1RM in it — 60 kg × 20 is a 100 kg single, against the working set's
-        // 86.4 — and it is still the working set that is compared.
         let session = [set(70.0, 8.0, Some(3)), warmup(60.0, 20.0)];
         let best = best(&session).expect("a working set");
         assert_eq!(best.load, 70.0);
@@ -360,8 +354,6 @@ mod tests {
 
     #[test]
     fn a_session_of_warmups_alone_has_no_numbers_to_beat() {
-        // Not "a session at 40 kg": nothing about it counts, so the comparison
-        // reaches back to the last session that did some work.
         assert_eq!(best(&[warmup(40.0, 10.0), warmup(50.0, 5.0)]), None);
     }
 

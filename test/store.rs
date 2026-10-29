@@ -1,14 +1,15 @@
 mod support;
 
+use gym::db;
 use support::fresh;
 
 #[tokio::test]
 async fn an_unknown_bodyfat_is_null_and_a_measured_zero_is_zero() {
     let (_s, db) = fresh("weight").await;
-    db.add_weight("2026-01-01T00:00:00+00:00", 70.0, None, "unknown")
+    db::add_weight(&db, "2026-01-01T00:00:00+00:00", 70.0, None, "unknown")
         .await
         .unwrap();
-    db.add_weight("2026-01-02T00:00:00+00:00", 70.0, Some(0.0), "zero")
+    db::add_weight(&db, "2026-01-02T00:00:00+00:00", 70.0, Some(0.0), "zero")
         .await
         .unwrap();
     let rows = sqlx::query!("SELECT bodyfat FROM weight ORDER BY id")
@@ -23,8 +24,7 @@ async fn an_unknown_bodyfat_is_null_and_a_measured_zero_is_zero() {
 #[tokio::test]
 async fn an_unknown_food_number_is_not_stored_as_zero() {
     let (_s, db) = fresh("foodnull").await;
-    let id = db
-        .new_food("mystery", 200.0, None, None, None, "")
+    let id = db::new_food(&db, "mystery", 200.0, None, None, None, "")
         .await
         .unwrap();
     let row = sqlx::query!(
@@ -43,34 +43,36 @@ async fn an_unknown_food_number_is_not_stored_as_zero() {
 #[tokio::test]
 async fn the_day_window_is_half_open_and_bound_by_the_arguments() {
     let (_s, db) = fresh("window").await;
-    let f = db
-        .new_food("unit", 100.0, Some(0.0), Some(0.0), Some(0.0), "")
+    let f = db::new_food(&db, "unit", 100.0, Some(0.0), Some(0.0), Some(0.0), "")
         .await
         .unwrap();
-    db.new_meal("2026-03-01T00:00:00+00:00", f, 1.0, "start")
+    db::new_meal(&db, "2026-03-01T00:00:00+00:00", f, 1.0, "start")
         .await
         .unwrap();
-    db.new_meal("2026-03-01T23:59:59+00:00", f, 1.0, "end-1")
+    db::new_meal(&db, "2026-03-01T23:59:59+00:00", f, 1.0, "end-1")
         .await
         .unwrap();
-    db.new_meal("2026-03-02T00:00:00+00:00", f, 1.0, "next")
+    db::new_meal(&db, "2026-03-02T00:00:00+00:00", f, 1.0, "next")
         .await
         .unwrap();
-    let t = db
-        .day_totals("2026-03-01T00:00:00+00:00", "2026-03-02T00:00:00+00:00")
-        .await
-        .unwrap();
+    let t = db::day_totals(
+        &db,
+        "2026-03-01T00:00:00+00:00",
+        "2026-03-02T00:00:00+00:00",
+    )
+    .await
+    .unwrap();
     assert_eq!(t.calories, 200.0, "the start is included, the end is not");
 }
 
 #[tokio::test]
 async fn the_window_follows_the_instant_not_the_offsets_written() {
     let (_s, db) = fresh("offsets").await;
-    let f = db
-        .new_food("unit", 100.0, Some(0.0), Some(0.0), Some(0.0), "")
+    let f = db::new_food(&db, "unit", 100.0, Some(0.0), Some(0.0), Some(0.0), "")
         .await
         .unwrap();
-    db.new_meal(
+    db::new_meal(
+        &db,
         "2026-03-01T09:00:00+09:00",
         f,
         1.0,
@@ -78,17 +80,20 @@ async fn the_window_follows_the_instant_not_the_offsets_written() {
     )
     .await
     .unwrap();
-    let t = db
-        .day_totals("2026-03-01T00:00:00+00:00", "2026-03-02T00:00:00+00:00")
-        .await
-        .unwrap();
+    let t = db::day_totals(
+        &db,
+        "2026-03-01T00:00:00+00:00",
+        "2026-03-02T00:00:00+00:00",
+    )
+    .await
+    .unwrap();
     assert_eq!(t.calories, 100.0);
 }
 
 #[tokio::test]
 async fn a_meal_pointing_at_a_missing_food_is_refused_by_the_schema() {
     let (_s, db) = fresh("fk").await;
-    let e = db.new_meal("2026-03-01T00:00:00+00:00", 404, 1.0, "").await;
+    let e = db::new_meal(&db, "2026-03-01T00:00:00+00:00", 404, 1.0, "").await;
     assert!(e.is_err(), "a foreign key must be enforced");
 }
 
@@ -100,18 +105,20 @@ async fn history_is_the_last_three_sessions_newest_first() {
             .fetch_one(&db.pool)
             .await
             .unwrap();
-    let ex = db.get_or_create_exercise("bench press").await.unwrap();
+    let ex = db::get_or_create_exercise(&db, "bench press")
+        .await
+        .unwrap();
 
     for (i, day) in ["2026-01-01", "2026-02-01", "2026-03-01", "2026-04-01"]
         .iter()
         .enumerate()
     {
-        let sid = db
-            .new_session(place, &format!("{day}T10:00:00+00:00"), "")
+        let sid = db::new_session(&db, place, &format!("{day}T10:00:00+00:00"), "")
             .await
             .unwrap();
         for rep in 1..=2 {
-            db.new_set(
+            db::new_set(
+                &db,
                 sid,
                 ex.id,
                 &format!("{day}T10:0{rep}:00+00:00"),
@@ -124,7 +131,7 @@ async fn history_is_the_last_three_sessions_newest_first() {
         }
     }
 
-    let h = db.history(place, ex.id, 3).await.unwrap();
+    let h = db::history(&db, place, ex.id, 3).await.unwrap();
     assert_eq!(h.len(), 6, "three sessions of two sets");
     assert!(h[0].date.starts_with("2026-04-01"), "{}", h[0].date);
     assert!(h[5].date.starts_with("2026-02-01"), "{}", h[5].date);
@@ -136,7 +143,7 @@ async fn history_is_the_last_three_sessions_newest_first() {
             .await
             .unwrap();
     assert!(
-        db.history(other, ex.id, 3).await.unwrap().is_empty(),
+        db::history(&db, other, ex.id, 3).await.unwrap().is_empty(),
         "history is per place"
     );
 }
@@ -149,13 +156,12 @@ async fn a_set_position_is_unique_per_session() {
             .fetch_one(&db.pool)
             .await
             .unwrap();
-    let ex = db.get_or_create_exercise("squat").await.unwrap();
-    let sid = db
-        .new_session(place, "2026-01-01T00:00:00+00:00", "")
+    let ex = db::get_or_create_exercise(&db, "squat").await.unwrap();
+    let sid = db::new_session(&db, place, "2026-01-01T00:00:00+00:00", "")
         .await
         .unwrap();
     for _ in 0..3 {
-        db.new_set(sid, ex.id, "2026-01-01T00:00:00+00:00", 100.0, 5.0, "")
+        db::new_set(&db, sid, ex.id, "2026-01-01T00:00:00+00:00", 100.0, 5.0, "")
             .await
             .unwrap();
     }
@@ -172,8 +178,12 @@ async fn a_set_position_is_unique_per_session() {
 #[tokio::test]
 async fn get_or_create_exercise_is_idempotent() {
     let (_s, db) = fresh("exercise").await;
-    let a = db.get_or_create_exercise("bench press").await.unwrap();
-    let b = db.get_or_create_exercise("bench press").await.unwrap();
+    let a = db::get_or_create_exercise(&db, "bench press")
+        .await
+        .unwrap();
+    let b = db::get_or_create_exercise(&db, "bench press")
+        .await
+        .unwrap();
     assert_eq!(a.id, b.id);
     let n = sqlx::query_scalar!("SELECT count(*) FROM exercise")
         .fetch_one(&db.pool)
@@ -205,15 +215,15 @@ async fn the_settings_are_seeded_with_the_documented_defaults() {
 async fn the_food_command_window_is_this_local_day() {
     use chrono::{Duration, Local};
     let (_s, db) = fresh("localday").await;
-    let f = db
-        .new_food("unit", 100.0, Some(10.0), Some(5.0), Some(2.0), "")
+    let f = db::new_food(&db, "unit", 100.0, Some(10.0), Some(5.0), Some(2.0), "")
         .await
         .unwrap();
     let now = Local::now();
-    db.new_meal(&now.to_rfc3339(), f, 2.0, "today")
+    db::new_meal(&db, &now.to_rfc3339(), f, 2.0, "today")
         .await
         .unwrap();
-    db.new_meal(
+    db::new_meal(
+        &db,
         &(now - Duration::days(1)).to_rfc3339(),
         f,
         10.0,
@@ -223,8 +233,7 @@ async fn the_food_command_window_is_this_local_day() {
     .unwrap();
 
     let (s, e) = gym::util::day_bounds(now);
-    let t = db
-        .day_totals(&s.to_rfc3339(), &e.to_rfc3339())
+    let t = db::day_totals(&db, &s.to_rfc3339(), &e.to_rfc3339())
         .await
         .unwrap();
     assert_eq!(t.calories, 200.0, "only the meal eaten today");
@@ -251,8 +260,7 @@ fn the_local_day_starts_at_midnight_and_lasts_a_day() {
 async fn the_web_day_window_is_local_midnight_to_local_midnight() {
     use chrono::{Duration, Local, TimeZone};
     let (_s, db) = fresh("webday").await;
-    let f = db
-        .new_food("unit", 100.0, Some(1.0), Some(1.0), Some(1.0), "")
+    let f = db::new_food(&db, "unit", 100.0, Some(1.0), Some(1.0), Some(1.0), "")
         .await
         .unwrap();
     let today = Local::now().date_naive();
@@ -260,7 +268,7 @@ async fn the_web_day_window_is_local_midnight_to_local_midnight() {
         .from_local_datetime(&today.and_hms_opt(6, 0, 0).unwrap())
         .earliest()
         .unwrap();
-    db.new_meal(&early.to_rfc3339(), f, 1.0, "early local morning")
+    db::new_meal(&db, &early.to_rfc3339(), f, 1.0, "early local morning")
         .await
         .unwrap();
     let yesterday = today - Duration::days(1);
@@ -268,7 +276,7 @@ async fn the_web_day_window_is_local_midnight_to_local_midnight() {
         .from_local_datetime(&yesterday.and_hms_opt(23, 0, 0).unwrap())
         .earliest()
         .unwrap();
-    db.new_meal(&late_yesterday.to_rfc3339(), f, 10.0, "last night")
+    db::new_meal(&db, &late_yesterday.to_rfc3339(), f, 10.0, "last night")
         .await
         .unwrap();
 
@@ -292,8 +300,7 @@ async fn a_cli_session_is_finished_when_it_is_written() {
             .fetch_one(&db.pool)
             .await
             .unwrap();
-    let id = db
-        .new_session(place, "2026-03-01T10:00:00+00:00", "cli")
+    let id = db::new_session(&db, place, "2026-03-01T10:00:00+00:00", "cli")
         .await
         .unwrap();
     let ended = sqlx::query_scalar!(r#"SELECT ended FROM session WHERE id = ?1"#, id)

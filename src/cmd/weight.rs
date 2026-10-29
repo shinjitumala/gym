@@ -11,6 +11,12 @@ fn weight(c: &C, _a: Weight) -> Res<()> {
         .prompt_skippable()?;
     let desc = Text::new("Note").prompt()?;
     let d = c.block_on(crate::db::Db::open(&c.cfg.db))?;
-    c.block_on(d.add_weight(&date.to_string(), kg, bodyfat, &desc))?;
+    c.block_on(crate::db::add_weight(
+        &d,
+        &date.to_string(),
+        kg,
+        bodyfat,
+        &desc,
+    ))?;
     Ok(())
 }

@@ -9,8 +9,6 @@ use std::{env, fs, path::PathBuf};
 /// binary still builds; `gym web` then says what is missing instead of serving
 /// an empty page.
 fn main() {
-    // `gym --version` reads the package and git information `built` records
-    // here; the `version!` macro in `src/main.rs` compiles it in.
     built::write_built_file().expect("Failed to acquire build-time information");
     println!("cargo:rerun-if-changed=style/main.css");
     println!("cargo:rerun-if-changed=migrations");
@@ -42,9 +40,6 @@ fn main() {
             ));
         }
     }
-    // The JS glue wasm-bindgen emits asks for `gym_bg.wasm` beside it, while
-    // `cargo leptos` writes the module as `gym.wasm`; whichever exists is the
-    // one to serve under both names.
     code.push_str(
         "pub fn wasm() -> Option<&'static [u8]> { MODULE.or(BINDGEN) }\n\
          pub fn embedded() -> bool { JS.is_some() && wasm().is_some() }\n",

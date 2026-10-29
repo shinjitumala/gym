@@ -71,9 +71,6 @@ pub async fn run(addr: &str) -> Result<(), String> {
             "This build has no web UI: the hydrated bundle is not embedded. Rebuild with 'cargo leptos build --release' (or ./install.sh), then run 'gym web --addr {addr}' again."
         ));
     }
-    // Built here rather than read from `Cargo.toml`: the installed binary has
-    // no manifest beside it, and every field that matters is fixed at build
-    // time anyway.
     let options = leptos::config::LeptosOptions::builder()
         .output_name("gym")
         .site_root("")

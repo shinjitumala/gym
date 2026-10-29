@@ -24,8 +24,6 @@ fn text(o: &std::process::Output) -> String {
 #[test]
 fn version_and_help_need_no_configuration() {
     let s = Scratch::new("meta");
-    // No `FPR_GYM_CONFIG_PATH`, and a `HOME` with no `~/.config/gym.toml`: the
-    // questions are about the binary, so they are answered anyway.
     for args in [&["--version"][..], &["--help"][..], &["db", "--help"][..]] {
         let out = Command::new(binary())
             .args(args)

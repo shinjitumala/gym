@@ -1,6 +1,7 @@
 use crate::{com::*, db::Db};
 use regex::Regex;
 use serde::{de::DeserializeOwned, Deserialize};
+use sqlx::SqliteConnection;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fs,
@@ -141,44 +142,35 @@ impl ImportReport {
             self.weights,
             self.meals
         );
-        if !self.duplicate_refs.is_empty() {
-            s.push_str(&format!(
-                "\n\nset ids listed twice by the same session ({}), collapsed to one row each:",
-                self.duplicate_refs.len()
-            ));
-            for e in &self.duplicate_refs {
-                s.push_str(&format!("\n  {e}"));
-            }
-        }
-        if !self.superset_no_reps.is_empty() {
-            s.push_str(&format!(
-                "\n\nsuperset notes with no rep count ({}), left as notes:",
-                self.superset_no_reps.len()
-            ));
-            for e in &self.superset_no_reps {
-                s.push_str(&format!("\n  {e}"));
-            }
-        }
-        if !self.superset_self.is_empty() {
-            s.push_str(&format!(
-                "\n\nsuperset notes whose partner is the same exercise ({}), left as notes:",
-                self.superset_self.len()
-            ));
-            for e in &self.superset_self {
-                s.push_str(&format!("\n  {e}"));
-            }
-        }
-        if !self.superset_unmapped.is_empty() {
-            s.push_str(&format!(
-                "\n\nsuperset notes whose partner is not in the mapping ({}), left as notes:",
-                self.superset_unmapped.len()
-            ));
-            for e in &self.superset_unmapped {
-                s.push_str(&format!("\n  {e}"));
-            }
-        }
+        s.push_str(&listed(
+            "set ids listed twice by the same session, collapsed to one row each",
+            &self.duplicate_refs,
+        ));
+        s.push_str(&listed(
+            "superset notes with no rep count, left as notes",
+            &self.superset_no_reps,
+        ));
+        s.push_str(&listed(
+            "superset notes whose partner is the same exercise, left as notes",
+            &self.superset_self,
+        ));
+        s.push_str(&listed(
+            "superset notes whose partner is not in the mapping, left as notes",
+            &self.superset_unmapped,
+        ));
         s
     }
+}
+
+fn listed(title: &str, rows: &[String]) -> String {
+    if rows.is_empty() {
+        return String::new();
+    }
+    let mut s = format!("\n\n{title} ({}):", rows.len());
+    for e in rows {
+        s.push_str(&format!("\n  {e}"));
+    }
+    s
 }
 
 fn read_file<T: DeserializeOwned + Default>(p: &Path) -> Res<BTreeMap<i64, T>> {
@@ -278,53 +270,136 @@ struct Row {
     group: Option<usize>,
 }
 
-pub async fn import(db: &Db, dir: &Path, map_path: Option<&Path>) -> Res<ImportReport> {
-    let mut r = ImportReport::default();
-
-    let muscle_groups = read_file::<TMuscleGroup>(&dir.join("muscle_group.toml"))?;
-    let places = read_file::<TPlace>(&dir.join("place.toml"))?;
-    let exercises = read_file::<TExercise>(&dir.join("exercise.toml"))?;
-    let foods = read_file::<TFood>(&dir.join("food.toml"))?;
-    let sessions = read_dir::<TSession>(&dir.join("session"))?;
-    let sets = read_dir::<TSet>(&dir.join("set"))?;
-    let weights = read_dir::<TWeight>(&dir.join("weight"))?;
-    let meals = read_dir::<TMeal>(&dir.join("meal"))?;
-    let map = match map_path {
-        Some(p) => map_of(p)?,
-        None => BTreeMap::new(),
-    };
-
-    let mut referenced: BTreeSet<i64> = BTreeSet::new();
-    let mut owner: HashMap<i64, i64> = HashMap::new();
-    let mut duplicates: Vec<String> = Vec::new();
-    for (sid, s) in &sessions {
-        for id in &s.sets {
-            if !sets.contains_key(id) {
-                Err(format!(
-                    "session '{sid}' lists set '{id}', which is not in set/."
-                ))?;
-            }
-            match owner.insert(*id, *sid) {
-                None => {}
-                Some(prev) if prev == *sid => {
-                    duplicates.push(format!("{id} in session {sid}"));
-                }
-                Some(prev) => {
-                    Err(format!(
-                        "set '{id}' is listed by session '{prev}' and by session '{sid}'; refusing to guess which one owns it."
-                    ))?
-                }
-            }
-            referenced.insert(*id);
+impl Row {
+    fn working(set: &TSet, id: i64) -> Self {
+        Self {
+            id: Some(id),
+            exercise: set.exercise,
+            date: set.date.clone(),
+            load: set.load,
+            rep: set.rep,
+            note: set.desc.clone(),
+            inferred: false,
+            group: None,
         }
-        if !places.contains_key(&s.place) {
+    }
+
+    fn inferred(set: &TSet, exercise: i64, rep: f64, group: usize) -> Self {
+        Self {
+            id: None,
+            exercise,
+            date: set.date.clone(),
+            load: set.load,
+            rep,
+            note: format!("inferred from \"{}\"", set.desc),
+            inferred: true,
+            group: Some(group),
+        }
+    }
+}
+
+struct Archive {
+    muscle_groups: BTreeMap<i64, TMuscleGroup>,
+    places: BTreeMap<i64, TPlace>,
+    exercises: BTreeMap<i64, TExercise>,
+    foods: BTreeMap<i64, TFood>,
+    sessions: BTreeMap<i64, TSession>,
+    sets: BTreeMap<i64, TSet>,
+    weights: BTreeMap<i64, TWeight>,
+    meals: BTreeMap<i64, TMeal>,
+    map: BTreeMap<String, String>,
+}
+
+fn read_archive(dir: &Path, map_path: Option<&Path>) -> Res<Archive> {
+    Ok(Archive {
+        muscle_groups: read_file(&dir.join("muscle_group.toml"))?,
+        places: read_file(&dir.join("place.toml"))?,
+        exercises: read_file(&dir.join("exercise.toml"))?,
+        foods: read_file(&dir.join("food.toml"))?,
+        sessions: read_dir(&dir.join("session"))?,
+        sets: read_dir(&dir.join("set"))?,
+        weights: read_dir(&dir.join("weight"))?,
+        meals: read_dir(&dir.join("meal"))?,
+        map: read_map(map_path)?,
+    })
+}
+
+fn read_map(map_path: Option<&Path>) -> Res<BTreeMap<String, String>> {
+    match map_path {
+        Some(p) => map_of(p),
+        None => Ok(BTreeMap::new()),
+    }
+}
+
+pub async fn import(db: &Db, dir: &Path, map_path: Option<&Path>) -> Res<ImportReport> {
+    let a = read_archive(dir, map_path)?;
+    let mut r = ImportReport {
+        duplicate_refs: validate(&a)?,
+        ..Default::default()
+    };
+    let mut tx = db.pool.begin().await?;
+    write_reference_tables(&mut tx, &a, &mut r).await?;
+    write_sessions(&mut tx, &a, &mut r).await?;
+    write_weights(&mut tx, &a, &mut r).await?;
+    write_meals(&mut tx, &a, &mut r).await?;
+    tx.commit().await?;
+    Ok(r)
+}
+
+fn validate(a: &Archive) -> Res<Vec<String>> {
+    let (referenced, duplicates) = referenced_sets(a)?;
+    refuse_orphans(a, &referenced)?;
+    refuse_unknown_exercises(a)?;
+    refuse_unknown_groups(a)?;
+    refuse_unknown_foods(a)?;
+    Ok(duplicates)
+}
+
+fn referenced_sets(a: &Archive) -> Res<(BTreeSet<i64>, Vec<String>)> {
+    let mut referenced = BTreeSet::new();
+    let mut owner = HashMap::new();
+    let mut duplicates = Vec::new();
+    for (sid, s) in &a.sessions {
+        if !a.places.contains_key(&s.place) {
             Err(format!(
                 "session '{sid}' uses place '{}', which is not in place.toml.",
                 s.place
             ))?;
         }
+        for id in &s.sets {
+            if !a.sets.contains_key(id) {
+                Err(format!(
+                    "session '{sid}' lists set '{id}', which is not in set/."
+                ))?;
+            }
+            claim(&mut owner, &mut duplicates, *sid, *id)?;
+            referenced.insert(*id);
+        }
     }
-    let orphans: Vec<String> = sets
+    Ok((referenced, duplicates))
+}
+
+fn claim(
+    owner: &mut HashMap<i64, i64>,
+    duplicates: &mut Vec<String>,
+    sid: i64,
+    id: i64,
+) -> Res<()> {
+    match owner.insert(id, sid) {
+        None => {}
+        Some(prev) if prev == sid => duplicates.push(format!("{id} in session {sid}")),
+        Some(prev) => {
+            Err(format!(
+                "set '{id}' is listed by session '{prev}' and by session '{sid}'; refusing to guess which one owns it."
+            ))?
+        }
+    }
+    Ok(())
+}
+
+fn refuse_orphans(a: &Archive, referenced: &BTreeSet<i64>) -> Res<()> {
+    let orphans: Vec<String> = a
+        .sets
         .keys()
         .filter(|id| !referenced.contains(id))
         .map(|id| id.to_string())
@@ -336,17 +411,25 @@ pub async fn import(db: &Db, dir: &Path, map_path: Option<&Path>) -> Res<ImportR
             orphans.join(", ")
         ))?;
     }
-    for (id, s) in &sets {
-        if !exercises.contains_key(&s.exercise) {
+    Ok(())
+}
+
+fn refuse_unknown_exercises(a: &Archive) -> Res<()> {
+    for (id, s) in &a.sets {
+        if !a.exercises.contains_key(&s.exercise) {
             Err(format!(
                 "set '{id}' uses exercise '{}', which is not in exercise.toml.",
                 s.exercise
             ))?;
         }
     }
-    for (id, e) in &exercises {
+    Ok(())
+}
+
+fn refuse_unknown_groups(a: &Archive) -> Res<()> {
+    for (id, e) in &a.exercises {
         for l in &e.muscle_groups {
-            if !muscle_groups.contains_key(&l.group) {
+            if !a.muscle_groups.contains_key(&l.group) {
                 Err(format!(
                     "exercise '{id}' links muscle group '{}', which is not in muscle_group.toml.",
                     l.group
@@ -354,56 +437,56 @@ pub async fn import(db: &Db, dir: &Path, map_path: Option<&Path>) -> Res<ImportR
             }
         }
     }
-    for (id, m) in &meals {
-        if !foods.contains_key(&m.food) {
+    Ok(())
+}
+
+fn refuse_unknown_foods(a: &Archive) -> Res<()> {
+    for (id, m) in &a.meals {
+        if !a.foods.contains_key(&m.food) {
             Err(format!(
                 "meal '{id}' uses food '{}', which is not in food.toml.",
                 m.food
             ))?;
         }
     }
+    Ok(())
+}
 
-    let by_name: HashMap<String, i64> = exercises
-        .iter()
-        .map(|(id, e)| (norm(&e.name), *id))
-        .collect();
-
-    r.duplicate_refs = duplicates;
-
-    let mut next_id = sets.keys().max().copied().unwrap_or(0);
-
-    let mut tx = db.pool.begin().await?;
-
-    for (id, m) in &muscle_groups {
+async fn write_reference_tables(
+    conn: &mut SqliteConnection,
+    a: &Archive,
+    r: &mut ImportReport,
+) -> Res<()> {
+    for (id, m) in &a.muscle_groups {
         sqlx::query!(
             "INSERT INTO muscle_group (id, name, note) VALUES (?1, ?2, ?3)",
             id,
             m.name,
             m.desc
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
         r.muscle_groups += 1;
     }
-    for (id, p) in &places {
+    for (id, p) in &a.places {
         sqlx::query!(
             "INSERT INTO place (id, name, note) VALUES (?1, ?2, ?3)",
             id,
             p.name,
             p.desc
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
         r.places += 1;
     }
-    for (id, e) in &exercises {
+    for (id, e) in &a.exercises {
         sqlx::query!(
             "INSERT INTO exercise (id, name, note) VALUES (?1, ?2, ?3)",
             id,
             e.name,
             e.desc
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
         r.exercises += 1;
         for l in &e.muscle_groups {
@@ -413,12 +496,12 @@ pub async fn import(db: &Db, dir: &Path, map_path: Option<&Path>) -> Res<ImportR
                 l.group,
                 l.amount
             )
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await?;
             r.exercise_muscle_groups += 1;
         }
     }
-    for (id, f) in &foods {
+    for (id, f) in &a.foods {
         sqlx::query!(
             "INSERT INTO food (id, name, calories, protein, fat, carbohydrate, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             id,
@@ -429,148 +512,187 @@ pub async fn import(db: &Db, dir: &Path, map_path: Option<&Path>) -> Res<ImportR
             f.carbohydrate,
             f.desc
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
         r.foods += 1;
     }
+    Ok(())
+}
 
-    for (sid, s) in &sessions {
-        // An imported session is finished: the archive only holds sessions
-        // whose prompts ran to the end.
-        sqlx::query!(
-            "INSERT INTO session (id, date, place, note, ended) VALUES (?1, ?2, ?3, ?4, ?2)",
-            sid,
-            s.date,
-            s.place,
-            s.desc
-        )
-        .execute(&mut *tx)
-        .await?;
-        r.sessions += 1;
-
-        let mut rows: Vec<Row> = Vec::new();
-        let mut seen: BTreeSet<i64> = BTreeSet::new();
-        for id in &s.sets {
-            if !seen.insert(*id) {
-                continue;
-            }
-            let set = &sets[id];
-            let p = match parse_partner(&set.desc) {
-                Some((rest, rep)) => {
-                    let resolved = resolve(&rest, &map).map(|p| Partner { name: p.name, rep });
-                    match resolved
-                        .map(|p| (p.name.clone(), p))
-                        .and_then(|(n, p)| by_name.get(&norm(&n)).copied().map(|id| (id, p)))
-                    {
-                        None => {
-                            r.superset_unmapped
-                                .push(format!("{id}: '{}' -> '{}'", set.desc, rest));
-                            None
-                        }
-                        Some((t, _)) if t == set.exercise => {
-                            r.superset_self.push(format!("{id}: '{}'", set.desc));
-                            None
-                        }
-                        Some((_, p)) => Some(p),
-                    }
-                }
-                None => {
-                    if Regex::new(r"(?i)^su\w*\s+set\s")
-                        .map(|x| x.is_match(&set.desc))
-                        .unwrap_or(false)
-                    {
-                        r.superset_no_reps.push(format!("{id}: '{}'", set.desc));
-                    }
-                    None
-                }
-            };
-            match p {
-                None => rows.push(Row {
-                    id: Some(*id),
-                    exercise: set.exercise,
-                    date: set.date.to_owned(),
-                    load: set.load,
-                    rep: set.rep,
-                    note: set.desc.to_owned(),
-                    inferred: false,
-                    group: None,
-                }),
-                Some(p) => {
-                    let group = rows.len();
-                    rows.push(Row {
-                        id: Some(*id),
-                        exercise: set.exercise,
-                        date: set.date.to_owned(),
-                        load: set.load,
-                        rep: set.rep,
-                        note: set.desc.to_owned(),
-                        inferred: false,
-                        group: Some(group),
-                    });
-                    let pid = by_name
-                        .get(&norm(&p.name))
-                        .copied()
-                        .ok_or(format!("'{}' vanished mid-import", p.name))?;
-                    rows.push(Row {
-                        id: None,
-                        exercise: pid,
-                        date: set.date.to_owned(),
-                        load: set.load,
-                        rep: p.rep,
-                        note: format!("inferred from \"{}\"", set.desc),
-                        inferred: true,
-                        group: Some(group),
-                    });
-                }
-            }
-        }
-
-        let mut groups: HashMap<usize, i64> = HashMap::new();
-        for g in rows.iter().filter_map(|row| row.group) {
-            if groups.contains_key(&g) {
-                continue;
-            }
-            let id = sqlx::query_scalar!(
-                r#"INSERT INTO superset (session) VALUES (?1) RETURNING id AS "id!""#,
-                sid
-            )
-            .fetch_one(&mut *tx)
-            .await?;
-            groups.insert(g, id);
-            r.supersets += 1;
-        }
-        for (position, row) in rows.iter().enumerate() {
-            let superset = row.group.and_then(|g| groups.get(&g).copied());
-            let id = match row.id {
-                Some(id) => id,
-                None => {
-                    next_id += 1;
-                    next_id
-                }
-            };
-            sqlx::query!(
-                "INSERT INTO training_set (id, session, exercise, position, date, load, rep, note, superset, inferred) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                id,
-                sid,
-                row.exercise,
-                position as i64,
-                row.date,
-                row.load,
-                row.rep,
-                row.note,
-                superset,
-                row.inferred
-            )
-            .execute(&mut *tx)
-            .await?;
-            r.sets += 1;
-            if row.inferred {
-                r.inferred += 1;
-            }
-        }
+async fn write_sessions(conn: &mut SqliteConnection, a: &Archive, r: &mut ImportReport) -> Res<()> {
+    let names: HashMap<String, i64> = a
+        .exercises
+        .iter()
+        .map(|(id, e)| (norm(&e.name), *id))
+        .collect();
+    let mut next_id = a.sets.keys().max().copied().unwrap_or(0);
+    for (sid, s) in &a.sessions {
+        insert_session(conn, *sid, s, r).await?;
+        let rows = session_rows(a, &names, s, r)?;
+        write_session_rows(conn, *sid, &rows, &mut next_id, r).await?;
     }
+    Ok(())
+}
 
-    for (id, w) in &weights {
+async fn insert_session(
+    conn: &mut SqliteConnection,
+    sid: i64,
+    s: &TSession,
+    r: &mut ImportReport,
+) -> Res<()> {
+    sqlx::query!(
+        "INSERT INTO session (id, date, place, note, ended) VALUES (?1, ?2, ?3, ?4, ?2)",
+        sid,
+        s.date,
+        s.place,
+        s.desc
+    )
+    .execute(&mut *conn)
+    .await?;
+    r.sessions += 1;
+    Ok(())
+}
+
+fn session_rows(
+    a: &Archive,
+    names: &HashMap<String, i64>,
+    s: &TSession,
+    r: &mut ImportReport,
+) -> Res<Vec<Row>> {
+    let mut rows = Vec::new();
+    let mut seen = BTreeSet::new();
+    for id in &s.sets {
+        if !seen.insert(*id) {
+            continue;
+        }
+        let set = &a.sets[id];
+        let Some((p, pid)) = partner(a, names, *id, set, r) else {
+            rows.push(Row::working(set, *id));
+            continue;
+        };
+        let group = rows.len();
+        rows.push(Row {
+            group: Some(group),
+            ..Row::working(set, *id)
+        });
+        rows.push(Row::inferred(set, pid, p.rep, group));
+    }
+    Ok(rows)
+}
+
+fn partner(
+    a: &Archive,
+    names: &HashMap<String, i64>,
+    id: i64,
+    set: &TSet,
+    r: &mut ImportReport,
+) -> Option<(Partner, i64)> {
+    let Some((rest, rep)) = parse_partner(&set.desc) else {
+        if names_a_superset(&set.desc) {
+            r.superset_no_reps.push(format!("{id}: '{}'", set.desc));
+        }
+        return None;
+    };
+    let hit = resolve(&rest, &a.map).and_then(|p| {
+        let name = norm(&p.name);
+        names.get(&name).copied().map(|pid| (p, pid))
+    });
+    let Some((p, pid)) = hit else {
+        r.superset_unmapped
+            .push(format!("{id}: '{}' -> '{}'", set.desc, rest));
+        return None;
+    };
+    if pid == set.exercise {
+        r.superset_self.push(format!("{id}: '{}'", set.desc));
+        return None;
+    }
+    Some((Partner { rep, ..p }, pid))
+}
+
+fn names_a_superset(note: &str) -> bool {
+    Regex::new(r"(?i)^su\w*\s+set\s")
+        .map(|x| x.is_match(note))
+        .unwrap_or(false)
+}
+
+async fn write_session_rows(
+    conn: &mut SqliteConnection,
+    sid: i64,
+    rows: &[Row],
+    next_id: &mut i64,
+    r: &mut ImportReport,
+) -> Res<()> {
+    let groups = write_supersets(conn, sid, rows, r).await?;
+    for (position, row) in rows.iter().enumerate() {
+        let superset = row.group.and_then(|g| groups.get(&g).copied());
+        write_set(conn, sid, position, row, superset, next_id, r).await?;
+    }
+    Ok(())
+}
+
+async fn write_supersets(
+    conn: &mut SqliteConnection,
+    sid: i64,
+    rows: &[Row],
+    r: &mut ImportReport,
+) -> Res<HashMap<usize, i64>> {
+    let mut groups = HashMap::new();
+    for g in rows.iter().filter_map(|row| row.group) {
+        if groups.contains_key(&g) {
+            continue;
+        }
+        let id = sqlx::query_scalar!(
+            r#"INSERT INTO superset (session) VALUES (?1) RETURNING id AS "id!""#,
+            sid
+        )
+        .fetch_one(&mut *conn)
+        .await?;
+        groups.insert(g, id);
+        r.supersets += 1;
+    }
+    Ok(groups)
+}
+
+async fn write_set(
+    conn: &mut SqliteConnection,
+    sid: i64,
+    position: usize,
+    row: &Row,
+    superset: Option<i64>,
+    next_id: &mut i64,
+    r: &mut ImportReport,
+) -> Res<()> {
+    let id = match row.id {
+        Some(id) => id,
+        None => {
+            *next_id += 1;
+            *next_id
+        }
+    };
+    sqlx::query!(
+        "INSERT INTO training_set (id, session, exercise, position, date, load, rep, note, superset, inferred) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        id,
+        sid,
+        row.exercise,
+        position as i64,
+        row.date,
+        row.load,
+        row.rep,
+        row.note,
+        superset,
+        row.inferred
+    )
+    .execute(&mut *conn)
+    .await?;
+    r.sets += 1;
+    if row.inferred {
+        r.inferred += 1;
+    }
+    Ok(())
+}
+
+async fn write_weights(conn: &mut SqliteConnection, a: &Archive, r: &mut ImportReport) -> Res<()> {
+    for (id, w) in &a.weights {
         sqlx::query!(
             "INSERT INTO weight (id, date, kg, bodyfat, note) VALUES (?1, ?2, ?3, ?4, ?5)",
             id,
@@ -579,11 +701,15 @@ pub async fn import(db: &Db, dir: &Path, map_path: Option<&Path>) -> Res<ImportR
             w.bodyfat,
             w.desc
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
         r.weights += 1;
     }
-    for (id, m) in &meals {
+    Ok(())
+}
+
+async fn write_meals(conn: &mut SqliteConnection, a: &Archive, r: &mut ImportReport) -> Res<()> {
+    for (id, m) in &a.meals {
         sqlx::query!(
             "INSERT INTO meal (id, date, food, amount, note) VALUES (?1, ?2, ?3, ?4, ?5)",
             id,
@@ -592,13 +718,11 @@ pub async fn import(db: &Db, dir: &Path, map_path: Option<&Path>) -> Res<ImportR
             m.amount,
             m.desc
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
         r.meals += 1;
     }
-
-    tx.commit().await?;
-    Ok(r)
+    Ok(())
 }
 
 /// Refuse an import into a database that already holds log rows. The seeded
@@ -646,32 +770,18 @@ impl Counts {
 
 pub async fn counts(db: &Db) -> Res<Counts> {
     Ok(Counts {
-        muscle_group: sqlx::query_scalar!("SELECT count(*) FROM muscle_group")
-            .fetch_one(&db.pool)
-            .await?,
-        place: sqlx::query_scalar!("SELECT count(*) FROM place")
-            .fetch_one(&db.pool)
-            .await?,
-        exercise: sqlx::query_scalar!("SELECT count(*) FROM exercise")
-            .fetch_one(&db.pool)
-            .await?,
-        food: sqlx::query_scalar!("SELECT count(*) FROM food")
-            .fetch_one(&db.pool)
-            .await?,
-        session: sqlx::query_scalar!("SELECT count(*) FROM session")
-            .fetch_one(&db.pool)
-            .await?,
-        training_set: sqlx::query_scalar!("SELECT count(*) FROM training_set")
-            .fetch_one(&db.pool)
-            .await?,
-        weight: sqlx::query_scalar!("SELECT count(*) FROM weight")
-            .fetch_one(&db.pool)
-            .await?,
-        meal: sqlx::query_scalar!("SELECT count(*) FROM meal")
-            .fetch_one(&db.pool)
-            .await?,
-        superset: sqlx::query_scalar!("SELECT count(*) FROM superset")
-            .fetch_one(&db.pool)
-            .await?,
+        muscle_group: count(db, "SELECT count(*) FROM muscle_group").await?,
+        place: count(db, "SELECT count(*) FROM place").await?,
+        exercise: count(db, "SELECT count(*) FROM exercise").await?,
+        food: count(db, "SELECT count(*) FROM food").await?,
+        session: count(db, "SELECT count(*) FROM session").await?,
+        training_set: count(db, "SELECT count(*) FROM training_set").await?,
+        weight: count(db, "SELECT count(*) FROM weight").await?,
+        meal: count(db, "SELECT count(*) FROM meal").await?,
+        superset: count(db, "SELECT count(*) FROM superset").await?,
     })
+}
+
+async fn count(db: &Db, sql: &'static str) -> Res<i64> {
+    Ok(sqlx::query_scalar(sql).fetch_one(&db.pool).await?)
 }

@@ -17,6 +17,9 @@ const LABEL: &str = "#6b7280";
 
 const W: f64 = 720.0;
 const H: f64 = 220.0;
+/// The fewest day slots the bar chart spreads over, so one logged day is drawn
+/// as one day rather than as the whole width.
+const MIN_DAYS: usize = 12;
 /// Room for the axis numbers on the left, the day labels underneath, and the
 /// line's own headroom at the top. The left margin holds a label like
 /// `70.0 kg` right-aligned against the axis, so it never crosses the plot.
@@ -100,8 +103,6 @@ fn ticks(min: f64, max: f64, want: usize) -> Vec<f64> {
 /// numbers are rounded to, so a weight axis says `80.5 kg` and a sets axis says
 /// `12 sets/wk`.
 fn y_axis(y0: f64, y1: f64, unit: &str, decimals: usize, anchor_right: bool) -> Vec<AnyView> {
-    // The left scale's numbers sit in the margin, right-aligned against the axis;
-    // the right scale's sit inside, left-aligned against its own.
     let (x_text, anchor) = if anchor_right {
         (W - RIGHT - 4.0, "end")
     } else {
@@ -275,8 +276,6 @@ pub fn PhaseLine(
             .map(|p| if p.kind == "cut" { CUT } else { BULK })
             .unwrap_or(PLAIN)
     };
-    // One segment per colour change: consecutive points of the same phase are
-    // one polyline, and the boundary point joins both so the line has no gap.
     let mut segments: Vec<(&'static str, Vec<(i64, f64)>)> = Vec::new();
     for p in &points {
         let c = colour_of(p.0);
@@ -485,8 +484,7 @@ pub fn Intake(
     #[prop(into)] unit: String,
     #[prop(into)] on_pick: Callback<i64>,
 ) -> impl IntoView {
-    // A bar never fills the whole width: one day should look like one day.
-    let n = bars.len().max(12);
+    let n = bars.len().max(MIN_DAYS);
     let totals: Vec<f64> = bars
         .iter()
         .map(|b| b.parts.iter().map(|(_, v)| *v).sum::<f64>())
@@ -536,8 +534,6 @@ pub fn Intake(
             view! { <g>{segs.collect_view()}</g> }.into_any()
         })
         .collect();
-    // Three day labels spread over the bars, so the chart says when each end is
-    // rather than only naming the first and the last.
     let marks: Vec<AnyView> = [0usize, bars.len() / 2, bars.len().saturating_sub(1)]
         .into_iter()
         .filter(|i| *i < bars.len())

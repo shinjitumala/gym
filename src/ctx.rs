@@ -86,8 +86,4 @@ impl C {
     pub fn block_on<F: Future>(&self, f: F) -> F::Output {
         rt().block_on(f)
     }
-
-    pub async fn db(&self) -> Res<Db> {
-        Db::open(&self.cfg.db).await
-    }
 }

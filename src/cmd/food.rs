@@ -8,7 +8,7 @@ fn food_act(c: &C, _a: Food) -> Res<()> {
     print_today(c, &d)?;
 
     let date = input_date2("When did you eat?")?;
-    let foods = c.block_on(d.foods())?;
+    let foods = c.block_on(crate::db::foods(&d))?;
     loop {
         let f = match select_line(
             "What did you eat? (calories kcal, protein g, fat g, carbohydrates g)",
@@ -31,7 +31,13 @@ fn food_act(c: &C, _a: Food) -> Res<()> {
             .prompt()?;
         let desc = Text::new("desc").prompt()?;
 
-        c.block_on(d.new_meal(&t2s(date.as_datetime().to_owned()), f, amount, &desc))?;
+        c.block_on(crate::db::new_meal(
+            &d,
+            &t2s(date.as_datetime().to_owned()),
+            f,
+            amount,
+            &desc,
+        ))?;
 
         if !Confirm::new("Add more food?")
             .with_default(false)
@@ -47,7 +53,7 @@ fn food_act(c: &C, _a: Food) -> Res<()> {
 
 fn print_today(c: &C, d: &crate::db::Db) -> Res<()> {
     let (s, e) = crate::util::day_bounds(chrono::Local::now());
-    let t = c.block_on(d.day_totals(&s.to_rfc3339(), &e.to_rfc3339()))?;
+    let t = c.block_on(crate::db::day_totals(d, &s.to_rfc3339(), &e.to_rfc3339()))?;
     println!("{} {}", s.to_rfc3339(), e.to_rfc3339());
     println!("Today's total:");
     println!("{}", to_table(&t.to_lines_today()));

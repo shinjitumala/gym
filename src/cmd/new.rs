@@ -10,11 +10,11 @@ fn new_session(c: &C, _a: New) -> Res<()> {
     let desc = Text::new("Description")
         .prompt_skippable()?
         .unwrap_or_default();
-    let sid = c.block_on(d.new_session(pid, &date.to_string(), &desc))?;
+    let sid = c.block_on(crate::db::new_session(&d, pid, &date.to_string(), &desc))?;
 
     loop {
         let ecomp = TextWithAutocomplete::new(
-            c.block_on(d.exercises(pid))?
+            c.block_on(crate::db::exercises(&d, pid))?
                 .into_iter()
                 .map(|e| (e.id, e))
                 .collect(),
@@ -30,8 +30,8 @@ fn new_session(c: &C, _a: New) -> Res<()> {
         let Some(e) = e else {
             break;
         };
-        let exercise = c.block_on(d.get_or_create_exercise(&e))?;
-        print_history(&c.block_on(d.history(pid, exercise.id, 3))?)?;
+        let exercise = c.block_on(crate::db::get_or_create_exercise(&d, &e))?;
+        print_history(&c.block_on(crate::db::history(&d, pid, exercise.id, 3))?)?;
 
         loop {
             let Some(load) = CustomType::<f64>::new("load")
@@ -48,7 +48,15 @@ fn new_session(c: &C, _a: New) -> Res<()> {
                     break;
                 };
                 let note = Text::new("Notes").prompt()?;
-                c.block_on(d.new_set(sid, exercise.id, &t2s(Utc::now()), load, rep, &note))?;
+                c.block_on(crate::db::new_set(
+                    &d,
+                    sid,
+                    exercise.id,
+                    &t2s(Utc::now()),
+                    load,
+                    rep,
+                    &note,
+                ))?;
             }
         }
     }
@@ -56,7 +64,7 @@ fn new_session(c: &C, _a: New) -> Res<()> {
 }
 
 fn input_place(c: &C, d: &crate::db::Db) -> Res<(i64, crate::model::Place)> {
-    let places = c.block_on(d.places())?;
+    let places = c.block_on(crate::db::places(d))?;
     let lines = to_lines(&places.iter().map(|e| e.to_line()).collect_vec())
         .into_iter()
         .enumerate()

@@ -13,10 +13,6 @@
 
 use leptos::prelude::*;
 
-// Tailwind classes as named constants. They are literal strings in the source,
-// which is what the scanner reads: a class that only ever appeared after string
-// concatenation would silently not be generated.
-
 /// A flexible row of fields or figures.
 pub const ROW: &str = "flex flex-wrap items-end gap-2";
 /// A row that starts a new record.
@@ -529,9 +525,6 @@ mod tests {
 
     #[test]
     fn words_match_in_any_order() {
-        // A plain substring test asks for "press chest" in that order, which
-        // no row says; the picker's word-at-a-time rule finds the exercise
-        // whose group is chest and whose name ends in press.
         assert!(narrows("bench press · chest", "press chest"));
         assert!(narrows("bench press · chest", "chest press"));
         assert!(!narrows("bench press · chest", "press back"));
